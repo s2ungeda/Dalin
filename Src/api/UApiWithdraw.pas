@@ -1,0 +1,102 @@
+unit UApiWithdraw;
+
+interface
+
+uses
+
+  System.Classes, System.Generics.Collections,
+  UApiTypes, UApiConsts, UTypes,
+  URestRequests
+  ;
+
+type
+
+  TApiWithdraw = class
+  private
+    FReq: TRequest;
+    FParam: TWithdrawParam;
+    FOnNotify: TResultNotifyEvent;
+    FResult: TResultMesage;
+    FAddress: TList<TDepositAddress>;
+    FExKind: TExchangeKind;
+  public
+    constructor Create(e:TExchangeKind);  virtual;
+    destructor  Destroy; override;
+
+    procedure RecvRequest(Sender : TObject);  virtual; abstract;
+    procedure DoNotify(stData : string; iCode : integer = 0 ); overload;
+    procedure DoNotify(iType : integer; stData : string; iCode : integer = 0 ); overload;
+
+    procedure DoJob( aParam : TWithdrawParam );
+    procedure DoWithDraw; virtual; abstract;
+
+    procedure RequestWithdrawAddress; virtual; abstract;
+    procedure RequestDepositList(sCurrency: string; bFirst : boolean); virtual; abstract;
+    // 주소 조회 ( 바이낸스는 조회 와 생성이 같이 됨)
+    procedure RequestDepositAddress(sCurrency, sNetType: string); virtual; abstract;
+    // 주소 생성 (국내 거래소만)
+    procedure RequestNewDepositAddress(sCurrency, sNetType: string); virtual; abstract;
+
+    procedure RequestWithdrawList(sCurrency : string; bFirst : boolean); virtual; abstract;
+
+    property ExKind: TExchangeKind read FExKind;
+    property Req: TRequest read FReq;
+    property Param : TWithdrawParam read FParam;
+    property OnNotify : TResultNotifyEvent read FOnNotify write FOnNotify;
+    property Result : TResultMesage read FResult write FResult;
+
+    property  Address : TList<TDepositAddress> read FAddress;
+  end;
+
+implementation
+
+{ TBitWithdraw }
+
+constructor TApiWithdraw.Create(e:TExchangeKind);
+begin
+  FReq  := TRequest.Create;
+  FReq.OnNotify :=  RecvRequest;
+  FOnNotify := nil;
+
+  FResult.Code := 0;
+  FResult.Reason := '';
+
+  FExKind := e;
+
+  FAddress:= TList<TDepositAddress>.Create;
+end;
+
+destructor TApiWithdraw.Destroy;
+begin
+  FReq.Free;
+  inherited;
+end;
+
+procedure TApiWithdraw.DoJob(aParam: TWithdrawParam );
+begin
+  FParam := aParam;
+  DoWithDraw;
+end;
+
+procedure TApiWithdraw.DoNotify(iType : integer; stData: string; iCode: integer);
+begin
+  FResult.ResType := iType;
+  FResult.Code    := iCode;
+  FResult.Reason  := stData;
+
+  if Assigned(OnNotify) then
+    OnNotify(Self, Result );
+end;
+
+procedure TApiWithdraw.DoNotify(stData: string; iCode: integer);
+begin
+  FResult.Code  := iCode;
+  FResult.Reason:= stData;
+
+  if Assigned(OnNotify) then
+    OnNotify(Self, Result );
+end;
+
+
+
+end.

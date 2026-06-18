@@ -1,0 +1,146 @@
+unit GSignalData;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, System.SyncObjs, System.Generics.Collections
+  , UTypes, USignalTypes
+  , USymbols
+  ;
+
+Type
+
+  TLockQtyArr = array [TMethodType] of Double;
+
+  TRequiredItem = record
+    Symbol  : TSymbol;
+    LockQty : TLockQtyArr;//array [TMethodType] of Double;   // 예약된 매수, 매도 수량
+
+    procedure SetItem(s: TSymbol; q: TLockQtyArr);
+
+    class function New(s: TSymbol; q: TLockQtyArr): TRequiredItem; static;
+  end;
+
+  TRequired   = TDictionary<string, TDictionary<string, TRequiredItem>>;
+
+var
+  ReservedQty : TRequired;
+
+  procedure Update(const Code, Stg: string; aSymbol: TSymbol; Qty: TLockQtyArr);
+  procedure Remove(const Code, Stg: string); overload;
+  procedure Remove(const Code: string); overload;
+
+ // function GetCodes(const Code: string; var Outs: TArray<string>): boolean;
+
+implementation
+
+uses
+  Math
+  ;
+
+procedure Init;
+begin
+  ReservedQty := TRequired.Create;
+end;
+
+procedure Fin;
+var
+  P : TPair<string, TDictionary<string, TRequiredItem>>;
+begin
+  if ReservedQty <> nil then
+  begin
+    for P in ReservedQty do
+      FreeAndNil(P.Value);
+    ReservedQty.Free;
+  end;
+end;
+
+procedure Update(const Code, Stg: string; aSymbol: TSymbol; Qty: TLockQtyArr);
+var
+  Value : TDictionary<string, TRequiredItem>;
+  aReqItem  :  TRequiredItem;
+begin
+
+  if not ReservedQty.TryGetValue(Code, Value) then
+  begin
+    Value := TDictionary<string, TRequiredItem>.Create;
+    Value.Add(Stg, TRequiredItem.New(aSymbol, Qty));
+    ReservedQty.Add(Code, Value);
+  end else
+  begin
+    if Value.TryGetValue(Stg, aReqItem) then
+      aReqItem.SetItem(aSymbol, Qty)
+    else
+      Value.Add(Stg, TRequiredItem.New(aSymbol, Qty));
+  end;
+end;
+
+procedure Remove(const Code, Stg: string);
+var
+  Value : TDictionary<string, TRequiredItem>;
+begin
+  if ReservedQty.TryGetValue(Code, Value) then
+    Value.Remove(Stg);
+end;
+
+procedure Remove(const Code: string);
+var
+  Pair: TPair<string, TDictionary<string, TRequiredItem>>;
+  bFind: boolean;
+begin
+
+  bFind := false;
+  for Pair in ReservedQty do
+    if Code = Pair.Key then
+    begin
+      FreeAndNil(Pair.Value);
+      bFind := true;
+    end;
+
+  if bFind then
+    ReservedQty.Remove(Code);
+
+end;
+
+// 인자외에 다른 코드가 있다면 넘겨줌..
+{
+function GetCodes(a: TAutoOrderType; const Code: string; var Outs: TArray<string>): boolean;
+var
+  Pair: TPair<string, TDictionary<string, double>>;
+  i: Integer;
+begin
+  i := 0;
+  SetLength(Outs, i);
+  for Pair in ReservQty[a] do
+    if Code <> Pair.Key then
+    begin
+      inc(i);
+      SetLength(Outs, i);
+      Outs[i-1] := Pair.Key;
+    end;
+end;
+   }
+{ TRequiredItem }
+
+class function TRequiredItem.New(s: TSymbol; q: TLockQtyArr): TRequiredItem;
+begin
+  Result.Symbol := s;
+  Result.LockQty[mtF] := q[mtF];
+  Result.LockQty[mtS] := q[mtS];
+end;
+
+procedure TRequiredItem.SetItem(s: TSymbol; q: TLockQtyArr);
+begin
+  Symbol  := s;
+
+  LockQty[mtF] := q[mtF];
+  LockQty[mtS] := q[mtS];
+end;
+
+initialization
+  Init;
+
+finalization
+  Fin;
+
+end.

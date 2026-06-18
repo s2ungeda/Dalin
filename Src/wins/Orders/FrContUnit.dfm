@@ -1,0 +1,92 @@
+object FrControlUnit: TFrControlUnit
+  Left = 0
+  Top = 0
+  Width = 369
+  Height = 44
+  Margins.Left = 5
+  Margins.Top = 5
+  Margins.Right = 5
+  Margins.Bottom = 5
+  Color = clBtnFace
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -20
+  Font.Name = 'Segoe UI'
+  Font.Style = []
+  ParentBackground = False
+  ParentColor = False
+  ParentFont = False
+  TabOrder = 0
+  PixelsPerInch = 144
+  object edtKip: TEdit
+    Left = 3
+    Top = 3
+    Width = 64
+    Height = 36
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Alignment = taRightJustify
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = clWindowText
+    Font.Height = -20
+    Font.Name = 'Segoe UI'
+    Font.Style = [fsBold]
+    ParentFont = False
+    TabOrder = 0
+    OnKeyPress = edtKipKeyPress
+  end
+  object edtOrderQty: TEdit
+    Left = 70
+    Top = 3
+    Width = 121
+    Height = 36
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Alignment = taRightJustify
+    TabOrder = 1
+    OnKeyPress = edtKipKeyPress
+  end
+  object edtCount: TEdit
+    Left = 193
+    Top = 3
+    Width = 43
+    Height = 36
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Alignment = taRightJustify
+    TabOrder = 2
+    OnKeyPress = edtKipKeyPress
+  end
+  object edtInterval: TEdit
+    Left = 238
+    Top = 3
+    Width = 61
+    Height = 36
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Alignment = taRightJustify
+    TabOrder = 3
+    OnKeyPress = edtKipKeyPress
+  end
+  object ckOn: TCheckBox
+    Left = 303
+    Top = 8
+    Width = 56
+    Height = 24
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = 'On'
+    TabOrder = 4
+    OnClick = ckOnClick
+  end
+end

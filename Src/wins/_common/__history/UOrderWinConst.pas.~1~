@@ -1,0 +1,12 @@
+unit UOrderWinConst;
+
+interface
+
+const
+  kipBalCnt = 4 ;
+  kipBal : array [0..kipBalCnt-1]of string = ('보유수량', '진입가능수량'
+    ,'청산가능수량', '원화한산(천원)');
+
+implementation
+
+end.

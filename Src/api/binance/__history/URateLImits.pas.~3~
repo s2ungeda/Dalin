@@ -1,0 +1,91 @@
+unit URateLImits;
+
+interface
+
+uses
+  System.Classes, System.Generics.Collections
+  ;
+
+type
+  TRateLimit<T> = class
+  private
+    FData : array of T;
+    FName: string;
+    FCount: integer;
+    FLimit: integer;
+    FRear: integer;
+    FFront: integer;
+  public
+    Constructor Create(sName: string; iCount : integer);
+    Destructor Destroy; override;
+
+    procedure Push(const a : T);
+    procedure init;
+
+    function Pop : T;
+    function TotalCount : integer;
+    function IsEmpty : boolean;
+    function IsFull: boolean;
+
+    property Front: integer read FFront;
+    property Rear : integer read FRear;
+
+    property Name : string read FName;
+    property Count: integer read FCount;
+  end;
+
+implementation
+
+
+{ TRateLimit<T> }
+
+function TRateLimit<T>.TotalCount: integer;
+begin
+  Result :=((FRear - FFront + 1) + FCount) mod FCount;
+end;
+
+constructor TRateLimit<T>.Create(sName: string; iCount: integer);
+begin
+  SetLength(FData, iCount);
+  FCount := iCount;
+  FName  := sName;
+
+  init;
+end;
+
+destructor TRateLimit<T>.Destroy;
+begin
+  SetLength(FData, 0);
+  FData := nil;
+  inherited;
+end;
+
+procedure TRateLimit<T>.init;
+begin
+  FRear := 0;
+  FFront:= 0;
+end;
+
+function TRateLimit<T>.IsEmpty: boolean;
+begin
+  Result := FFront = FRear;
+end;
+
+function TRateLimit<T>.IsFull: boolean;
+begin
+  Result := ( FRear + 1 ) mod FCount = FFront;
+end;
+
+function TRateLimit<T>.Pop: T;
+begin
+  FFront := (FFront + 1) mod FCount;
+  Result := FData[FFront];
+end;
+
+procedure TRateLimit<T>.Push(const a: T);
+begin
+  FRear := (FRear + 1) mod FCount;
+  FData[FRear] := a;
+end;
+
+end.

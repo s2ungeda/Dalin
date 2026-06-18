@@ -1,0 +1,193 @@
+object FrmRestMain: TFrmRestMain
+  Left = 0
+  Top = 0
+  Caption = 'REST'
+  ClientHeight = 132
+  ClientWidth = 416
+  Color = clBtnFace
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -17
+  Font.Name = 'Tahoma'
+  Font.Style = []
+  OnClose = FormClose
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  PixelsPerInch = 144
+  TextHeight = 21
+  object m: TMemo
+    Left = 20
+    Top = 474
+    Width = 901
+    Height = 260
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Lines.Strings = (
+      'Memo1')
+    ScrollBars = ssBoth
+    TabOrder = 0
+  end
+  object Button1: TButton
+    Left = 36
+    Top = 336
+    Width = 113
+    Height = 38
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = 'PUSH'
+    TabOrder = 1
+    OnClick = Button1Click
+  end
+  object Button2: TButton
+    Left = 36
+    Top = 384
+    Width = 113
+    Height = 38
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = 'POP'
+    TabOrder = 2
+    OnClick = Button2Click
+  end
+  object Button3: TButton
+    Left = 159
+    Top = 336
+    Width = 113
+    Height = 38
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = 'Button3'
+    TabOrder = 3
+    OnClick = Button3Click
+  end
+  object Button4: TButton
+    Left = 159
+    Top = 384
+    Width = 113
+    Height = 38
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = 'Button4'
+    TabOrder = 4
+    OnClick = Button4Click
+  end
+  object CheckBox1: TCheckBox
+    Left = 282
+    Top = 342
+    Width = 86
+    Height = 26
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = #46041#44592
+    TabOrder = 5
+    Visible = False
+  end
+  object RESTClient1: TRESTClient
+    Params = <>
+    SynchronizedEvents = False
+    Left = 148
+    Top = 516
+  end
+  object BinReq: TRESTRequest
+    Client = RESTClient1
+    Params = <>
+    Response = RESTResponse1
+    SynchronizedEvents = False
+    Left = 196
+    Top = 24
+  end
+  object RESTResponse1: TRESTResponse
+    Left = 148
+    Top = 620
+  end
+  object RESTClient2: TRESTClient
+    Params = <>
+    SynchronizedEvents = False
+    Left = 212
+    Top = 516
+  end
+  object UpbReq: TRESTRequest
+    Client = RESTClient2
+    Params = <>
+    Response = RESTResponse2
+    SynchronizedEvents = False
+    Left = 212
+    Top = 572
+  end
+  object RESTResponse2: TRESTResponse
+    Left = 212
+    Top = 620
+  end
+  object RESTClient3: TRESTClient
+    Params = <>
+    SynchronizedEvents = False
+    Left = 276
+    Top = 524
+  end
+  object BitReq: TRESTRequest
+    Client = RESTClient3
+    Params = <>
+    Response = RESTResponse3
+    SynchronizedEvents = False
+    Left = 276
+    Top = 564
+  end
+  object RESTResponse3: TRESTResponse
+    Left = 276
+    Top = 620
+  end
+  object RESTClient4: TRESTClient
+    Params = <>
+    SynchronizedEvents = False
+    Left = 340
+    Top = 524
+  end
+  object BinSpotReq: TRESTRequest
+    Client = RESTClient4
+    Params = <>
+    Response = RESTResponse4
+    SynchronizedEvents = False
+    Left = 340
+    Top = 564
+  end
+  object RESTResponse4: TRESTResponse
+    Left = 340
+    Top = 620
+  end
+  object RESTClient5: TRESTClient
+    Params = <>
+    SynchronizedEvents = False
+    Left = 520
+    Top = 596
+  end
+  object RESTResponse5: TRESTResponse
+    Left = 532
+    Top = 668
+  end
+  object BinFutCmReq: TRESTRequest
+    Client = RESTClient5
+    Params = <>
+    Response = RESTResponse5
+    SynchronizedEvents = False
+    Left = 532
+    Top = 528
+  end
+  object Timer1: TTimer
+    Enabled = False
+    OnTimer = Timer1Timer
+    Left = 372
+    Top = 288
+  end
+end

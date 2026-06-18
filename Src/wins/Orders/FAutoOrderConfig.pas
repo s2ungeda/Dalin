@@ -1,0 +1,942 @@
+unit FAutoOrderConfig;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
+  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.Mask, Vcl.ExtCtrls,
+  Vcl.ComCtrls, Vcl.Grids,
+
+  UOrderParams, UStorage, UApiTypes, UTypes
+  ;
+
+type
+  TFrmAutoOrderConfig = class(TForm)
+    PageControl1: TPageControl;
+    TabSheet1: TTabSheet;
+    TabSheet2: TTabSheet;
+    ckERPrice: TCheckBox;
+    dlgOpen: TOpenDialog;
+    edtERPrice: TEdit;
+    edtMATerm: TLabeledEdit;
+    gbDelay: TGroupBox;
+    edtSiseDelay: TLabeledEdit;
+    gbExRate: TGroupBox;
+    Label1: TLabel;
+    Label2: TLabel;
+    edtMoveAvgPeriod: TLabeledEdit;
+    edtExDisparity: TLabeledEdit;
+    GroupBox1: TGroupBox;
+    Label5: TLabel;
+    dtLimitStart: TDateTimePicker;
+    dtLimitEnd: TDateTimePicker;
+    ckLimitTime: TCheckBox;
+    GroupBox2: TGroupBox;
+    Label10: TLabel;
+    btnMarginType: TButton;
+    btnLeverage: TButton;
+    cbReduce: TCheckBox;
+    GroupBox3: TGroupBox;
+    Label3: TLabel;
+    Label4: TLabel;
+    edtFutOrdTick: TLabeledEdit;
+    edtSpotOrdTick: TLabeledEdit;
+    GroupBox5: TGroupBox;
+    edtRetryCount: TLabeledEdit;
+    edtRetryInterval: TLabeledEdit;
+    LabeledEdit2: TLabeledEdit;
+    GroupBox6: TGroupBox;
+    edtFillSound: TLabeledEdit;
+    ckNotify: TCheckBox;
+    Button2: TButton;
+    Button4: TButton;
+    GroupBox7: TGroupBox;
+    edtBinSafeQty: TLabeledEdit;
+    edtUpSafeQty: TLabeledEdit;
+    edtBthSafeQty: TLabeledEdit;
+    GroupBox8: TGroupBox;
+    edtBinCnlDelay: TLabeledEdit;
+    edtUpCnlDelay: TLabeledEdit;
+    edtBithCnlDelay: TLabeledEdit;
+    Label6: TLabel;
+    Label7: TLabel;
+    Label9: TLabel;
+    sgUnit: TStringGrid;
+    GroupBox4: TGroupBox;
+    Button3: TButton;
+    Button1: TButton;
+    Button5: TButton;
+    Label11: TLabel;
+    Label12: TLabel;
+    Label13: TLabel;
+    Label14: TLabel;
+    GroupBox9: TGroupBox;
+    edtRjtCnt: TLabeledEdit;
+    edtResumeDelay: TLabeledEdit;
+    Label15: TLabel;
+    cbResumeType: TComboBox;
+    Label16: TLabel;
+    sgQtySize: TStringGrid;
+    Label17: TLabel;
+    sgPrcRate: TStringGrid;
+    GroupBox10: TGroupBox;
+    edtPT: TLabeledEdit;
+    edtET: TLabeledEdit;
+    edtReservedAmt: TLabeledEdit;
+    edtMinKipGap: TLabeledEdit;
+    Label18: TLabel;
+    edtReservedVol: TLabeledEdit;
+    procedure Button2Click(Sender: TObject);
+    procedure Button1Click(Sender: TObject);
+    procedure Button3Click(Sender: TObject);
+    procedure edtExDisparityKeyPress(Sender: TObject; var Key: Char);
+    procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure FormCreate(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+    procedure Button5Click(Sender: TObject);
+    procedure sgUnitMouseUp(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
+    procedure Button4Click(Sender: TObject);
+  private
+    FResult: TPICommonData;
+    { Private declarations }
+    FStorage  : TStorage;
+    FStorageFile : string;
+
+    function CheckCustomUnit(var aResult: TPICommonData) : boolean;
+    procedure initControls;
+
+    procedure SetConfig;
+    procedure SetDefault;
+
+    function  UpdateConfig(var aResult: TPICommonData) : boolean;
+
+    procedure UpdateMATerm(const iTerm: integer);
+    function CheckLotSize(var aResult: TPICommonData): boolean;
+    function CheckPriceRange(var aResult: TPICommonData): boolean;
+    function CheckETPTRange(var aResult: TPICommonData): boolean;
+  public
+    { Public declarations }
+    function Open(sMargin, sLeverage: string): boolean; overload;
+    function Open : boolean; overload;
+
+    procedure SaveEnv;
+    procedure LoadEnv;
+    procedure ShowAOConfig; overload;
+    procedure ShowAOConfig(Sender: TForm;aPoint:TPoint); overload;
+
+    function CheckAutoConfig(var res: integer): boolean; overload;
+    function CheckExRateFilter(bEntry: boolean; var res: integer): boolean;
+    function CheckQuoteDelay(exKind: TExchangeKinds; var res: integer): boolean;
+
+    function GetMajorTradeSymbolUnit(e:TExchangeKind; const sCode: string): double;
+    function GetMajorTradeSymbolLotSize(const sCode: string): double;
+
+
+    property Result : TPICommonData read FResult;
+  end;
+
+var
+  FrmAutoOrderConfig: TFrmAutoOrderConfig;
+
+implementation
+
+uses
+  GApp, GLibs
+  , UApiConsts, UConsts
+  , System.DateUtils
+  ;
+
+{$R *.dfm}
+
+function TFrmAutoOrderConfig.UpdateConfig(var aResult: TPICommonData) : boolean;
+
+  procedure error(aCon: TWinControl; sMsg: string = '');
+  begin
+    ShowMessageAtCursor('입력값이 잘못됨' + sMsg, TMsgDlgType.mtWarning, [mbOK]);
+    aCon.SetFocus; ModalResult := mrNone;
+  end;
+
+begin
+
+  Result := false;
+
+  with aResult do
+  begin
+    STime := dtLimitStart.DateTime;
+    ETime := dtLimitEnd.DateTime;
+    UseLimitTime :=  ckLimitTime.Checked;
+
+    if not TryStrToInt(edtMoveAvgPeriod.Text, ExMAvgPeriod) then begin error(edtMoveAvgPeriod); Exit; end;
+    if not TryStrToFloat(edtExDisparity.Text, ExDisparity) then begin error(edtExDisparity); Exit; end;
+//    if not TryStrToInt(edtSameValue.Text, ExSameValue) then begin error(edtSameValue); Exit; end;
+
+    if not TryStrToInt(edtSiseDelay.Text, QuoteDelay) then begin error(edtSiseDelay); Exit; end;
+//    if not TryStrToInt(edtExDelay.Text, ExDelay) then begin error(edtExDelay); Exit; end;
+
+    if not TryStrToInt(edtFutOrdTick.Text,  FTick) then begin error(edtFutOrdTick); Exit; end;
+    if not TryStrToInt(edtSpotOrdTick.Text, STick) then begin error(edtSpotOrdTick); Exit; end;
+
+    if not TryStrToInt(edtRetryCount.Text, ReTryCount ) then begin error(edtRetryCount); Exit; end;
+    if not TryStrToInt(edtRetryInterval.Text, RetryInterval) then begin error(edtRetryInterval); Exit; end;
+
+    UseFirstOrderFill := ckNotify.Checked ;
+    FillSound         := edtFillSound.Text;
+    UseReduce         := cbReduce.Checked;
+    UseERFilter       := ckERPrice.Checked;
+
+    if UseERFilter then begin
+      if not TryStrToFloat(edtERPrice.Text, ERFilterPrc) then begin error(edtBinSafeQty); Exit; end;
+    end else
+      ERFilterPrc := StrToFloatDef(edtERPrice.Text, 0);
+
+    if not TryStrToInt(edtBinSafeQty.Text, SafeMarginQty[ekBinance] ) then begin error(edtBinSafeQty); Exit; end;
+    if not TryStrToInt(edtUpSafeQty.Text, SafeMarginQty[ekUpbit]) then begin error(edtUpSafeQty); Exit; end;
+    if not TryStrToInt(edtBthSafeQty.Text, SafeMarginQty[ekBithumb]) then begin error(edtBthSafeQty); Exit; end;
+
+    if not TryStrToInt(edtBinCnlDelay.Text, CnlDelay[ekBinance] ) then begin error(edtBinCnlDelay); Exit; end;
+    if not TryStrToInt(edtUpCnlDelay.Text, CnlDelay[ekUpbit]) then begin error(edtUpCnlDelay); Exit; end;
+    if not TryStrToInt(edtBithCnlDelay.Text, CnlDelay[ekBithumb]) then begin error(edtBithCnlDelay); Exit; end;
+
+    if not TryStrToInt(edtMATerm.Text, MATerm) then begin error(edtMATerm); Exit; end;
+    if (MATerm < 5) or (MATerm mod 5 <> 0) then begin error(edtMATerm); Exit; end;
+
+    if not CheckCustomUnit(aResult) then begin error(sgUnit); Exit; end;
+
+    if not TryStrToInt(edtRjtCnt.Text, RjtMaxCnt) then begin error(edtRjtCnt); Exit; end;
+    if not TryStrToInt(edtResumeDelay.Text, ResumeDelay) then begin error(edtResumeDelay); Exit; end;
+    ResumeType  := cbResumeType.ItemIndex;
+
+    if not CheckLotSize(aResult) then begin error(sgQtySize); Exit; end;
+    if not CheckPriceRange(aResult) then begin error(sgPrcRate); Exit; end;
+    //
+    if not TryStrToFloat(edtET.Text, ETRate) then begin error(edtET); Exit; end;
+    if not TryStrToFloat(edtPT.Text, PTRate) then begin error(edtPT); Exit; end;
+    if not TryStrToFloat(edtMinKipGap.Text, MinKipGap) then begin error(edtMinKipGap); Exit; end;
+
+    if not TryStrToInt(edtReservedAmt.Text, ReservedAmt) then begin error(edtReservedAmt); Exit; end;
+    if not TryStrToInt(edtReservedVol.Text, ReservedVol) then begin error(edtReservedVol); Exit; end;
+
+    ReservedAmt := ReservedAmt * 1000;
+
+    if not CheckETPTRange(aResult) then begin
+      error(edtET, 'ET, PT ' + edtMinKipGap.Text + '보다 커야 함' ); Exit;
+    end;
+
+  end;
+
+  Result := true;
+
+  App.SndMngr.SetScound(aResult.FillSound, FIRST_ORDER);
+
+  if aResult.MATerm <> FResult.MATerm then
+    UpdateMATerm(aResult.MATerm);
+
+end;
+
+procedure TFrmAutoOrderConfig.UpdateMATerm(const iTerm: integer);
+begin
+  if App.Engine.SymbolCore.Tethers[ekUpbit] <> nil then
+    App.Engine.SymbolCore.Tethers[ekUpbit].Terms.MATerms.New(iTerm);
+
+  if App.Engine.SymbolCore.Tethers[ekBithumb] <> nil then
+    App.Engine.SymbolCore.Tethers[ekBithumb].Terms.MATerms.New(iTerm);
+end;
+
+procedure TFrmAutoOrderConfig.Button1Click(Sender: TObject);
+var aData:  TPICommonData;
+begin
+  if not UpdateConfig(aData) then Exit;
+
+  FResult.Assign(aData);
+
+  Close;
+
+//  ModalResult := mrOK;
+end;
+
+procedure TFrmAutoOrderConfig.Button2Click(Sender: TObject);
+begin
+  if dlgOpen.Execute then
+    edtFillSound.Text := dlgOpen.FileName;
+end;
+
+procedure TFrmAutoOrderConfig.Button3Click(Sender: TObject);
+begin
+//  ModalResult := mrCancel;
+  Close;
+end;
+
+procedure TFrmAutoOrderConfig.Button4Click(Sender: TObject);
+begin
+   App.SndMngr.PlaySound(edtFillSound.Text);
+end;
+
+// 적용...
+procedure TFrmAutoOrderConfig.Button5Click(Sender: TObject);
+var aData:  TPICommonData;
+begin
+  if UpdateConfig(aData) then
+    FResult.Assign(aData);
+end;
+
+function TFrmAutoOrderConfig.CheckAutoConfig(var res: integer): boolean;
+var
+  tNow : TDateTime;
+  bResult : boolean;
+  dmavg, dPer, dDisp   : double;
+  iPeriod, iDelay3, iDly, iExDly : integer;
+
+  function IsLimitTime( dtStart, dtEnd, dtNow : TDateTime ) : boolean;
+  var
+    s, e, n : TDateTime;
+  begin
+
+    Result := true;
+
+    s := Frac( dtStart ); e := Frac( dtEnd );  n := Frac( dtNow );
+
+    if e < s then
+    begin
+      if ( n >= s) or ( n <= e ) then
+        Result := false;
+    end else
+    begin
+      if (n >= s ) and ( n <= e ) then
+        Result := false;
+    end;
+
+  end;
+
+  procedure ShowNotice(N: integer);
+  begin
+    res := N;
+  end;
+
+begin
+
+  Result := false;
+  tNow   := now;
+
+  if FResult.UseLimitTime then
+    if not IsLimitTime( FResult.STime, FResult.ETime, tNow ) then
+    begin
+      ShowNotice(4);
+      Exit;
+    end;
+
+  // 환이격도.
+  dmavg := App.Engine.ApiManager.ExRate.GetAvgExRate(FResult.ExMAvgPeriod);
+  if CheckZero(dmavg) then
+    Exit
+  else begin
+    dDisp := abs(App.Engine.ApiManager.ExRate.GetExRate - dmavg) / dmavg * 100;
+    if dDisp > FResult.ExDisparity then
+    begin
+//      DoLegginLog(0, Format('환이격도 상승  %.2f ( %.2f|%.2f ) ', [dDisp ,dmavg, App.Engine.ApiManager.ExRate.GetExRate ]) );
+//      DoLog( Format('환이격도 상승  %.2f ( %.2f|%.2f ) ', [dDisp ,dmavg, App.Engine.ApiManager.ExRate.GetExRate ] ), true );
+
+      ShowNotice(1);
+      Exit;
+    end;{ else
+      stNotice.Panels[3].Text := '';}
+  end;
+
+// 환 딜레이 관련 필터 제거...20260421
+
+//  iExDly := App.Engine.ApiManager.ExRate.LastUpdateBetween;
+//  if iExDly > FResult.ExSameValue then
+//  begin
+//    // 일단 보여주기만 한다.
+//    ShowNotice(5);
+////    Exit;
+//  end;
+
+//  iDelay3 := SecondsBetween(now, App.Engine.ApiManager.ExRate.LastTime );
+//
+//  if iDelay3 > FResult.ExDelay then
+//  begin
+//    DoLegginLog(2, Format('환율 딜레이 %d > %d', [iDelay3, iExDly ] ));
+//    DoLog( Format('환율 딜레이 %d > %d', [iDelay3, iExDly ] ), true);
+
+//    환 딜레이 제거
+//    ShowNotice(3);
+//    Exit;
+//  end;
+//  gbDelay.Color  := panel1.Color;
+//  InitLogFlag(2);
+//  if stNotice.Tag > 0 then
+
+//  if iExDly <= FResult.ExSameValue then
+//    ShowNotice(0);
+
+  Result := true;
+
+end;
+
+function TFrmAutoOrderConfig.CheckCustomUnit(var aResult: TPICommonData) : boolean;
+var
+  i, j : integer;
+begin
+  Result := false;
+
+  with sgUnit, aResult do
+    for I := 1 to Colcount-1 do
+      for j := 1 to RowCount-1 do
+        if not TryStrToFloat(Cells[i, j], CustomUnit[TExchangeKind(i-1), TMajorTradeSymbol(j-1)] ) then
+          Exit;
+
+  Result := true;
+end;
+
+function TFrmAutoOrderConfig.CheckLotSize(var aResult: TPICommonData) : boolean;
+var
+  j : integer;
+begin
+  Result := false;
+
+  with sgQtySize, aResult do
+      for j := 1 to RowCount-1 do
+        if not TryStrToFloat(Cells[1, j], LotSize[ TMajorTradeSymbol(j-1)] ) then
+          Exit;
+
+  Result := true;
+end;
+
+
+function TFrmAutoOrderConfig.CheckPriceRange(
+  var aResult: TPICommonData): boolean;
+var
+  j : integer;
+begin
+  Result := false;
+
+  with sgPrcRate, aResult do
+      for j := 1 to RowCount-1 do
+        if not TryStrToFloat(Cells[1, j], PriceRangePer[TSymbolCountryType(j-1)] ) then
+          Exit;
+
+  Result := true;
+end;
+
+function TFrmAutoOrderConfig.CheckETPTRange(
+  var aResult: TPICommonData): boolean;
+begin
+  Result := false;
+
+  if (aResult.ETRate < aResult.MinKipGap) or (aResult.PTRate < aResult.MinKipGap) then
+    Exit;
+
+  Result := true;
+end;
+
+function TFrmAutoOrderConfig.CheckExRateFilter(bEntry: boolean;
+  var res: integer): boolean;
+begin
+  // 진입은 이상일때, 청산은 이하일때
+
+  Result := false;
+  if FResult.UseERFilter then
+    if bEntry then begin
+      if App.Engine.ApiManager.ExRate.GetExRate < FResult.ERFilterPrc then
+      begin
+        res := 6;
+        Exit;
+      end;
+    end else
+      if App.Engine.ApiManager.ExRate.GetExRate > FResult.ERFilterPrc then
+      begin
+        res := 6;
+        Exit;
+      end;
+
+  Result := true;
+end;
+
+function TFrmAutoOrderConfig.CheckQuoteDelay(exKind: TExchangeKinds;
+  var res: integer): boolean;
+var
+  ex : TExchangeKind;
+  iDelay: Integer;
+begin
+
+
+  Result := true;
+  for ex in exKind do
+  begin
+    iDelay := 0;
+    if ex = ekBinance then
+      iDelay := App.Engine.ApiManager.ExManagers[ex].QuoteSock[1].DelaySec
+    else
+      iDelay := App.Engine.ApiManager.ExManagers[ex].QuoteSock[0].DelaySec;
+
+    if iDelay > FResult.QuoteDelay then
+    begin
+      res   := 2;
+      Result := false;
+      break;
+    end;
+  end;
+
+end;
+
+procedure TFrmAutoOrderConfig.edtExDisparityKeyPress(Sender: TObject;
+  var Key: Char);
+begin
+  if not (CharInSet(Key , ['0'..'9','.',#8])) then
+    Key := #0;
+end;
+
+
+procedure TFrmAutoOrderConfig.FormClose(Sender: TObject;
+  var Action: TCloseAction);
+begin
+  Action := caHide;
+end;
+
+procedure TFrmAutoOrderConfig.FormCreate(Sender: TObject);
+begin
+
+  initControls;
+
+  SetDefault;
+  FStorage  := TStorage.Create;
+  FStorageFile  := ComposeFilePath([App.DataDir, 'AOC.lsg']);
+  LoadEnv;
+  SetConfig;
+end;
+
+procedure TFrmAutoOrderConfig.FormDestroy(Sender: TObject);
+begin
+  FStorage.Free;
+end;
+
+function TFrmAutoOrderConfig.GetMajorTradeSymbolLotSize(
+  const sCode: string): double;
+var
+  I: TMajorTradeSymbol;
+begin
+  Result := -1;
+
+  for I := tsBTC to High(TMajorTradeSymbol) do
+    if TMajorTradeSymbolCode[i] = sCode then
+    begin
+      Result := FResult.LotSize[i];
+      break;
+    end;
+end;
+
+function TFrmAutoOrderConfig.GetMajorTradeSymbolUnit(e:TExchangeKind;
+  const sCode: string): double;
+var
+  I: TMajorTradeSymbol;
+begin
+  Result := -1;
+
+  for I := tsBTC to High(TMajorTradeSymbol) do
+    if TMajorTradeSymbolCode[i] = sCode then
+    begin
+      Result := FResult.CustomUnit[e, i];
+      break;
+    end;
+
+end;
+
+procedure TFrmAutoOrderConfig.initControls;
+var
+  i : TMajorTradeSymbol;
+begin
+  with sgUnit do
+  begin
+    Cells[0, 0] := '호가단위';
+
+    for I := tsBTC to High(TMajorTradeSymbolCode) do
+      Cells[0, integer(i)+1] := TMajorTradeSymbolCode[i];
+
+    Cells[1, 0] := '바이낸스';
+    Cells[2, 0] := '업비트';
+    Cells[3, 0] := '빗썸';
+  end;
+
+  with sgQtySize do
+  begin
+    Cells[0, 0] := '수량단위';
+    for I := tsBTC to High(TMajorTradeSymbolCode) do
+      Cells[0, integer(i)+1] := TMajorTradeSymbolCode[i];
+
+    Cells[1, 0] := '수량증가단위';
+  end;
+
+  with sgPrcRate do
+  begin
+    Cells[0, 0] := '구분';
+    Cells[1, 0] := '범위(%)';
+
+    Cells[0, 1] := '국내';
+    Cells[0, 2] := '해외';
+  end;
+end;
+
+procedure TFrmAutoOrderConfig.LoadEnv;
+var
+  sTmp:string;
+begin
+
+  with FStorage, FResult do
+  begin
+
+    if not Load(FStorageFile) then Exit;
+    First;
+
+    STime := TDateTime(FieldByName('STime').AsFloat);
+    ETime := TDateTime(FieldByName('ETime').AsFloat);
+    UseLImitTime:= FieldByName('UseLimitTime').AsBooleanDef(false);
+
+    ExMAvgPeriod:= FieldByName('ExMAvgPeriod').AsIntegerDef(15);
+    ExDisparity := FieldByName('ExDisparity').AsFloat;
+//    ExSameValue := FieldByName('ExSameValue').AsIntegerDef(300);
+
+    QuoteDelay  := FieldByName('QuoerDelay').AsIntegerDef(3);
+//    ExDelay     := FieldByName('ExDelay').AsIntegerDef(60);
+
+    STick       := FieldByName('STick').AsIntegerDef(30);
+    FTick       := FieldByName('FTick').AsIntegerDef(30);
+    ReTryCount  := FieldByName('ReTryCount').AsIntegerDef(3);   // 주문실패시 재주문 횟수
+    ReTryInterval:= FieldByName('ReTryInterval').AsIntegerDef(200);  // 주문실패시 재주문 인터벌(ms)
+
+    UseFirstOrderFill := FieldByName('UseFirstOrderFill').AsBooleanDef(false);
+    FillSound := FieldByName('FillSound').AsString;
+
+    UseReduce := FieldByName('UseReduce').AsBoolean;
+
+    SafeMarginQty[ekBinance]  := FieldByName('SafeMarginQty_1').AsInteger;
+    SafeMarginQty[ekUpbit]    := FieldByName('SafeMarginQty_2').AsInteger;
+    SafeMarginQty[ekBithumb]  := FieldByName('SafeMarginQty_3').AsInteger;
+
+    CnlDelay[ekBinance]  := FieldByName('CnlDelay_1').AsIntegerDef(10);
+    CnlDelay[ekUpbit]    := FieldByName('CnlDelay_2').AsIntegerDef(10);
+    CnlDelay[ekBithumb]  := FieldByName('CnlDelay_3').AsIntegerDef(100);
+
+    MATerm  := FieldByName('MATerm').AsIntegerDef(60);
+
+    for var e := ekBinance to High(TExchangeKind) do
+      for var t := tsBTC to High(TMajorTradeSymbol) do
+      begin
+        sTmp  := Format('CustomUnit_%d_%d', [ integer(e), integer(t)] );
+        CustomUnit[e, t] := StrToFloatDef(
+          FieldByName(sTmp).AsStringDef(sgUnit.Cells[integer(e)+1, integer(t)+1]),
+          CustomUnit[e, t]
+        );
+      end;
+
+    for var t := tsBTC to High(TMajorTradeSymbol) do
+    begin
+      sTmp  := Format('LotSize_%d', [integer(t)] );
+      LotSize[t] := StrToFloatDef(FieldByName(sTmp).AsStringDef(
+        sgQtySize.Cells[1, integer(t)+1]),  LotSize[t]
+      );
+    end;
+
+    RjtMaxCnt   := FieldByName('RjtMaxCnt').AsIntegerDef(10);
+    ResumeDelay := FieldByName('ResumeDelay').AsIntegerDef(2);
+    ResumeType  := FieldByName('ResumeType').AsIntegerDef(0);
+
+    PriceRangePer[scDomes]  := StrToFloatDef(FieldByName('PriceRangePer_Domes').AsStringDef('0.1'), 0.1);
+    PriceRangePer[scInter]  := StrToFloatDef(FieldByName('PriceRangePer_Inter').AsStringDef('0.01'), 0.01);
+
+    ETRate  := FieldByName('ETRate').AsStringDef('1').ToDouble;
+    PTRate  := FieldByName('PTRate').AsStringDef('1').ToDouble;
+
+    ReservedAmt := FieldByName('ReservedAmt').AsInteger;
+    ReservedVol := FieldByName('ReservedVol').AsInteger;
+
+    MinKipGap := FieldByName('MinKipGap').AsStringDef('0.5').ToDouble;
+
+    UpdateMATerm(MATerm);
+  end;
+end;
+
+function TFrmAutoOrderConfig.Open: boolean;
+begin
+  Result := (ShowModal = mrOK);
+end;
+
+function TFrmAutoOrderConfig.Open(sMargin, sLeverage: string): boolean;
+begin
+  btnMarginType.Caption := sMargin;
+  btnLeverage.Caption   := sLeverage;
+
+//  Result := (ShowModal = mrOK);
+end;
+
+procedure TFrmAutoOrderConfig.SaveEnv;
+var
+  sTmp: string;   i, j: Integer;
+begin
+  with FStorage, FResult do
+  begin
+    Clear;
+
+    New;
+
+    FieldByName('STime').AsFloat  := sTime;
+    FieldByName('ETime').AsFloat  := ETime;
+    FieldByName('UseLimitTime').AsBoolean := UseLImitTime;
+
+    FieldByName('ExMAvgPeriod').AsInteger := ExMAvgPeriod;
+    FieldByName('ExDisparity').AsFloat    := ExDisparity;
+//    FieldByName('ExSameValue').AsInteger  := ExSameValue;
+
+    FieldByName('QuoerDelay').AsInteger   := QuoteDelay;
+//    FieldByName('ExDelay').AsInteger      := ExDelay;
+
+    FieldByName('STick').AsInteger      := STick;
+    FieldByName('FTick').AsInteger      := FTick;
+    FieldByName('ReTryCount').AsInteger := ReTryCount;
+    FieldByName('ReTryInterval').AsInteger  := ReTryInterval;
+
+    FieldByName('UseFirstOrderFill').AsBoolean  := UseFirstOrderFill;
+    FieldByName('FillSound').AsString := FillSound;
+
+    FieldByName('UseReduce').AsBoolean  := UseReduce;
+
+    FieldByName('SafeMarginQty_1').AsInteger  := SafeMarginQty[ekBinance];
+    FieldByName('SafeMarginQty_2').AsInteger  := SafeMarginQty[ekUpbit];
+    FieldByName('SafeMarginQty_3').AsInteger  := SafeMarginQty[ekBithumb];
+
+    FieldByName('CnlDelay_1').AsInteger       := CnlDelay[ekBinance];
+    FieldByName('CnlDelay_2').AsInteger       := CnlDelay[ekUpbit];
+    FieldByName('CnlDelay_3').AsInteger       := CnlDelay[ekBithumb];
+
+    FieldByName('MATerm').AsInteger := MATerm;
+
+    with sgUnit do
+      for i := 1 to ColCount-1 do
+        for j := 1 to RowCount-1 do
+        begin
+          sTmp  := Format('CustomUnit_%d_%d', [i-1, j-1] );
+          FieldByName(sTmp).AsString := CustomUnit[TExchangeKind(i-1), TMajorTradeSymbol(j-1)].ToString;
+        end;
+
+
+    with sgQtySize do
+        for j := 1 to RowCount-1 do
+        begin
+          sTmp  := Format('LotSize_%d', [j-1] );
+          FieldByName(sTmp).AsString := LotSize[TMajorTradeSymbol(j-1)].ToString;
+        end;
+
+    FieldByName('RjtMaxCnt').AsInteger       := RjtMaxCnt;
+    FieldByName('ResumeDelay').AsInteger     := ResumeDelay;
+    FieldByName('ResumeType').AsInteger      := ResumeType;
+
+    FieldByName('PriceRangePer_Domes').AsString := PriceRangePer[scDomes].ToString;
+    FieldByName('PriceRangePer_Inter').AsString := PriceRangePer[scInter].ToString;
+
+    FieldByName('ETRate').AsString  := ETRate.ToString;
+    FieldByName('PTRate').AsString  := PTRate.ToString;
+
+    FieldByName('ReservedAmt').AsInteger  := ReservedAmt;
+    FieldByName('ReservedVol').AsInteger  := ReservedVol;
+
+    FieldByName('MinKipGap').AsString  := MinKipGap.ToString;
+
+    Save(FStorageFile);
+  end;
+
+end;
+
+procedure TFrmAutoOrderConfig.SetConfig;
+var i, j : integer;
+begin
+  with FResult do
+  begin
+    dtLimitStart.DateTime := STime;
+    dtLimitEnd.DateTime   := ETime;
+    ckLimitTime.Checked   := UseLimitTime;
+
+    edtMoveAvgPeriod.Text := ExMAvgPeriod.ToString;
+    edtExDisparity.Text   := ExDisparity.ToString;
+
+    edtSiseDelay.Text     := QuoteDelay.ToString;
+//    edtExDelay.Text       := ExDelay.ToString;
+//    edtSameValue.Text     := ExSameValue.ToString;
+
+    edtFutOrdTick.Text    := FTick.ToString;
+    edtSpotOrdTick.Text   := STick.ToString;
+
+    edtRetryCount.Text    := ReTryCount.ToString;
+    edtRetryInterval.Text := RetryInterval.ToString;
+
+    ckNotify.Checked      := UseFirstOrderFill;
+    edtFillSound.Text     := FillSound;
+
+    cbReduce.Checked      := UseReduce;
+
+    edtBinSafeQty.Text    := SafeMarginQty[ekBinance].ToString;
+    edtUpSafeQty.Text     := SafeMarginQty[ekUpbit].ToString;
+    edtBthSafeQty.Text    := SafeMarginQty[ekBithumb].ToString;
+
+    edtBinCnlDelay.Text   := CnlDelay[ekBinance].ToString;
+    edtUpCnlDelay.Text    := CnlDelay[ekUpbit].ToString;
+    edtBithCnlDelay.Text  := CnlDelay[ekBithumb].ToString;
+
+//    btnMarginType.Caption := sMargin;
+//    btnLeverage.Caption	  := sLeverage;
+
+    edtMATerm.Text        := MATerm.ToString;
+
+    ckERPrice.Checked     := UseERFilter;
+    edtERPrice.Text       := Format('%.2f', [ERFilterPrc]);
+
+    with sgUnit do
+      for I := 1 to Colcount-1 do
+        for j := 1 to RowCount-1 do
+          Cells[i, j] := CustomUnit[TExchangeKind(i-1), TMajorTradeSymbol(j-1)].ToString;
+
+    edtRjtCnt.Text        := RjtMaxCnt.ToString;
+    edtResumeDelay.Text   := ResumeDelay.ToString;
+    cbResumeType.ItemIndex:= ResumeType;
+
+    with sgQtySize do
+      for I := 1 to RowCount-1 do
+         Cells[1, i] := LotSize[TMajorTradeSymbol(i-1)].ToString;
+
+    with sgPrcRate do
+    begin
+      Cells[1, 1] := PriceRangePer[scDomes].ToString;
+      Cells[1, 2] := PriceRangePer[scInter].ToString;
+    end;
+
+    edtET.Text  := ETRate.ToString;
+    edtPT.Text  := PTRate.ToString;
+    edtReservedAmt.Text := (ReservedAmt div 1000).ToString;
+    edtReservedVol.Text := ReservedVol.ToString;
+
+    edtMinKipGap.Text := MinKipGap.toString;
+  end;
+end;
+
+procedure TFrmAutoOrderConfig.SetDefault;
+begin
+  with FResult do
+  begin
+
+    STime := EncodeTime(5, 0, 0, 0);
+    ETime := EncodeTime(7, 0, 0, 0);
+    UseLImitTime:= false;
+
+    ExMAvgPeriod:= 15;
+    ExDisparity := 1;
+//    ExSameValue := 300;
+
+    QuoteDelay  := 3;
+//    ExDelay     := 60;
+
+    STick       := 100;
+    FTick       := 800;
+    ReTryCount  := 10;   // 주문실패시 재주문 횟수
+    ReTryInterval:= 6000;  // 주문실패시 재주문 인터벌(ms)
+
+    UseFirstOrderFill := true;
+    FillSound := '';
+
+    UseReduce := false;
+
+    SafeMarginQty[ekBinance]  := 0;
+    SafeMarginQty[ekUpbit]  := 0;
+    SafeMarginQty[ekBithumb]  := 0;
+
+    CnlDelay[ekBinance] := 10;
+    CnlDelay[ekUpbit]   := 10;
+    CnlDelay[ekBithumb] := 100;
+
+    CustomUnit[ekBinance, tsBTC]  := 2;
+    CustomUnit[ekBinance, tsETH]  := 0.1;
+    CustomUnit[ekBinance, tsXRP]  := 0.0001;
+    CustomUnit[ekBinance, tsADA]  := 0.01;
+
+    CustomUnit[ekUpbit, tsBTC]  := 20000;
+    CustomUnit[ekUpbit, tsETH]  := 1000;
+    CustomUnit[ekUpbit, tsXRP]  := 1;
+    CustomUnit[ekUpbit, tsADA]  := 100;
+
+    CustomUnit[ekBithumb, tsBTC]  := 20000;
+    CustomUnit[ekBithumb, tsETH]  := 1000;
+    CustomUnit[ekBithumb, tsXRP]  := 1;
+    CustomUnit[ekBithumb, tsADA]  := 100;
+
+    MATerm  := 60;
+
+    LotSize[tsBTC]  :=  0.005;
+    LotSize[tsETH]  :=  0.01;
+    LotSize[tsXRP]  :=  200;
+    LotSize[tsADA]  :=  2;
+
+    ResumeDelay := 2;
+    ResumeType  := 1;  // 자동
+    RjtMaxCnt   := 10; // 연속거부최대 횟수
+
+    PriceRangePer[scDomes]  := 0.1;
+    PriceRangePer[scInter]  := 0.01;
+
+    ETRate  := 1;
+    PTRate  := 1;
+
+    ReservedAmt := 0;
+    ReservedVol := 0;
+
+    MinKipGap := 0.5;
+  end;
+end;
+
+procedure TFrmAutoOrderConfig.sgUnitMouseUp(Sender: TObject;
+  Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+  var
+    aCol, aRow : integer;
+begin
+  TStringGrid(Sender).MouseToCell( X, Y, aCol, aRow);
+
+  with TStringGrid(Sender) do
+    if  ( aRow > 0 ) and ( aCol > 0 ) then
+    begin
+      Options     := Options + [ goEditing ];
+      EditorMode  := true;
+    end else begin
+      EditorMode  := true;
+      Options     := Options - [ goEditing ];
+    end;
+
+end;
+
+procedure TFrmAutoOrderConfig.ShowAOConfig(Sender: TForm; aPoint: TPoint);
+//var
+//  CenterX,  CenterY: integer;
+begin
+  SetConfig;
+
+  ShowFormAtCursor(Self);
+
+//  CenterX := Sender.Left + (Sender.Width div 2);
+//  CenterY := Sender.Top + (Sender.Height div 2);
+//
+//  Left := CenterX - (Width div 2);
+//  Top  := CenterY - (Height div 2);
+//
+//  Show;
+end;
+
+procedure TFrmAutoOrderConfig.ShowAOConfig;
+var
+  aPoint: TPoint;
+begin
+  SetConfig;
+
+  GetCursorPos(aPoint);
+  Left  := aPoint.X + 10;
+  Top   := aPoint.Y;
+
+  Show;
+end;
+
+end.

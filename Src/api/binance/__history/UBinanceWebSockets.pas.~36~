@@ -1,0 +1,414 @@
+unit UBinanceWebSockets;
+interface
+uses
+  System.Classes, System.SysUtils, System.DateUtils
+  , UWebSockets, USymbols
+  , UApiTypes
+  , UQuoteTimers
+  , sgcWebSocket_Classes
+  ;
+type
+  TBinanceWebSocket = class( TWebSocket )
+  private
+    FUnSubList: TStrings;
+    FSubIndex: integer;
+    FTimer   : TQuoteTimer;
+    FSendList: TStrings;
+
+    procedure wsConnect(Connection: TsgcWSConnection); override;
+    procedure wsBeforeWatchDog(Sender: TObject; var Handled: Boolean);
+
+    procedure SubScribe( aSymbol : TSymbol; bSub : boolean ) ; overload;
+
+    procedure OnMessage( const S : string );
+    procedure MakeSubList( var aList : TStrings ); overload;
+    function MakeSubString: string;
+
+    procedure OnSubTimer( Sender : TObject );
+    procedure AddSendData( aData : string );
+    procedure DelSendData( aData : string );
+    procedure AddSubList(var aList: TStrings; const sCode: string);
+  public
+    Constructor Create( iSockDiv, iSeq : Integer; aExApiType : TExchangeApiType; bPublic: boolean = false); overload;
+    destructor Destroy; override;
+
+    procedure SubScribe( aSymbol : TSymbol ) ; overload;
+    procedure UnSubScribe( aSymbol : TSymbol ) ;
+    procedure SubscribeAll; override;
+    procedure UnSubScribeAll;
+
+    procedure StopSendTimer;
+
+    procedure AllMarketTicker( bSub : boolean );
+    procedure AllMarketMiniTicker( bSub : boolean );
+
+    property UnSubList  : TStrings  read FUnSubList;
+    property SubIndex : integer   read FSubIndex;
+    property Descript : string    read GetDescript;
+
+  end;
+implementation
+uses
+  GApp , GLibs   , UTypes
+  , UApiConsts
+  , UBinanceParse
+  , UBinanceFutures
+  ;
+{ TBinanceWebSocket }
+
+// 조회로 전환 하므로..주석
+procedure TBinanceWebSocket.AllMarketMiniTicker(bSub: boolean);
+var
+  sTmp, sData : string;
+begin
+
+  sTmp := ifThenStr( bSub,'SUBSCRIBE', 'UNSUBSCRIBE');
+  inc(FSubIndex);
+  sData := Format('{"method": "%s","params":["%s"],"id": %d}',
+          [ sTmp, '!miniTicker@arr',FSubIndex ] );
+//  sData := Format('{"method": "%s","params":["%s"],"id": %d}',  [ sTmp, '!ticker@arr',FSubIndex ] );
+  SendData(sData);
+
+end;
+
+procedure TBinanceWebSocket.AllMarketTicker( bSub : boolean );
+var
+  sTmp, sData : string;
+begin
+
+  if (ExApiType = eaFutUsdt) and PublicSock then Exit;
+  // Market 소켓만..구독.
+
+  sTmp := ifThenStr( bSub,'SUBSCRIBE', 'UNSUBSCRIBE');
+  inc(FSubIndex);
+
+  if ExApiType = eaFutUsdt then
+    sData := Format('{"method": "%s","params":["%s","%s","%s"],"id": %d}',
+          [ sTmp, '!ticker@arr', '!markPrice@arr@1s','!assetIndex@arr',FSubIndex ] )
+  else
+    sData := Format('{"method": "%s","params":["%s"],"id": %d}',  [ sTmp, '!ticker@arr',FSubIndex ] );
+
+  SendData(sData);
+  // markprice 추가
+//  inc(FSubIndex);
+//  sData := Format('{"method": "%s","params":["%s"],"id": %d}', [ sTmp, '!markPrice@arr@1s', FSubIndex ] );
+//  SendData(sData);
+end;
+
+
+constructor TBinanceWebSocket.Create(iSockDiv, iSeq: Integer; aExApiType : TExchangeApiType; bPublic: boolean);
+begin
+  inherited Create( iSockDiv, iSeq, ekBinance, aExApiType, bPublic );
+
+  FUnSubList  := TStringList.Create;
+  FSubIndex   := 0;
+  OnNotify    := OnMessage;
+
+  FSendList:= TStringList.Create;
+
+//  with WebSocket do
+//  begin
+//    HeartBeat.Enabled := true;
+//    HeartBeat.Interval:= 20;
+//  end;
+
+  if not bPublic then
+  begin
+    WebSocket.LogFile.Enabled := true;
+    WebSocket.LogFile.FileName  := App.LogDir + '\'+ iSeq.ToString + '_ws_bin.log';
+  end;
+
+  FTimer  := App.Engine.QuoteBroker.Timers.New;
+  FTimer.Interval := 1000;
+  FTimer.OnTimer  := OnSubTimer;
+
+  WebSocket.OnBeforeWatchDog := wsBeforeWatchDog;
+end;
+
+procedure TBinanceWebSocket.AddSendData(aData: string);
+begin
+  FSendList.Add( aData );
+end;
+
+
+procedure TBinanceWebSocket.DelSendData(aData: string);
+begin
+
+end;
+
+destructor TBinanceWebSocket.Destroy;
+begin
+  FSendList.Free;
+  FUnSubList.Free;
+  inherited;
+end;
+
+procedure TBinanceWebSocket.MakeSubList( var aList : TStrings );
+var
+  sParam, sData : string;
+  k : Integer;
+begin
+  sParam := '';
+
+  for k := 0 to aList.Count-1 do
+  begin
+    sParam := sParam + Format('"%s"', [aList[k]]);
+    if k < aList.Count-1  then
+      sParam := sParam + ','
+  end;
+
+  aList.Clear;
+  inc(FSubIndex);
+  sData := Format('{"method": "SUBSCRIBE","params":[%s],"id": %d}', [ sParam, FSubIndex ] );
+  SubList.Add(sData);
+end;
+
+
+//procedure TBinanceWebSocket.SubscribeAll;
+//var
+//  i : integer;
+//begin
+//  for I := 0 to SubList.Count-1 do begin
+//    SendData( SubList[i] );
+//    sleep(500);
+//  end;
+//
+//end;
+
+
+
+
+{
+//  Spot
+//  @bookTicker  : best bid and ask , realtime
+//  @trade       : tick , real time
+//  @miniTicker  : 24hour rolling OHLC, 1sec
+//  Future
+//  @depth5      : Top bids and asks, Valid are 5,  250ms
+//  @aggTrade    : Aggregate Trade , 100ms
+//  @miniTicker  : 24hour rolling OHLC, 500ms
+}
+
+procedure TBinanceWebSocket.AddSubList(var aList: TStrings; const sCode: string);
+begin
+  if MarketType = mtSpot then
+  begin
+    aList.Add( sCode +'@bookTicker' );    // best bid, ask
+    aList.Add( sCode +'@trade' );
+    aList.Add( sCode +'@miniTicker' );    // OHLC
+  end else
+  if MarketType = mtFutures then
+  begin
+    if ExApiType = eaFutCoin then begin
+      aList.Add( sCode +'@depth20');
+      aList.Add( sCode +'@aggTrade');
+      aList.Add( sCode +'@markPrice@1s' );
+    end else
+      if PublicSock then
+        aList.Add( sCode +'@depth20')
+      else
+        aList.Add( sCode +'@aggTrade');
+  end;
+end;
+
+procedure TBinanceWebSocket.SubScribe( aSymbol : TSymbol; bSub : boolean );
+var
+  I: Integer;
+  sData, sParam, sTmp : string;
+  aList : TStrings;
+begin
+  aList := TStringList.Create;
+  try
+    AddSubList(aList, aSymbol.OrgCode);
+
+    if MarketType = mtSpot then
+    begin
+      aList.Add( aSymbol.OrgCode +'@bookTicker' );    // best bid, ask
+      aList.Add( aSymbol.OrgCode +'@trade' );
+      aList.Add( aSymbol.OrgCode +'@miniTicker' );    // OHLC
+    end else
+    if MarketType = mtFutures then
+    begin
+
+      if ExApiType = eaFutCoin then begin
+        aList.Add( aSymbol.OrgCode +'@depth20');
+        aList.Add( aSymbol.OrgCode +'@aggTrade');
+        aList.Add( aSymbol.OrgCode+'@markPrice@1s' );
+      end else
+        if PublicSock then
+          aList.Add( aSymbol.OrgCode +'@depth20')
+        else
+          aList.Add( aSymbol.OrgCode +'@aggTrade');
+
+    end else
+      Exit;
+
+    sParam := '';
+    for I := 0 to aList.Count-1 do
+    begin
+      sParam := sParam + Format('"%s"', [aList[i]]);
+      if i < aList.Count-1  then
+        sParam := sParam + ','
+    end;
+
+    sTmp := ifThenStr( bSub,'SUBSCRIBE', 'UNSUBSCRIBE');
+    inc(FSubIndex);
+    sData := Format('{"method": "%s","params":[%s],"id": %d}', [ sTmp, sParam, FSubIndex ] );
+
+    if FTimer.Enabled then
+      AddSendData( sData )
+    else
+      SendData(sData);
+
+  finally
+    aList.Free;
+  end;
+end;
+
+procedure TBinanceWebSocket.StopSendTimer;
+begin
+  FTimer.Enabled := false;
+end;
+
+procedure TBinanceWebSocket.SubScribe(aSymbol: TSymbol);
+begin
+  if SubList.IndexOf(aSymbol.OrgCode) < 0 then
+    SubList.Add(aSymbol.OrgCode);
+
+  if App.AppStatus <> asShow then Exit;
+
+  SubScribe( aSymbol, true );
+end;
+
+procedure TBinanceWebSocket.UnSubScribe(aSymbol: TSymbol);
+var
+  i : integer;
+  aList : TStrings;
+  sParam, sData : string;
+begin
+  i := SubList.IndexOf(aSymbol.OrgCode) ;
+  if i >= 0 then SubList.Delete(i);
+
+  SubScribe( aSymbol, false );
+end;
+
+function TBinanceWebSocket.MakeSubString : string;
+var
+  aList : TStrings;
+  I: Integer;
+begin
+  aList := TStringList.Create;
+  try
+    Result := '';
+    if SubList.Count <= 0 then Exit;
+
+    for I := 0 to SubList.Count-1 do
+      AddSubList(aList, SubList[i]);
+
+    for I := 0 to aList.Count-1 do
+    begin
+      Result := Result + Format('"%s"', [aList[i]]);
+      if i < aList.Count-1  then
+        Result := Result + ','
+    end;
+
+  finally
+    aList.Free;
+  end;
+end;
+
+procedure TBinanceWebSocket.SubscribeAll;
+var
+  sParam, sData : string;
+begin
+  sParam := MakeSubString;
+  if sParam <> '' then
+  begin
+    inc(FSubIndex);
+    sData := Format('{"method": "SUBSCRIBE","params":[%s],"id": %d}', [ sParam, FSubIndex ] );
+    SendData(sData);
+  end;
+
+  if MarketType = mtFutures then
+	  AllMarketTicker(true)
+  else if MarketType = mtSpot  then
+    AllMarketMiniTicker(true);
+
+  FTimer.Enabled := true;  		
+
+end;
+
+procedure TBinanceWebSocket.UnSubScribeAll;
+var
+  sParam, sData : string;
+begin
+  sParam := MakeSubString;
+  if sParam <> '' then
+  begin
+    inc(FSubIndex);
+    sData := Format('{"method": "UNSUBSCRIBE","params":[%s],"id": %d}', [ sParam, FSubIndex ] );
+    SendData(sData);
+  end;
+  //  바이낸스는..추가로 구독취소 --> 조회로 전환
+  if MarketType = mtFutures then
+	  AllMarketTicker(false)
+  else if MarketType = mtSpot  then
+    AllMarketMiniTicker(false);
+end;
+
+
+procedure TBinanceWebSocket.wsBeforeWatchDog(Sender: TObject;
+  var Handled: Boolean);
+begin
+  //
+  //App.Log(llInfo, 'binance %s trade reconnect ', [ SockDiv ]);// , sKey]  );
+end;
+
+procedure TBinanceWebSocket.wsConnect(Connection: TsgcWSConnection);
+begin
+
+  inherited wsConnect(Connection);
+  App.Log(llInfo, '%s(%d.th) WS Connected', [ Descript, ConnectTry ]);
+
+  if ( ConnectTry > 1 ) and  ( GetSockState = 'Open' ) then
+  begin
+    // quote 일때..
+    if SockDiv = TRADE_SOCK then begin
+      //sKey := (App.Engine.ApiManager.ExManagers[ekBinance].Exchanges[aMarket] as TBinanceFutures).RequestListenKey( true );
+      App.Log(llInfo, 'binance %s trade reconnect ', [ TExApiTypeDesc[ExApiType] ]);// , sKey]  );
+    end
+    else
+      SubscribeAll;
+  end;
+end;
+
+//procedure TBinanceWebSocket.OnAfterDisconnect(Sender: TObject);
+//begin
+//  //inherited;
+//  App.Log(llInfo, ' %s Disconnected %d %s', [ Descript , integer(WebSocket.State),
+//    WebSocket.CloseStatusDescription ]);
+//
+//end;
+
+
+
+procedure TBinanceWebSocket.OnMessage(const S: string);
+begin
+  //if ExApiType= eaFutCoin then
+    gBinReceiver.ParseSocketData(ExApiType, S);
+end;
+
+
+procedure TBinanceWebSocket.OnSubTimer(Sender: TObject);
+var
+  sTmp : string;
+begin
+  if FSendList.Count <= 0 then Exit;
+
+  sTmp := FSendList[0];
+  FSendList.Delete(0);
+  SendData( sTmp );
+
+end;
+
+end.

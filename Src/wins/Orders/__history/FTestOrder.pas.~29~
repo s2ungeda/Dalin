@@ -1,0 +1,476 @@
+unit FTestOrder;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
+  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.ExtCtrls, Vcl.StdCtrls
+
+  , USymbols, UAccounts, UOrders
+  , UDistributor, UStorage
+  , UApiTypes, Vcl.ComCtrls
+  ;
+
+type
+
+  TOrderSpeedItem = class(TCollectionItem)
+  public
+    DateTime: TDateTime;
+    ExKind  : TExchangeKind;
+    Speed   : integer;
+    OrderType : TOrderType;
+    State   : integer;
+  end;
+
+  TSpeedItem = class(TCollectionItem)
+  public
+    key  : string ;
+    minv  : array [0..2] of integer;
+    maxv  : array [0..2] of integer;
+    avg  : array [0..2] of integer;
+    cnt  : array [0..2] of integer;
+    sss  : array [0..2] of int64;
+
+    constructor create( aColl : TCollection ); override;
+    procedure SetData( val : integer; i : integer);
+  end;
+
+  TSpeedItems = class(TCollection)
+  public
+    constructor Create;
+    Destructor  Destroy; override;
+
+    function Find(sKey : string) : TSpeedItem;
+  end;
+
+  TFrmTestOrder = class(TForm)
+    Edit1: TEdit;
+    cbStart: TCheckBox;
+    bnTimer: TTimer;
+    upTimer: TTimer;
+    btTimer: TTimer;
+    cbUpbit: TCheckBox;
+    cbBithumb: TCheckBox;
+    cbBinance: TCheckBox;
+    stBar: TStatusBar;
+    Button1: TButton;
+    Button2: TButton;
+    Button3: TButton;
+    procedure Edit1KeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
+    procedure FormCreate(Sender: TObject);
+    procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure FormDestroy(Sender: TObject);
+    procedure cbStartClick(Sender: TObject);
+    procedure bnTimerTimer(Sender: TObject);
+    procedure Button1Click(Sender: TObject);
+    procedure Button2Click(Sender: TObject);
+    procedure Button3Click(Sender: TObject);
+  private
+    { Private declarations }
+    FSymbols : array [TExchangeKind] of TSymbol;
+    FAccounts: array [TExchangeKind] of TAccount;
+    FCount   : array [TExchangeKind] of integer;
+    FOrders  : array [TExchangeKind] of TOrderList;
+    FResult  : array [TExchangeKind] of TCollection;
+    FReport  : array [TExchangeKind] of TSpeedItems;
+
+    procedure TradeProc(Sender, Receiver: TObject; DataID: Integer;
+                DataObj: TObject; EventID: TDistributorID);
+    procedure OnOrder( aOrder : TOrder );
+    procedure TimerEnable(bEnable: boolean);
+    procedure DoCancelOrder( aOrder : TOrder ); overload;
+    procedure DoCancelOrder( aExType : TExchangeKind ); overload;
+  public
+    { Public declarations }
+    procedure LoadEnv( aStorage : TStorage ); overload;
+    procedure SaveEnv( aStorage : TStorage ); overload;
+
+  end;
+
+var
+  FrmTestOrder: TFrmTestOrder;
+
+implementation
+
+uses
+  Math, System.DateUtils
+  , GApp, GLIbs
+  , UConsts , UTypes
+  , USymbolCore
+  ;
+
+{$R *.dfm}
+
+procedure TFrmTestOrder.bnTimerTimer(Sender: TObject);
+var
+  aExType : TExchangeKind;
+  aOrder  : TOrder;
+  dPrice  : double;
+begin
+
+  aOrder := nil;
+  aExType := TExchangeKind(TComponent(Sender).Tag);
+
+  case aExType of
+    ekBinance: if not cbBinance.Checked then Exit;
+    ekUpbit: if not cbUpbit.Checked then Exit;
+    ekBithumb: if not cbBithumb.Checked then Exit;
+  end;
+
+  try
+
+    if FOrders[aExType].Count > 0 then
+    begin
+      DoCancelOrder( aExType );
+      Exit;
+    end;
+
+    if (FAccounts[aExtype] = nil) or (FSymbols[aExType] = nil) then Exit;
+
+    if FSymbols[aExType].Bids.Count < 10 then Exit;
+    if CheckZero(FSymbols[aExType].Bids[9].Price) then Exit;
+    dPrice  := TicksFromPrice( FSymbols[aExType], FSymbols[aExType].Bids[9].Price, -10);
+    if CheckZero(dPrice) then Exit;
+
+    aOrder := App.Engine.TradeCore.Orders[aExType].NewOrder( FAccounts[aExType], FSymbols[aExType],
+      1, 10, pcLimit, dPrice, tmGTC);
+
+    if aOrder <> nil then
+    begin
+      aOrder.StgType := stTest;
+      App.Engine.TradeBroker.Send( aOrder );
+      FOrders[aExType].Add( aOrder );
+    end;
+  finally
+    if aOrder = nil then stBar.Panels[1].Text := ExKindToStr(aExType) +  ' 주문 실패'
+    else begin
+      stBar.Panels[1].Text := ExKindToStr(aExType) +  ' 주문성공';
+//      cbStart.Checked := false;
+    end;
+  end;
+
+end;
+
+procedure TFrmTestOrder.Button1Click(Sender: TObject);
+var
+  I: TExchangeKind;   J, idx : integer;
+  aItem : TOrderSpeedItem;
+  si : TSpeedItem;
+
+  sKey : string;
+
+begin
+  //
+  for I := ekBinance to High(TExchangeKind) do
+    FReport[i].Clear;
+
+  for I := ekBinance to High(TExchangeKind) do
+  begin
+    for J := 0 to FResult[i].Count-1 do
+    begin
+      aItem := FResult[i].Items[j] as TOrderSpeedItem;
+      sKey  := FormatDateTime('mm-dd hh', aItem.DateTime);
+      si := FReport[i].Find(sKey);
+      if aItem.State = 0 then
+        idx := 2
+      else
+        idx := ifThen( aItem.OrderType = otNormal, 0, 1);
+
+      si.SetData( aItem.Speed, idx );
+    end;
+  end;
+
+
+  for I := ekbinance to High(TExchangeKind) do
+  begin
+    for j := 0 to FReport[i].Count-1 do
+    begin
+      si  := FReport[i].Items[j] as TSpeedItem;
+      App.Log(llInfo, 'speed', '%5.5s, %s, 신규, %04d, %04d, %04d, %d,'+
+                                          '취소, %04d, %04d, %04d, %d,'+
+                                          '거부, %04d, %04d, %04d, %d',
+        [ ExKindToStr(i), si.key, si.minv[0], si.maxv[0], si.avg[0], si.cnt[0],
+                                  si.minv[1], si.maxv[1], si.avg[1], si.cnt[1],
+                                  si.minv[2], si.maxv[2], si.avg[2], si.cnt[2]
+                                  ]    );
+    end;
+  end;
+
+end;
+
+procedure TFrmTestOrder.Button2Click(Sender: TObject);
+var
+  aItem : TOrderSpeedItem;
+  I: TExchangeKind;
+  j: Integer;
+  tNow : TDateTime;
+begin
+  aItem := nil;
+
+  Randomize;
+
+  tNow := now;
+
+  for I := ekBinance to High(TExchangeKind) do
+  begin
+
+    for j := 0 to 1000 do
+    begin
+      aItem := FResult[i].Add as TOrderSpeedItem;
+      aItem.Speed := Random(300);
+
+      aItem.DateTime  := IncMinute( tNow, 5* j );
+      aItem.ExKind    := i;
+      if j mod 2 = 0 then
+        aItem.OrderType := otNormal
+      else
+        aItem.OrderType := otCancel;
+    end;
+  end;
+
+end;
+
+procedure TFrmTestOrder.Button3Click(Sender: TObject);
+var
+  I: TExchangeKind;
+begin
+  for I := ekBinance to High(TExchangeKind) do begin
+    FResult[i].Clear;
+    FReport[i].Clear;
+  end;
+end;
+
+procedure TFrmTestOrder.cbStartClick(Sender: TObject);
+begin
+  TimerEnable(cbStart.Checked);
+end;
+
+procedure TFrmTestOrder.TimerEnable( bEnable : boolean );
+begin
+  bntimer.Enabled := bEnable;
+  upTimer.Enabled := bEnable;
+  btTimer.Enabled := bEnable;
+end;
+
+procedure TFrmTestOrder.Edit1KeyDown(Sender: TObject; var Key: Word;
+  Shift: TShiftState);
+  var
+    sCode : string;
+  I: TExchangeKind;
+begin
+  if Key = VK_RETURN then
+  begin
+    for I := ekBinance to High(TExchangeKind) do
+    begin
+      if FSymbols[i] <> nil then
+        App.Engine.QuoteBroker.Brokers[i].Cancel( self, FSymbols[i] );
+
+      FSymbols[i] := App.Engine.SymbolCore.BaseSymbols.FindSymbol(edit1.Text, i,
+        TMarketType(ifThen(i=ekBinance, integer(mtFutures), integer(mtSpot)) ) );
+      if FSymbols[i] <> nil then
+        App.Engine.QuoteBroker.Brokers[i].Subscribe( self, FSymbols[i],
+            App.Engine.QuoteBroker.Brokers[i].DummyEventHandler     );
+    end;
+  end;
+end;
+
+procedure TFrmTestOrder.FormClose(Sender: TObject; var Action: TCloseAction);
+begin
+  ACtion := caFree;
+end;
+
+procedure TFrmTestOrder.FormCreate(Sender: TObject);
+var
+  I: TExchangeKind;
+begin
+  for I := ekBinance to High(TExchangeKind) do
+  begin
+    FResult[i]  := TCollection.Create(TOrderSpeedItem);
+    FReport[i]  := TSpeedItems.Create;
+    FSymbols[i] := nil;
+    FCount[i]   := 0;
+    FOrders[i]  := TOrderList.Create;
+    if i = ekBinance then
+      FAccounts[i]:= App.Engine.TradeCore.FindAccount(i,amFuture)
+    else
+      FAccounts[i]:= App.Engine.TradeCore.FindAccount(i);
+  end;
+
+  App.Engine.TradeBroker.Subscribe( Self, TradeProc);
+end;
+
+procedure TFrmTestOrder.FormDestroy(Sender: TObject);
+var
+  I: TExchangeKind;
+begin
+  for I := ekBinance to High(TExchangeKind) do begin
+    FResult[i].Free;
+    FOrders[i].Free;
+    FReport[i].Free;
+    App.Engine.QuoteBroker.Brokers[i].Cancel( self);
+  end;
+
+  App.Engine.TradeBroker.Unsubscribe(Self);
+end;
+
+procedure TFrmTestOrder.LoadEnv(aStorage: TStorage);
+begin
+
+end;
+
+procedure TFrmTestOrder.OnOrder(aOrder: TOrder);
+var
+  i : TExchangeKind;
+  j: Integer;
+  ord : TOrder;
+  aItem : TOrderSpeedItem;
+begin
+
+  if aOrder.StgType <> stTest then Exit;
+
+  i := aOrder.Account.ExchangeKind;
+
+  aItem := nil;
+  if (aOrder.OrderType = otNormal) and (aOrder.State = osActive) then begin
+    aItem := FResult[i].Add as TOrderSpeedItem;
+    aItem.Speed := aOrder.NewRecvTime - aOrder.NewTime;//  MilliSecondsBetween( aOrder.EventTime, aOrder.SentTime);
+    aItem.State := 1;
+  end
+  else if (aOrder.OrderType = otCancel) and (aOrder.State = osCanceled) then begin
+    aItem := FResult[i].Add as TOrderSpeedItem;
+    aItem.Speed := aOrder.CnlRecvTime - aOrder.CnlTime;// MilliSecondsBetween( aOrder.CancelTime, aOrder.SentTime);
+    aItem.State := 1;
+  end
+  else if (aOrder.State in [osRejected, osFailed]) then begin
+    aItem := FResult[i].Add as TOrderSpeedItem;
+    if aOrder.OrderType = otCancel then
+      aItem.Speed := aOrder.RjtRecvTime - aOrder.CnlTime
+    else
+      aItem.Speed := aOrder.RjtRecvTime - aOrder.NewTime;
+    aItem.State := 0;
+  end;
+
+
+  if aItem <> nil then
+  begin
+    aItem.DateTime  := now;
+    aItem.ExKind    := i;
+    aItem.OrderType := aOrder.OrderType;
+  end;
+
+  if ( aOrder.OrderType = otNormal) and (aOrder.State = osActive) and (not aOrder.Modify) then
+  begin
+    // 주문 접수 오면 바로 취소 주문..
+    DoCancelOrder( aOrder );
+  end;
+
+  for j := FOrders[i].Count-1 downto 0 do
+  begin
+    ord := FOrders[i].Orders[j];
+    if ord.State in [osRejected, osFilled, osCanceled]  then
+      FOrders[i].Delete(j);
+  end;
+
+end;
+
+procedure TFrmTestOrder.SaveEnv(aStorage: TStorage);
+begin
+
+end;
+
+procedure TFrmTestOrder.DoCancelOrder(aExType: TExchangeKind);
+var
+  aOrder : TOrder;
+begin
+  for aOrder in FOrders[aExtype] do
+    if (aOrder.State = osActive) and ( not aOrder.Modify ) then
+      DoCancelOrder( aOrder );
+end;
+
+procedure TFrmTestOrder.DoCancelOrder(aOrder: TOrder);
+begin
+  App.Engine.TradeCore.Orders[aOrder.Account.ExchangeKind].NewCancelOrder(aOrder, aOrder.ActiveQty);
+  App.Engine.TradeBroker.Send(aOrder);
+end;
+
+procedure TFrmTestOrder.TradeProc(Sender, Receiver: TObject; DataID: Integer;
+  DataObj: TObject; EventID: TDistributorID);
+begin
+  if (Self <> Receiver) or (DataObj=nil) then Exit;
+
+  case Integer(EventID) of
+    ORDER_ACCEPTED,
+    ORDER_REJECTED,
+    ORDER_CANCELED,
+    ORDER_FILLED: OnOrder(DataObj as TOrder);
+
+//    POSITION_UPDATE : OnPosition( DataObj as TPosition);
+  end;
+end;
+
+{ TSpeedItems }
+
+constructor TSpeedItems.Create;
+begin
+  inherited Create( TSpeedItem );
+end;
+
+destructor TSpeedItems.Destroy;
+begin
+
+  inherited;
+end;
+
+function TSpeedItems.Find(sKey: string): TSpeedItem;
+var
+  I: Integer;
+  aItem : TSpeedItem;
+begin
+  Result := nil;
+
+  for I := Count-1 downto 0 do
+  begin
+    aItem := Items[i] as TSpeedItem;
+    if aItem.key = sKey then
+    begin
+      Result := aItem;
+      break;
+    end;
+  end;
+
+  if Result = nil then begin
+    Result := Add as TSpeedItem;
+    Result.key  := sKey;
+  end;
+
+end;
+
+{ TSpeedItem }
+
+// 0 신규  1 취소
+constructor TSpeedItem.create(aColl: TCollection);
+var
+  I: Integer;
+begin
+  inherited Create(aColl);
+
+  for I := 0 to 2 do
+  begin
+    minv[i]  := 9999999;
+    maxv[i]  := 0;
+    avg[i]   := 0;
+    cnt[i]   := 0;
+    sss[i]   := 0;
+  end;
+end;
+
+procedure TSpeedItem.SetData(val: integer; i : integer);
+begin
+  minv[i] := min( minv[i], val );
+  maxv[i] := max( maxv[i], val );
+  inc(sss[i], val);
+  inc(cnt[i] );
+  avg[i] := sss[i] div cnt[i];
+end;
+
+end.

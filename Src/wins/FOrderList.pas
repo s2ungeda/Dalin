@@ -1,0 +1,991 @@
+﻿unit FOrderList;
+interface
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
+  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.Grids, Vcl.ExtCtrls, System.Generics.Collections
+  , UApiTypes, UApiConsts
+  , UOrders, USymbols, UFills
+  , UStorage, Vcl.Menus  , UTypes
+  , UDistributor
+  ;
+
+const
+  // 그리드 컬럼 인덱스 상수
+  COL_EXPAND   = 0;
+  COL_STRATEGY = 1;
+  COL_EXCHANGE = 2;
+  COL_SYMBOL   = 3;
+  COL_SETTLE   = 4;
+  COL_SIDE     = 5;
+  COL_PRICE    = 6;
+  COL_QTY      = 7;
+  COL_AVGPRICE = 8;
+  COL_FILLEDQTY= 9;
+  COL_STATE    = 10;
+  COL_TIME     = 11;
+  COL_FILLTIME = 12;
+  COL_ORDERNO  = 13;
+
+  // 페이지네이션 및 확장 상태 상수
+  ORD_COL = 1;
+  EXP_COL = 0;
+  FIL_COL = 2;
+  NEXT_ROW_CNT = 500;
+
+  EXP_ON = 100;
+  EXP_OFF = -100;
+  EXP_NO = 0;
+
+type
+  TRowType = (rtOrder, rtFill);
+
+  TDisplayRow = record
+    RowType: TRowType;
+    Order: TOrder;
+    Fill: TFill;
+    IsExpanded: Boolean;  // 사전 계산된 확장 상태
+  end;
+
+  // 필터 상태를 위한 가독성 높은 레코드
+  TOrderFilterState = record
+    ShowActive: Boolean;   // 접수(활성) 주문
+    ShowFilled: Boolean;   // 체결 완료
+    ShowCanceled: Boolean; // 취소
+    ShowRejected: Boolean; // 거부
+    ShowPending: Boolean;  // 대기 상태
+    procedure Reset;
+    procedure SetFromCheckBoxes(cb1, cb2, cb3, cb4: Boolean);
+  end;
+
+type
+  TFrmOrderList = class(TForm)
+    Panel1: TPanel;
+    sgOrder: TStringGrid;
+    ComboBox1: TComboBox;
+    PopupMenu1: TPopupMenu;
+    N1: TMenuItem;
+    CheckBox1: TCheckBox;
+    CheckBox2: TCheckBox;
+    CheckBox3: TCheckBox;
+    CheckBox4: TCheckBox;
+    N2: TMenuItem;
+    edtCode: TEdit;
+    cbCode: TCheckBox;
+    btnNext: TButton;
+    Panel2: TPanel;
+    Label1: TLabel;
+    N3: TMenuItem;
+    N4: TMenuItem;
+    CheckBox5: TCheckBox;
+    procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure FormCreate(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+    procedure sgOrderDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect;
+      State: TGridDrawState);
+    procedure ComboBox1Change(Sender: TObject);
+    procedure ComboBox2Change(Sender: TObject);
+    procedure CheckBox1Click(Sender: TObject);
+    procedure sgOrderMouseDown(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
+    procedure N1Click(Sender: TObject);
+    procedure edtCodeKeyDown(Sender: TObject; var Key: Word;
+      Shift: TShiftState);
+    procedure cbCodeClick(Sender: TObject);
+    procedure btnNextClick(Sender: TObject);
+    procedure sgOrderDblClick(Sender: TObject);
+    procedure N2Click(Sender: TObject);
+    procedure N4Click(Sender: TObject);
+  private
+    { Private declarations }
+    FExIndex : integer;
+    FIndex, FCount  : integer;
+    FFilterState : TOrderFilterState;  // 가독성 높은 필터 상태
+    FRow     : integer;
+    FOrder	 : TOrder;
+
+    // Virtual List Support
+    FExpandedOrders: TDictionary<string, boolean>;
+    FDisplayList: TList<TDisplayRow>;
+
+    procedure InitControls;
+    procedure DoOrder(aOrder: TOrder; EventID: TDistributorID);
+    function Filter(aOrder: TOrder): boolean;  // 함수명 오타 수정
+
+    // 증분 업데이트 메서드
+    procedure InsertOrderToTop(aOrder: TOrder);
+    procedure HandleOrderRemoval(aOrder: TOrder);
+    procedure RefreshOrderInList(aOrder: TOrder);
+    function FindOrderRowIndex(aOrder: TOrder): Integer;
+    procedure FillFromNextOrders;  // 빈 자리 채우기
+
+    procedure UpdateData;
+    procedure DoUpdateList(aStartIndex: Integer);
+    procedure UpdateDataNext;
+
+    // DrawCell 헬퍼 메서드 (분리된 렌더링 로직)
+    function GetOrderCellText(aOrder: TOrder; ACol: Integer): string;
+    function GetFillCellText(aOrder: TOrder; aFill: TFill; ACol: Integer): string;
+
+    // 메모리 관리
+    procedure CleanupExpandedOrders;
+
+    // 특정 행만 갱신 (성능 최적화)
+    procedure InvalidateRow(ARow: Integer);
+
+    { Public declarations }
+  public
+    procedure SaveEnv( aStorage : TStorage );
+    procedure LoadEnv( aStorage : TStorage );
+    procedure TradeProc(Sender, Receiver: TObject; DataID: Integer;
+      DataObj: TObject; EventID: TDistributorID) ;
+
+  end;
+var
+  FrmOrderList: TFrmOrderList;
+implementation
+uses
+	GApp, GLibs
+  , USymbolCore
+  , UTableConsts
+  , UConsts
+  , Math
+  , Clipbrd
+  ;
+{$R *.dfm}
+
+{ TOrderFilterState }
+
+procedure TOrderFilterState.Reset;
+begin
+  ShowActive := True;
+  ShowFilled := True;
+  ShowCanceled := False;
+  ShowRejected := False;
+  ShowPending := False;
+end;
+
+procedure TOrderFilterState.SetFromCheckBoxes(cb1, cb2, cb3, cb4: Boolean);
+begin
+  ShowActive := cb1;
+  ShowFilled := cb2;
+  ShowCanceled := cb3;
+  ShowRejected := cb4;
+  // ShowPending는 별도 UI가 없으므로 기본값 유지
+end;
+
+{ TFrmOrderList }
+
+procedure TFrmOrderList.FormClose(Sender: TObject; var Action: TCloseAction);
+begin
+	Action := caFree;
+end;
+
+procedure TFrmOrderList.FormCreate(Sender: TObject);
+begin
+	InitControls;
+  FExIndex  := 0;
+
+  FDisplayList   := TList<TDisplayRow>.Create;
+  FExpandedOrders:= TDictionary<string, boolean>.Create;
+
+  sgOrder.DefaultDrawing := False;
+
+  FFilterState.Reset;
+
+  UpdateData;
+
+  App.Engine.TradeBroker.Subscribe( Self, TradeProc);
+
+end;
+
+procedure TFrmOrderList.FormDestroy(Sender: TObject);
+begin
+	//
+  FDisplayList.Free;
+  FExpandedOrders.Free;
+  App.Engine.TradeBroker.Unsubscribe( Self );
+end;
+
+procedure TFrmOrderList.InitControls;
+var
+  I: integer;
+begin
+	with sgOrder do
+  begin
+		ColCount	:= orderList_TitleCnt;
+  	RowCount	:= 1;
+    for I := 0 to orderList_TitleCnt-1 do
+		begin
+    	Cells[i,0]	:= orderList_Title[i];
+      ColWidths[i]:= orderList_Width[i];
+    end;
+  end;
+
+  FRow := -1;
+end;
+
+procedure TFrmOrderList.LoadEnv(aStorage: TStorage);
+begin
+  if aStorage = nil then Exit;
+
+  with aStorage do
+  begin
+    ComboBox1.ItemIndex := FieldByName('ExKin').AsIntegerDef(0);
+    CheckBox1.Checked := FieldByName('CheckBox1').AsBooleanDef(True);
+    CheckBox2.Checked := FieldByName('CheckBox2').AsBooleanDef(True);
+    CheckBox3.Checked := FieldByName('CheckBox3').AsBooleanDef(False);
+    CheckBox4.Checked := FieldByName('CheckBox4').AsBooleanDef(False);
+
+    cbCode.Checked  := FieldByName('cbCode').AsBoolean;
+    edtCode.Text    := FieldByName('Code').AsString ;
+
+    // 필터 상태 동기화
+    FFilterState.SetFromCheckBoxes(
+      CheckBox1.Checked, CheckBox2.Checked,
+      CheckBox3.Checked, CheckBox4.Checked
+    );
+  end;
+end;
+
+
+procedure TFrmOrderList.SaveEnv(aStorage: TStorage);
+begin
+  if aStorage = nil then Exit;
+
+  with aStorage do
+  begin
+    FieldByName('ExKin').AsInteger   := ComboBox1.ItemIndex;
+    FieldByName('CheckBox1').AsBoolean  := CheckBox1.Checked;
+    FieldByName('CheckBox2').AsBoolean  := CheckBox2.Checked;
+    FieldByName('CheckBox3').AsBoolean  := CheckBox3.Checked;
+    FieldByName('CheckBox4').AsBoolean  := CheckBox4.Checked;
+
+    FieldByName('cbCode').AsBoolean   := cbCode.Checked;
+    FieldByName('Code').AsString    := edtCode.Text;
+  end;
+end;
+
+procedure TFrmOrderList.N1Click(Sender: TObject);
+begin
+	//
+  if FOrder = nil then Exit;
+
+  App.Engine.TradeCore.Orders[ FOrder.Account.ExchangeKind].NewCancelOrder( FOrder, FOrder.ActiveQty);
+  App.Engine.TradeBroker.Send( FOrder );
+
+end;
+
+procedure TFrmOrderList.N2Click(Sender: TObject);
+begin
+  if FOrder <> nil then
+  begin
+    Clipboard.AsText := FOrder.OrderNo;
+  end;
+end;
+
+// 어떤 이유로 누락된 주문 상태를 조회해서, 정상상태로 처리하기 위해..
+procedure TFrmOrderList.N4Click(Sender: TObject);
+begin
+  //
+  if FOrder = nil then Exit;
+
+  App.Engine.ApiManager.ExManagers[FOrder.Symbol.Spec.ExchangeType].RequestOrdeDetail(FOrder);
+end;
+
+
+//==============================================================================
+// DrawCell 헬퍼 메서드 - 주문 행 텍스트 반환
+//==============================================================================
+function TFrmOrderList.GetOrderCellText(aOrder: TOrder; ACol: Integer): string;
+var
+  sts: TArray<string>;
+begin
+  Result := '';
+  if aOrder = nil then Exit;
+
+  case ACol of
+    COL_STRATEGY: begin // Strategy / GroupNo
+      if aOrder.StgType = stSPOrder then
+        Result := aOrder.GroupNo
+      else if aOrder.StgType in [stPutKipOrder, stPKIdxOrder] then
+      begin
+        sts := aOrder.GroupNo.Split(['_']);
+        if Length(sts) >= 5 then
+          Result := sts[3] + '_' + sts[4]
+        else
+          Result := aOrder.GroupNo;
+      end
+      else
+        Result := aOrder.StgToStr;
+    end;
+    COL_EXCHANGE: Result := ExKindToStr(aOrder.Account.ExchangeKind);
+    COL_SYMBOL: Result := aOrder.Symbol.Spec.BaseCode;
+    COL_SETTLE: Result := aOrder.Symbol.Spec.SettleCode;
+    COL_SIDE: Result := aOrder.SideToStr;
+    COL_PRICE: Result := aOrder.Symbol.PriceToStr(aOrder.Price);
+    COL_QTY: begin
+      if aOrder.Symbol.Spec.ExchangeType = ekBinance then
+        Result := aOrder.Symbol.QtyToStr(aOrder.OrderQty)
+      else
+        Result := aOrder.OrderQtyBI.ToString;
+    end;
+    COL_AVGPRICE: Result := aOrder.Symbol.PriceToStr(aOrder.AvgPrice);
+    COL_FILLEDQTY: Result := Format('%.8n', [aOrder.FilledQty]);
+    COL_STATE: Result := aOrder.StateToStr;
+    COL_TIME: begin
+      if aOrder.State = osRejected then
+        Result := FormatDateTime('hh:nn:ss', aOrder.RejectTime)
+      else
+        Result := FormatDateTime('hh:nn:ss', aOrder.AcptTime);
+    end;
+    COL_FILLTIME: begin
+      if aOrder.Fills.Count > 0 then
+        Result := FormatDateTime('hh:nn:ss', aOrder.Fills.Fills[0].FillTime)
+      else
+        Result := '';
+    end;
+    COL_ORDERNO: begin
+      if aOrder.State = osRejected then
+        Result := aOrder.RejectReason
+      else
+        Result := aOrder.OrderNo;
+    end;
+  end;
+end;
+
+//==============================================================================
+// DrawCell 헬퍼 메서드 - 체결 행 텍스트 반환
+//==============================================================================
+function TFrmOrderList.GetFillCellText(aOrder: TOrder; aFill: TFill; ACol: Integer): string;
+begin
+  Result := '';
+  if aFill = nil then Exit;
+
+  case ACol of
+    COL_AVGPRICE: Result := aFill.Symbol.PriceToStr(aFill.Price);
+    COL_FILLEDQTY: Result := Format('%.8n', [aFill.Volume]);
+    COL_FILLTIME: Result := FormatDateTime('hh:nn:ss', aFill.FillTime);
+    COL_ORDERNO: Result := aFill.FillNo;
+    // 다른 컬럼은 빈 문자열 반환 (트리 구조 표현)
+  end;
+end;
+
+procedure TFrmOrderList.sgOrderDblClick(Sender: TObject);
+var
+  aRowData: TDisplayRow;
+  bExpanded: boolean;
+begin
+  if FRow <= 0 then Exit;
+  if (FRow - 1) >= FDisplayList.Count then Exit;
+
+  aRowData := FDisplayList[FRow - 1];
+
+  // Toggle expansion only for Orders
+  if aRowData.RowType = rtOrder then
+  begin
+    if FExpandedOrders.TryGetValue(aRowData.Order.OrderNo, bExpanded) then
+      FExpandedOrders.AddOrSetValue(aRowData.Order.OrderNo, not bExpanded)
+    else
+      FExpandedOrders.Add(aRowData.Order.OrderNo, True);
+
+    UpdateData; // Re-flatten list
+  end;
+end;
+
+procedure TFrmOrderList.sgOrderDrawCell(Sender: TObject; ACol, ARow: Integer;
+  Rect: TRect; State: TGridDrawState);
+var
+  aRect : TRect;
+  aFont, aBack : TColor;
+  dFormat	: WORD;
+  stTxt	: string;
+  aOrder: TOrder;
+  aFill: TFill;
+  aRowData: TDisplayRow;
+
+  procedure DrawCheck(DC: HDC; BBRect: TRect; iOpt: integer);
+  begin
+    if iOpt = EXP_OFF then
+      DrawFrameControl(DC, BBRect, DFC_SCROLL, DFCS_SCROLLRIGHT)
+    else if iOpt = EXP_ON then
+      DrawFrameControl(DC, BBRect, DFC_SCROLL, DFCS_SCROLLDOWN);
+  end;
+
+begin
+  aFont   := clBlack;
+  dFormat := DT_CENTER;
+  aRect   := Rect;
+  aBack   := clWhite;
+  aOrder  := nil;
+  stTxt   := '';
+
+	with sgOrder do
+  begin
+  	if ARow = 0 then
+    begin
+      stTxt := Cells[ACol, ARow];
+      aBack := clBtnFace;
+    end
+    else
+    begin
+      if (ARow - 1) < FDisplayList.Count then
+      begin
+        aRowData := FDisplayList[ARow - 1];
+        aOrder   := aRowData.Order;
+
+        if aRowData.RowType = rtOrder then
+        begin
+          stTxt := GetOrderCellText(aOrder, ACol);
+        end
+        else if aRowData.RowType = rtFill then
+        begin
+          aFill := aRowData.Fill;
+          aBack := $00E0E0E0; // Light Gray for fills
+          stTxt := GetFillCellText(aOrder, aFill, ACol);
+        end;
+      end;
+
+    	if ACol in [COL_PRICE..COL_FILLEDQTY] then
+				dFormat := DT_RIGHT;
+
+      // 매수/매도 색상 구분
+      if (aRowData.RowType = rtOrder) and (ACol = COL_SIDE) then
+      begin
+        if aOrder <> nil then
+        begin
+          if aOrder.Side > 0 then
+            aFont := clRed
+          else if aOrder.Side < 0 then
+            aFont := clBlue;
+        end
+      end;
+
+      // 선택된 행 배경색
+      if ARow = FRow then
+        aBack := $00F2BEB9;
+    end;
+
+    Canvas.Font.Color   := aFont;
+    Canvas.Brush.Color  := aBack;
+    aRect.Top := Rect.Top + 2;
+    if (ARow > 0) and (dFormat = DT_RIGHT) then
+      aRect.Right := aRect.Right - 2;
+    dFormat := dFormat or DT_VCENTER;
+    Canvas.FillRect(Rect);
+    DrawText(Canvas.Handle, PChar(stTxt), Length(stTxt), aRect, dFormat);
+
+    // 확장 아이콘 그리기
+    if (ARow > 0) and (ACol = COL_EXPAND) and (aRowData.RowType = rtOrder) then
+    begin
+      aRect := Rect;
+      aRect.Top := Rect.Top + 2;
+      aRect.Bottom := Rect.Bottom - 2;
+
+      if (aOrder <> nil) and (aOrder.Fills.Count > 0) then
+      begin
+        if aRowData.IsExpanded then
+          DrawCheck(Canvas.Handle, aRect, EXP_ON)
+        else
+          DrawCheck(Canvas.Handle, aRect, EXP_OFF);
+      end;
+    end;
+  end;
+end;
+
+procedure TFrmOrderList.sgOrderMouseDown(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: Integer);
+var
+  iOpt, ACol : integer;
+  aOrder : TOrder;
+  aRowData: TDisplayRow;
+begin
+  sgOrder.PopupMenu := nil;
+  sgOrder.MouseToCell(X, Y, ACol, FRow);
+  if FRow < 0 then Exit;
+  if FRow = 0 then Exit; // Header
+  if (FRow - 1) >= FDisplayList.Count then Exit;
+
+  aRowData := FDisplayList[FRow - 1];
+
+  if Button = mbRight then
+  begin
+    if aRowData.RowType = rtOrder then
+    begin
+      aOrder := aRowData.Order;
+      FOrder := nil;
+      if aOrder <> nil then
+        if (aOrder.State = osActive) and (not aOrder.Modify) then
+        begin
+          FOrder := aOrder;
+          N4.Visible := True;
+          if not aOrder.Modify then
+            N1.Visible := True;
+          sgOrder.PopupMenu := PopupMenu1;
+        end
+        else
+        begin
+          N1.Visible := False;
+          FOrder := aOrder;
+          sgOrder.PopupMenu := PopupMenu1;
+        end;
+    end;
+  end;
+
+  sgOrder.Invalidate;
+end;
+
+procedure TFrmOrderList.TradeProc(Sender, Receiver: TObject; DataID: Integer;
+  DataObj: TObject; EventID: TDistributorID);
+begin
+  if (Receiver <> Self) or (DataID <> TRD_DATA) then Exit;
+
+  case Integer(EventID) of
+    ORDER_ACCEPTED,
+    ORDER_REJECTED,
+    ORDER_CANCELED,
+    ORDER_CHANGED,
+    ORDER_FILLED: DoOrder(DataObj as TOrder, EventID);
+  end;
+end;
+
+//==============================================================================
+// 핵심 개선: 증분 업데이트로 성능 최적화
+// 주문 상태 변경 시 올바른 처리 로직
+//==============================================================================
+procedure TFrmOrderList.DoOrder(aOrder: TOrder; EventID: TDistributorID);
+var
+  bExistsInList: Boolean;
+  bPassesFilter: Boolean;
+begin
+  // 현재 리스트에 해당 주문이 있는지 확인
+  bExistsInList := FindOrderRowIndex(aOrder) >= 0;
+  // 현재 필터 조건을 통과하는지 확인
+  bPassesFilter := Filter(aOrder);
+
+  case Integer(EventID) of
+    ORDER_ACCEPTED:
+      begin
+      // 신규 주문: 필터 통과 시에만 삽입
+        if bPassesFilter then
+          InsertOrderToTop(aOrder);
+      end;
+
+    ORDER_FILLED, ORDER_CHANGED:
+      begin
+        // 체결/변경:
+        // - 이미 리스트에 있고 필터 통과 → 해당 행만 갱신 (최적화)
+        // - 이미 리스트에 있는데 필터 불통과 → 리스트에서 제거
+        // - 리스트에 없고 필터 통과 → 새로 삽입 (상태 변경으로 필터 조건이 맞게 된 경우)
+        if bExistsInList then
+        begin
+          if bPassesFilter then
+            InvalidateRow(FindOrderRowIndex(aOrder) + 1)  // +1 for header
+          else
+            HandleOrderRemoval(aOrder);
+        end
+        else if bPassesFilter then
+          InsertOrderToTop(aOrder);
+      end;
+
+    ORDER_CANCELED, ORDER_REJECTED:
+      begin
+        // 취소/거부: 상태가 변경되어 필터에서 제외될 수 있음
+        // - 이미 리스트에 있고 필터 불통과 → 제거
+        // - 이미 리스트에 있고 필터 통과 → 해당 행만 갱신 (최적화)
+        // - 리스트에 없고 필터 통과 → 새로 삽입
+        if bExistsInList then
+        begin
+          if bPassesFilter then
+            InvalidateRow(FindOrderRowIndex(aOrder) + 1)  // +1 for header
+          else
+            HandleOrderRemoval(aOrder);  // 필터 조건 불충족으로 제거
+        end
+        else if bPassesFilter then
+          InsertOrderToTop(aOrder);
+      end;
+  end;
+end;
+
+//==============================================================================
+// 신규 주문을 리스트 맨 위에 삽입
+//==============================================================================
+procedure TFrmOrderList.InsertOrderToTop(aOrder: TOrder);
+var
+  row: TDisplayRow;
+  bExpanded: Boolean;
+  j: Integer;
+begin
+  // 이미 리스트에 있는지 확인 (중복 방지)
+  if FindOrderRowIndex(aOrder) >= 0 then
+  begin
+    sgOrder.Invalidate;
+    Exit;
+  end;
+
+  // 주문 행 생성
+  row.RowType := rtOrder;
+  row.Order := aOrder;
+  row.Fill := nil;
+  row.IsExpanded := FExpandedOrders.TryGetValue(aOrder.OrderNo, bExpanded) and bExpanded;
+
+  // 맨 위에 삽입
+  FDisplayList.Insert(0, row);
+
+  // 확장 상태라면 체결 내역도 삽입
+  if row.IsExpanded then
+  begin
+    for j := 0 to aOrder.Fills.Count - 1 do
+    begin
+      row.RowType := rtFill;
+      row.Order := aOrder;
+      row.Fill := aOrder.Fills.Fills[j];
+      row.IsExpanded := False;
+      FDisplayList.Insert(j + 1, row);
+    end;
+  end;
+
+  // 페이지네이션 제한 적용 (초과 시 마지막 항목 제거)
+  while FDisplayList.Count > NEXT_ROW_CNT do
+    FDisplayList.Delete(FDisplayList.Count - 1);
+
+  // 그리드 갱신
+  sgOrder.RowCount := FDisplayList.Count + 1;
+  if sgOrder.RowCount > 1 then
+    sgOrder.FixedRows := 1;
+  sgOrder.Invalidate;
+end;
+
+//==============================================================================
+// 주문이 리스트에서 제거되어야 할 때 처리
+//==============================================================================
+procedure TFrmOrderList.HandleOrderRemoval(aOrder: TOrder);
+var
+  i: Integer;
+begin
+  // 해당 주문과 관련된 모든 행 제거 (역순으로 삭제)
+  for i := FDisplayList.Count - 1 downto 0 do
+  begin
+    if FDisplayList[i].Order = aOrder then
+      FDisplayList.Delete(i);
+  end;
+
+  // 빈 자리 채우기: NEXT_ROW_CNT 미만이고 더 보여줄 주문이 있으면
+  FillFromNextOrders;
+
+  // 그리드 갱신
+  sgOrder.RowCount := FDisplayList.Count + 1;
+  if sgOrder.RowCount > 1 then
+    sgOrder.FixedRows := 1;
+  sgOrder.Invalidate;
+
+  // 다음 버튼 상태 업데이트
+  btnNext.Enabled := (FIndex >= 0);
+end;
+
+//==============================================================================
+// 빈 자리 채우기: NEXT_ROW_CNT에 도달할 때까지 다음 주문 추가
+//==============================================================================
+procedure TFrmOrderList.FillFromNextOrders;
+var
+  aOrder: TOrder;
+  row: TDisplayRow;
+  bExpanded: Boolean;
+  j: Integer;
+begin
+  // NEXT_ROW_CNT 미만이고 더 보여줄 주문이 있을 때만
+  while (FDisplayList.Count < NEXT_ROW_CNT) and (FIndex >= 0) do
+  begin
+    // 다음 필터 통과 주문 찾기
+    while FIndex >= 0 do
+    begin
+      aOrder := App.Engine.TradeCore.TotalOrders.Orders[FIndex];
+      Dec(FIndex);
+
+      if (aOrder <> nil) and Filter(aOrder) then
+      begin
+        // 이미 리스트에 있는지 확인 (중복 방지)
+        if FindOrderRowIndex(aOrder) < 0 then
+        begin
+          // 확장 상태 사전 계산
+          bExpanded := FExpandedOrders.TryGetValue(aOrder.OrderNo, bExpanded) and bExpanded;
+
+          // 주문 행 추가
+          row.RowType := rtOrder;
+          row.Order := aOrder;
+          row.Fill := nil;
+          row.IsExpanded := bExpanded;
+          FDisplayList.Add(row);
+
+          // 확장된 주문이면 체결 내역도 추가
+          if bExpanded then
+          begin
+            for j := 0 to aOrder.Fills.Count - 1 do
+            begin
+              row.RowType := rtFill;
+              row.Order := aOrder;
+              row.Fill := aOrder.Fills.Fills[j];
+              row.IsExpanded := False;
+              FDisplayList.Add(row);
+            end;
+          end;
+
+          Break;  // 하나 찾았으니 내부 루프 탈출
+        end;
+      end;
+    end;
+  end;
+end;
+
+//==============================================================================
+// 주문을 리스트에서 찾아 인덱스 반환 (-1이면 없음)
+//==============================================================================
+function TFrmOrderList.FindOrderRowIndex(aOrder: TOrder): Integer;
+var
+  i: Integer;
+begin
+  Result := -1;
+  for i := 0 to FDisplayList.Count - 1 do
+  begin
+    if (FDisplayList[i].RowType = rtOrder) and
+       (FDisplayList[i].Order = aOrder) then
+    begin
+      Result := i;
+      Exit;
+    end;
+  end;
+end;
+
+//==============================================================================
+// 특정 행만 다시 그리기 (성능 최적화)
+// 전체 그리드를 갱신하지 않고 해당 행의 영역만 무효화
+//==============================================================================
+procedure TFrmOrderList.InvalidateRow(ARow: Integer);
+var
+  R: TRect;
+  i: Integer;
+begin
+  if (ARow < 0) or (ARow >= sgOrder.RowCount) then Exit;
+
+  // 해당 행의 전체 영역 계산
+  R := sgOrder.CellRect(0, ARow);
+  R.Right := sgOrder.ClientWidth;  // 행 전체 너비로 확장
+
+  // 해당 영역만 무효화 (다시 그리기 요청)
+  InvalidateRect(sgOrder.Handle, @R, False);
+end;
+
+//==============================================================================
+// 리스트에서 주문 갱신 (확장 상태 유지하며 재구성)
+//==============================================================================
+procedure TFrmOrderList.RefreshOrderInList(aOrder: TOrder);
+var
+  idx: Integer;
+begin
+  // 해당 주문의 행 인덱스를 찾아서 그 행만 갱신
+  idx := FindOrderRowIndex(aOrder);
+  if idx >= 0 then
+    InvalidateRow(idx + 1)  // +1 for header
+  else
+    sgOrder.Invalidate;  // 못 찾으면 전체 갱신
+end;
+
+procedure TFrmOrderList.edtCodeKeyDown(Sender: TObject; var Key: Word;
+  Shift: TShiftState);
+begin
+  if Key = VK_RETURN then
+  begin
+    if not cbCode.Checked then Exit;
+    if edtCode.Text = '' then Exit;
+    UpdateData;
+  end;
+end;
+
+procedure TFrmOrderList.btnNextClick(Sender: TObject);
+begin
+  UpdateDataNext;
+end;
+
+procedure TFrmOrderList.cbCodeClick(Sender: TObject);
+begin
+  UpdateData;
+end;
+
+procedure TFrmOrderList.CheckBox1Click(Sender: TObject);
+var
+  iTag: integer;
+begin
+  iTag := TCheckBox(Sender).Tag;
+
+  // 필터 상태 업데이트
+  case iTag of
+    0: FFilterState.ShowActive := TCheckBox(Sender).Checked;
+    1: FFilterState.ShowFilled := TCheckBox(Sender).Checked;
+    2: FFilterState.ShowCanceled := TCheckBox(Sender).Checked;
+    3: FFilterState.ShowRejected := TCheckBox(Sender).Checked;
+    4: FFilterState.ShowPending := TCheckBox(Sender).Checked;
+  end;
+
+  UpdateData;  // 필터 변경 시에만 전체 갱신
+end;
+
+procedure TFrmOrderList.ComboBox1Change(Sender: TObject);
+begin
+  FExIndex := ComboBox1.ItemIndex;
+  UpdateData;  // 거래소 변경 시 전체 갱신
+end;
+
+procedure TFrmOrderList.ComboBox2Change(Sender: TObject);
+begin
+  // Reserved
+end;
+
+//==============================================================================
+// 필터 함수 (함수명 오타 수정: Fillter → Filter)
+//==============================================================================
+function TFrmOrderList.Filter(aOrder: TOrder): boolean;
+begin
+  // 거래소 필터
+  case FExIndex of
+    0: Result := True;
+    else Result := aOrder.Account.ExchangeKind = TExchangeKind(FExIndex - 1);
+  end;
+  if not Result then Exit;
+
+  // 종목 코드 필터
+  if cbCode.Checked then
+    if UpperCase(aOrder.Symbol.Spec.BaseCode) <> UpperCase(edtCode.Text) then
+      Exit(False);
+
+  // 상태 필터 (가독성 개선된 레코드 사용)
+  case aOrder.State of
+    osReady, osSent, osSrvAcpt: Result := FFilterState.ShowPending;
+    osSrvRjt, osFailed, osRejected: Result := FFilterState.ShowRejected;
+    osActive: Result := FFilterState.ShowActive;
+    osFilled: Result := FFilterState.ShowFilled;
+    osCanceled: Result := FFilterState.ShowCanceled;
+  end;
+end;
+
+
+procedure TFrmOrderList.UpdateData;
+begin
+  // 확장 상태 정리 (메모리 관리)
+  CleanupExpandedOrders;
+
+  // Always refresh from the latest
+  if App.Engine.TradeCore.TotalOrders.Count > 0 then
+    DoUpdateList(App.Engine.TradeCore.TotalOrders.Count - 1)
+  else
+    DoUpdateList(0);
+end;
+
+procedure TFrmOrderList.DoUpdateList(aStartIndex: Integer);
+var
+  aOrder: TOrder;
+  i, j: integer;
+  row: TDisplayRow;
+  bExpanded: boolean;
+begin
+  // 그리드 갱신 일시 중단 (깜빡임 방지 및 중복 갱신 방지)
+  sgOrder.BeginUpdate;
+  try
+    FDisplayList.Clear;
+
+    // FIndex tracks the index of the *next* possible order to show (for pagination)
+    FIndex := -1;
+
+    if aStartIndex >= App.Engine.TradeCore.TotalOrders.Count then
+      aStartIndex := App.Engine.TradeCore.TotalOrders.Count - 1;
+
+    for i := aStartIndex downto 0 do
+    begin
+      aOrder := App.Engine.TradeCore.TotalOrders.Orders[i];
+      if aOrder = nil then Continue;
+      if not Filter(aOrder) then Continue;
+
+      // 확장 상태 사전 계산
+      bExpanded := FExpandedOrders.TryGetValue(aOrder.OrderNo, bExpanded) and bExpanded;
+
+      // Add Order Row
+      row.RowType := rtOrder;
+      row.Order := aOrder;
+      row.Fill := nil;
+      row.IsExpanded := bExpanded;
+      FDisplayList.Add(row);
+
+      // Check Expansion - 확장된 주문이면 체결 내역도 추가
+      if bExpanded then
+      begin
+        for j := 0 to aOrder.Fills.Count - 1 do
+        begin
+          row.RowType := rtFill;
+          row.Order := aOrder;
+          row.Fill := aOrder.Fills.Fills[j];
+          row.IsExpanded := False;
+          FDisplayList.Add(row);
+        end;
+      end;
+
+      // Pagination limit
+      if FDisplayList.Count >= NEXT_ROW_CNT then
+      begin
+        FIndex := i - 1; // Mark the next starting point
+        Break;
+      end;
+    end;
+
+    sgOrder.RowCount := FDisplayList.Count + 1; // +1 for Header
+    if sgOrder.RowCount > 1 then
+      sgOrder.FixedRows := 1;
+  finally
+    // EndUpdate에서 한 번만 갱신됨
+    sgOrder.EndUpdate;
+  end;
+
+  // If FIndex >= 0, it means there are more records to show
+  btnNext.Enabled := (FIndex >= 0);
+end;
+
+procedure TFrmOrderList.UpdateDataNext;
+begin
+  if FIndex >= 0 then
+    DoUpdateList(FIndex);
+end;
+
+//==============================================================================
+// 메모리 관리: 존재하지 않는 주문의 확장 상태 정리
+//==============================================================================
+procedure TFrmOrderList.CleanupExpandedOrders;
+var
+  KeysToRemove: TList<string>;
+  Key: string;
+  Found: Boolean;
+  i: Integer;
+begin
+  KeysToRemove := TList<string>.Create;
+  try
+    for Key in FExpandedOrders.Keys do
+    begin
+      Found := False;
+      for i := 0 to App.Engine.TradeCore.TotalOrders.Count - 1 do
+      begin
+        if App.Engine.TradeCore.TotalOrders.Orders[i].OrderNo = Key then
+        begin
+          Found := True;
+          Break;
+        end;
+      end;
+
+      if not Found then
+        KeysToRemove.Add(Key);
+    end;
+
+    for Key in KeysToRemove do
+      FExpandedOrders.Remove(Key);
+  finally
+    KeysToRemove.Free;
+  end;
+end;
+
+end.
+

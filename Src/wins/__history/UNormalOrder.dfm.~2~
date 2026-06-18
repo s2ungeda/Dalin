@@ -1,0 +1,581 @@
+object FrmNormalOrder: TFrmNormalOrder
+  Left = 0
+  Top = 0
+  Caption = #51068#48152#51452#47928
+  ClientHeight = 680
+  ClientWidth = 767
+  Color = clBtnFace
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -17
+  Font.Name = 'Tahoma'
+  Font.Style = []
+  OnClose = FormClose
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  PixelsPerInch = 144
+  TextHeight = 21
+  object Panel1: TPanel
+    Left = 464
+    Top = 0
+    Width = 303
+    Height = 651
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Align = alRight
+    Caption = 'Panel1'
+    TabOrder = 0
+    ExplicitLeft = 454
+    ExplicitHeight = 649
+    object sgHoga: TStringGrid
+      Left = 1
+      Top = 1
+      Width = 301
+      Height = 649
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Align = alClient
+      ColCount = 3
+      DefaultColWidth = 96
+      DefaultRowHeight = 29
+      DefaultDrawing = False
+      DoubleBuffered = True
+      FixedCols = 0
+      RowCount = 20
+      FixedRows = 0
+      ParentDoubleBuffered = False
+      ParentShowHint = False
+      ScrollBars = ssNone
+      ShowHint = False
+      TabOrder = 0
+      OnDrawCell = sgHogaDrawCell
+      OnMouseDown = sgHogaMouseDown
+      ExplicitHeight = 647
+    end
+  end
+  object Panel2: TPanel
+    Left = 0
+    Top = 0
+    Width = 488
+    Height = 651
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Align = alLeft
+    TabOrder = 1
+    ExplicitHeight = 649
+    object lbDepth: TLabel
+      Left = 201
+      Top = 131
+      Width = 5
+      Height = 21
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+    end
+    object lbmin: TLabel
+      Left = 6
+      Top = 428
+      Width = 5
+      Height = 21
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+    end
+    object lbTest: TLabel
+      Left = 6
+      Top = 480
+      Width = 46
+      Height = 21
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = 'lbTest'
+      Visible = False
+    end
+    object lbTest2: TLabel
+      Left = 6
+      Top = 449
+      Width = 46
+      Height = 21
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = 'lbTest'
+      Visible = False
+    end
+    object rgPrice: TRadioGroup
+      Left = 35
+      Top = 107
+      Width = 150
+      Height = 54
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Columns = 2
+      Ctl3D = True
+      ItemIndex = 1
+      Items.Strings = (
+        #54840#44032
+        #44032#44201)
+      ParentCtl3D = False
+      TabOrder = 12
+      OnClick = rgPriceClick
+    end
+    object edtQty: TLabeledEdit
+      Left = 41
+      Top = 47
+      Width = 141
+      Height = 29
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Alignment = taRightJustify
+      EditLabel.Width = 24
+      EditLabel.Height = 29
+      EditLabel.Margins.Left = 18
+      EditLabel.Margins.Top = 18
+      EditLabel.Margins.Right = 18
+      EditLabel.Margins.Bottom = 18
+      EditLabel.Caption = #49688#47049
+      LabelPosition = lpLeft
+      TabOrder = 0
+      Text = ''
+    end
+    object edtPrice: TLabeledEdit
+      Left = 41
+      Top = 87
+      Width = 141
+      Height = 29
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Alignment = taRightJustify
+      EditLabel.Width = 24
+      EditLabel.Height = 29
+      EditLabel.Margins.Left = 18
+      EditLabel.Margins.Top = 18
+      EditLabel.Margins.Right = 18
+      EditLabel.Margins.Bottom = 18
+      EditLabel.Caption = #45800#44032
+      LabelPosition = lpLeft
+      TabOrder = 1
+      Text = ''
+      OnKeyDown = edtPriceKeyDown
+      OnKeyUp = edtPriceKeyUp
+    end
+    object cbExKind: TComboBox
+      Left = 6
+      Top = 6
+      Width = 98
+      Height = 29
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Style = csDropDownList
+      ItemIndex = 1
+      TabOrder = 2
+      Text = #50629#48708#53944
+      OnChange = cbExKindChange
+      Items.Strings = (
+        #48148#51060#45240#49828
+        #50629#48708#53944
+        #48727#50040)
+    end
+    object edtCode: TEdit
+      Left = 209
+      Top = 6
+      Width = 114
+      Height = 29
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      TabOrder = 3
+      OnKeyDown = edtCodeKeyDown
+    end
+    object rbBuy: TRadioButton
+      Left = 201
+      Top = 50
+      Width = 69
+      Height = 24
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #47588#49688
+      Checked = True
+      TabOrder = 4
+      TabStop = True
+      OnClick = rbBuyClick
+    end
+    object rbSell: TRadioButton
+      Left = 269
+      Top = 50
+      Width = 69
+      Height = 24
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #47588#46020
+      TabOrder = 5
+      OnClick = rbSellClick
+    end
+    object cbReduce: TCheckBox
+      Left = 347
+      Top = 47
+      Width = 129
+      Height = 27
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = 'Reduct-Only'
+      TabOrder = 6
+    end
+    object btnOrder: TButton
+      Left = 330
+      Top = 6
+      Width = 149
+      Height = 32
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #47588#49688' '#51452#47928
+      TabOrder = 7
+      OnClick = btnOrderClick
+    end
+    object sgBal: TStringGrid
+      Left = 6
+      Top = 167
+      Width = 476
+      Height = 96
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      ColCount = 4
+      DefaultColWidth = 96
+      DefaultRowHeight = 29
+      FixedCols = 0
+      RowCount = 3
+      FixedRows = 0
+      ScrollBars = ssNone
+      TabOrder = 8
+      OnSelectCell = sgBalSelectCell
+      ColWidths = (
+        89
+        144
+        105
+        126)
+    end
+    object Button1: TButton
+      Left = 6
+      Top = 380
+      Width = 113
+      Height = 39
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #51092#44256#51312#54924
+      TabOrder = 9
+      Visible = False
+      OnClick = Button1Click
+    end
+    object btnQueryOrder: TButton
+      Left = 251
+      Top = 380
+      Width = 112
+      Height = 37
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #51452#47928#51312#54924
+      TabOrder = 10
+      Visible = False
+      OnClick = btnQueryOrderClick
+    end
+    object Button3: TButton
+      Left = 116
+      Top = 735
+      Width = 114
+      Height = 38
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = '1'#51068#44144#47000#50529
+      TabOrder = 11
+      Visible = False
+      OnClick = Button3Click
+    end
+    object cbMarket: TComboBox
+      Left = 107
+      Top = 6
+      Width = 100
+      Height = 29
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Style = csDropDownList
+      ItemIndex = 1
+      TabOrder = 13
+      Text = 'USD'#9442'-M'
+      OnChange = cbMarketChange
+      Items.Strings = (
+        'Spot'
+        'USD'#9442'-M'
+        'COIN-M')
+    end
+    object Button4: TButton
+      Left = 129
+      Top = 380
+      Width = 113
+      Height = 39
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #54252#51648#49496
+      TabOrder = 14
+      OnClick = Button4Click
+    end
+    object edtEstPrice: TLabeledEdit
+      Left = 300
+      Top = 785
+      Width = 141
+      Height = 29
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      EditLabel.Width = 24
+      EditLabel.Height = 29
+      EditLabel.Margins.Left = 18
+      EditLabel.Margins.Top = 18
+      EditLabel.Margins.Right = 18
+      EditLabel.Margins.Bottom = 18
+      EditLabel.Caption = #45800#44032
+      LabelPosition = lpLeft
+      TabOrder = 15
+      Text = ''
+      Visible = False
+    end
+    object sgPos: TStringGrid
+      Left = 6
+      Top = 275
+      Width = 476
+      Height = 96
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      ColCount = 4
+      DefaultColWidth = 96
+      DefaultRowHeight = 29
+      FixedCols = 0
+      RowCount = 3
+      FixedRows = 0
+      ScrollBars = ssNone
+      TabOrder = 16
+      OnSelectCell = sgBalSelectCell
+      ColWidths = (
+        89
+        144
+        104
+        128)
+    end
+    object cbTest: TButton
+      Left = 113
+      Top = 783
+      Width = 114
+      Height = 38
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = 'cbTest'
+      Enabled = False
+      TabOrder = 17
+      Visible = False
+      OnClick = cbTestClick
+    end
+    object edtTick: TEdit
+      Left = 195
+      Top = 87
+      Width = 59
+      Height = 29
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Alignment = taRightJustify
+      NumbersOnly = True
+      TabOrder = 18
+      Text = '0'
+      OnChange = edtTickChange
+    end
+    object UpDown1: TUpDown
+      Left = 254
+      Top = 87
+      Width = 24
+      Height = 29
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Associate = edtTick
+      TabOrder = 19
+      OnChanging = UpDown1Changing
+    end
+    object Button5: TButton
+      Left = 396
+      Top = 585
+      Width = 89
+      Height = 38
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #49888#44508#52712#49548
+      TabOrder = 20
+      Visible = False
+      OnClick = Button5Click
+    end
+    object cbPostOnly: TCheckBox
+      Left = 347
+      Top = 80
+      Width = 129
+      Height = 27
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = 'Post-Only'
+      TabOrder = 21
+    end
+    object CheckBox1: TCheckBox
+      Left = 195
+      Top = 606
+      Width = 113
+      Height = 17
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = 'markprice'
+      TabOrder = 22
+      Visible = False
+    end
+    object CheckBox2: TCheckBox
+      Left = 95
+      Top = 593
+      Width = 147
+      Height = 27
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = 'im'#45908#54616#44592
+      Checked = True
+      State = cbChecked
+      TabOrder = 23
+      Visible = False
+    end
+    object edtLimitBuy: TEdit
+      Left = 6
+      Top = 512
+      Width = 98
+      Height = 29
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      TabOrder = 24
+      Text = 'edtLimitBuy'
+    end
+    object edtLImitSell: TEdit
+      Left = 114
+      Top = 512
+      Width = 98
+      Height = 29
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      TabOrder = 25
+      Text = 'Edit1'
+    end
+    object Button2: TButton
+      Tag = -1
+      Left = 294
+      Top = 585
+      Width = 92
+      Height = 38
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #52712#49548#49888#44508
+      TabOrder = 26
+      Visible = False
+      OnClick = Button5Click
+    end
+    object Button6: TButton
+      Left = 389
+      Top = 512
+      Width = 87
+      Height = 37
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #53580#49828#53944
+      TabOrder = 27
+      Visible = False
+      OnClick = Button6Click
+    end
+  end
+  object stBar: TStatusBar
+    Left = 0
+    Top = 651
+    Width = 767
+    Height = 29
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Panels = <
+      item
+        Width = 90
+      end
+      item
+        Width = 50
+      end>
+    ExplicitTop = 649
+    ExplicitWidth = 757
+  end
+  object Timer1: TTimer
+    OnTimer = Timer1Timer
+    Left = 260
+    Top = 212
+  end
+end

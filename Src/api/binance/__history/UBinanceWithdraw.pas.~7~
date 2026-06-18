@@ -1,0 +1,162 @@
+unit UBinanceWithdraw;
+
+interface
+
+uses
+  System.Classes, System.SysUtils,  Rest.Json ,   Rest.Types,
+
+  UApiWithdraw,
+
+  UApiTypes, UApiConsts
+
+  ;
+
+type
+  TBinanceWithdraw = class( TApiWithdraw )
+  private
+
+    procedure DoWithdrawAble;
+    procedure ReuqestWithdraw;
+    procedure DoWithdraw; override;
+    procedure Parse(const aType, aData: string);
+    procedure DoUpdateAsset;
+    procedure ParseDepositAddress(const aData: string);
+
+  public
+    Constructor Create; override;
+    Destructor  Destroy; override;
+
+    procedure RecvRequest(Sender : TObject);  override;
+//    function DoWithDraw( var sRes : string ) : boolean; override;
+    procedure RequestDepositAddress(sCurrency, sNetType: string); override;
+    procedure RequestWithdrawList(sCurrency : string; bFirst : boolean); override;
+
+  end;
+
+implementation
+
+uses
+  GApp, Glibs
+  , UEncrypts
+  , System.JSON, System.Hash
+  ;
+
+{ TBinanceWithdraw }
+
+constructor TBinanceWithdraw.Create;
+begin
+  inherited Create;
+end;
+
+destructor TBinanceWithdraw.Destroy;
+begin
+  inherited;
+end;
+
+procedure TBinanceWithdraw.DoUpdateAsset;
+begin
+
+end;
+
+procedure TBinanceWithdraw.DoWithdraw;
+begin
+  inherited;
+
+end;
+
+procedure TBinanceWithdraw.DoWithdrawAble;
+begin
+
+end;
+
+
+procedure TBinanceWithdraw.RecvRequest(Sender: TObject);
+begin
+  Parse( Req.Name, Req.Rsp.Content );
+end;
+
+procedure TBinanceWithdraw.RequestDepositAddress(sCurrency, sNetType: string);
+var
+  sTime, data, sig : string;
+begin
+  if sCurrency.IsEmpty or sNetType.IsEmpty then Exit;
+
+  try
+    sTime := GetTimestamp;
+    data  := Format('timestamp=%s&coin=%s&network=%s', [sTime, sCurrency, sNetType]);
+    sig   := CalculateHMACSHA256( data, App.Engine.ApiConfig.GetSceretKey(ekBinance , eaSpot));
+
+    with Req do
+    begin
+      Req.Params.Clear;
+      Req.AddParameter('timestamp', sTime );
+      Req.AddParameter('signature', sig );
+      Req.AddParameter('X-MBX-APIKEY', App.Engine.ApiConfig.GetApiKey(ekBinance , eaSpot), pkHTTPHEADER);
+
+      Req.AddParameter('coin', sCurrency, pkGETorPOST);
+      Req.AddParameter('network', sNetType, pkGETorPOST );
+    end;
+
+    Req.init(rmGET, 'https://api.binance.com', '/sapi/v1/capital/deposit/address', 'DpstAddr' );
+    Req.Field1  := sCurrency;
+    Req.Field2  := sNetType;
+    Req.RequestAsync;
+  finally
+
+  end;
+
+end;
+
+procedure TBinanceWithdraw.RequestWithdrawList(sCurrency: string;
+  bFirst: boolean);
+begin
+  inherited;
+
+end;
+
+procedure TBinanceWithdraw.ReuqestWithdraw;
+begin
+
+end;
+
+procedure TBinanceWithdraw.Parse(const aType, aData: string);
+begin
+  if aDAta = '' then
+  begin
+    DoNotify( '출금 요청 실패', 999);
+    Exit;
+  end;
+
+  if aType = 'DpstAddr' then
+    ParseDepositAddress(aData);
+end;
+
+procedure TBinanceWithdraw.ParseDepositAddress(const aData: string);
+var
+  aObj : TJsonObject;
+  iErr : integer;
+
+  addr, tag: string;
+begin
+  aObj := TJsonObject.ParseJSONValue( aData) as TJsonObject;
+  try
+    if aObj.TryGetValue<integer>('code', iErr) then
+    begin
+      DoNotify(aObj.GetValue<string>('msg'), 999 );
+      Exit;
+    end;
+
+    addr := aObj.GetValue<string>('address');
+    tag  := aObj.GetValue<string>('tag');
+
+//    addr := addr.Replace('"','');
+//    tag  := tag.Replace('"','');
+
+    DoNotify(addr + '=' + tag);
+
+  finally
+    FreeAndNil(aObj);
+  end;
+end;
+
+end.

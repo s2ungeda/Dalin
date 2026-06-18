@@ -1,0 +1,117 @@
+object FrmPosConfig: TFrmPosConfig
+  Left = 0
+  Top = 0
+  BorderStyle = bsDialog
+  Caption = #49444#51221
+  ClientHeight = 181
+  ClientWidth = 160
+  Color = clBtnFace
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -18
+  Font.Name = 'Segoe UI'
+  Font.Style = []
+  KeyPreview = True
+  Position = poOwnerFormCenter
+  OnCreate = FormCreate
+  OnKeyDown = FormKeyDown
+  PixelsPerInch = 144
+  TextHeight = 25
+  object g1: TGroupBox
+    Left = 8
+    Top = 8
+    Width = 146
+    Height = 120
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = 'MarginType'
+    TabOrder = 0
+    object rbIsolated: TRadioButton
+      Left = 23
+      Top = 40
+      Width = 98
+      Height = 25
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = 'Isolated'
+      TabOrder = 0
+    end
+    object rbCross: TRadioButton
+      Left = 23
+      Top = 76
+      Width = 98
+      Height = 25
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = 'Cross'
+      TabOrder = 1
+    end
+  end
+  object g2: TGroupBox
+    Left = 163
+    Top = 8
+    Width = 145
+    Height = 120
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = 'Leverage'
+    TabOrder = 1
+    object edtLeverage: TLabeledEdit
+      Left = 16
+      Top = 34
+      Width = 44
+      Height = 33
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Alignment = taRightJustify
+      EditLabel.Width = 5
+      EditLabel.Height = 33
+      EditLabel.Margins.Left = 7
+      EditLabel.Margins.Top = 7
+      EditLabel.Margins.Right = 7
+      EditLabel.Margins.Bottom = 7
+      EditLabel.Caption = ' '
+      LabelPosition = lpLeft
+      NumbersOnly = True
+      TabOrder = 0
+      Text = ''
+    end
+  end
+  object btnOK: TButton
+    Left = 10
+    Top = 138
+    Width = 63
+    Height = 26
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = #54869#51064
+    ModalResult = 1
+    TabOrder = 2
+    OnClick = btnOKClick
+  end
+  object btnCancel: TButton
+    Left = 90
+    Top = 138
+    Width = 64
+    Height = 26
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = #52712#49548
+    TabOrder = 3
+    OnClick = btnCancelClick
+  end
+end

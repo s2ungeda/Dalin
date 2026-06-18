@@ -1,0 +1,69 @@
+unit URestItems;
+
+interface
+
+uses
+	System.Classes, 
+
+  REST.Types ,
+
+  URestRequests,
+
+  UApiTypes
+
+  ;
+
+type
+
+	TReqeustItem = class
+  public
+	  Req : TRequest;
+    AMethod : TRESTRequestMethod;
+    AResource : string;
+    Name : string;
+    ExKind : TExchangeKind;
+    JsonData, OutData	: string;
+  	constructor Create;
+    Destructor  Destroy; override;
+
+    procedure SetBithumbSig( sVal : string );
+  end;
+
+  TBalanceRequestItem = class
+  public
+    Name : string;
+    ExKind : TExchangeKind;
+    Result : boolean;
+    constructor Create;
+  end;
+
+implementation
+
+
+{ TReqeustItem }
+
+constructor TReqeustItem.Create;
+begin
+	Req := TRequest.Create;
+end;
+
+destructor TReqeustItem.Destroy;
+begin
+  Req.Free;
+  inherited;
+end;
+
+procedure TReqeustItem.SetBithumbSig(sVal: string);
+begin
+
+end;
+
+{ TBalanceRequestItem }
+
+constructor TBalanceRequestItem.Create;
+begin
+  Result  := false;
+  Name    := '';
+end;
+
+end.

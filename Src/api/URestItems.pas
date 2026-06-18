@@ -1,0 +1,122 @@
+unit URestItems;
+
+interface
+
+uses
+	System.Classes, 
+
+  REST.Types ,
+
+  URestRequests,
+
+  UApiTypes
+
+  ;
+
+type
+
+	TReqeustItem = class
+  public
+	  Req : TRequest;
+    AMethod : TRESTRequestMethod;
+    AResource : string;
+    Name : string;
+    ExKind : TExchangeKind;
+    JsonData, OutData	: string;
+  	constructor Create;
+    Destructor  Destroy; override;
+
+    procedure SetBithumbSig( const sVal, sTime : string );
+    procedure SetUpbitSig(const sVal : string);
+
+  end;
+
+  TBalanceRequestItem = class
+  public
+    Name : string;
+    ExKind : TExchangeKind;
+    Result : boolean;
+    constructor Create;
+  end;
+
+implementation
+
+uses
+  GApp, GLibs
+  , UEncrypts
+  , IdCoderMIME, IdGlobal
+  , System.Hash
+  , JOSE.Core.JWT
+  , JOSE.Core.JWA
+  , JOSE.Core.Builder
+  ;
+
+
+{ TReqeustItem }
+
+constructor TReqeustItem.Create;
+begin
+	Req := TRequest.Create;
+end;
+
+destructor TReqeustItem.Destroy;
+begin
+  Req.Free;
+  inherited;
+end;
+
+procedure TReqeustItem.SetBithumbSig(const sVal, sTime: string);
+var
+  sSig, sBody : string;
+begin
+
+  sSig	:= CalculateHMACSHA512( sVal, App.Engine.ApiConfig.GetSceretKey( ExKind, eaSpot) );
+  sBody	:= TIdEncoderMIME.EncodeString( sSig, IndyTextEncoding_UTF8 );
+
+  with Req do
+  begin
+    SetParam('Api-Key',  App.Engine.ApiConfig.GetApiKey( ExKind, eaSpot), TRESTRequestParameterKind.pkHTTPHEADER );//, [poDoNotEncode]);
+    SetParam('Api-Sign', sBody , TRESTRequestParameterKind.pkHTTPHEADER , [poDoNotEncode]);
+    SetParam('Api-Nonce', sTime , TRESTRequestParameterKind.pkHTTPHEADER );
+  end;
+end;
+
+procedure TReqeustItem.SetUpbitSig(const sVal: string);
+var
+  LToken: TJWT;
+  sSig : string;
+  vHash : THashSHA2;
+begin
+
+  LToken:= TJWT.Create(TJWTClaims);
+
+  try
+
+    LToken.Claims.SetClaimOfType<string>('access_key', App.Engine.ApiConfig.GetApiKey( ExKind , eaSpot ));
+    LToken.Claims.SetClaimOfType<string>('nonce', GetUUID );
+    if sVal <> '0' then
+    begin
+      LToken.Claims.SetClaimOfType<string>('query_hash', vHash.gethashstring( sVal, SHA512 ) );
+      LToken.Claims.SetClaimOfType<string>('query_hash_alg', 'SHA512' );
+    end;
+    sSig := TJOSE.SerializeCompact(  App.Engine.ApiConfig.GetSceretKey( ExKind , eaSpot )
+      ,  TJOSEAlgorithmId.HS256, LToken);
+
+    Req.SetParam('Authorization', 'Bearer '+sSig , TRESTRequestParameterKind.pkHTTPHEADER, [poDoNotEncode] );
+
+  finally
+    LToken.Free;
+  end;
+
+
+end;
+
+{ TBalanceRequestItem }
+
+constructor TBalanceRequestItem.Create;
+begin
+  Result  := false;
+  Name    := '';
+end;
+
+end.

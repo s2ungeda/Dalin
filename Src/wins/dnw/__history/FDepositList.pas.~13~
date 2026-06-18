@@ -1,0 +1,377 @@
+unit FDepositList;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
+  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.Grids, Vcl.StdCtrls, Vcl.ExtCtrls
+
+  , USymbols, UApiWithdraw
+  , UApiTypes, UApiConsts, UTypes, Vcl.ComCtrls
+
+  ;
+
+type
+  TFrmDepositList = class(TForm)
+    Panel1: TPanel;
+    edtCode: TEdit;
+    cbNetType: TComboBox;
+    Button1: TButton;
+    cbExKind: TComboBox;
+    sgAddr: TStringGrid;
+    lbDesc: TLabel;
+    btnAddr1: TButton;
+    btnAddr2: TButton;
+    Button2: TButton;
+    Button3: TButton;
+    lbResult: TLabel;
+    Button4: TButton;
+    procedure FormCreate(Sender: TObject);
+    procedure cbExKindChange(Sender: TObject);
+    procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure FormDestroy(Sender: TObject);
+    procedure edtCodeKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
+    procedure cbNetTypeChange(Sender: TObject);
+    procedure Button1Click(Sender: TObject);
+    procedure btnAddr1Click(Sender: TObject);
+    procedure btnAddr2Click(Sender: TObject);
+    procedure Button2Click(Sender: TObject);
+    procedure Button3Click(Sender: TObject);
+    procedure Button4Click(Sender: TObject);
+    procedure sgAddrDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect;
+      State: TGridDrawState);
+  private
+    { Private declarations }
+    FSymbol : TSymbol;
+    FExKind : TExchangeKind;
+    FIsEdit : boolean;
+    FReq    : array [TExchangeKind] of TApiWithdraw;
+    procedure Clear;
+    procedure DrawActionButtons(aCanvas: TCanvas; aRect: TRect; aRow: Integer);
+  public
+    { Public declarations }
+    procedure ResultNotifyEvent(Sender: TObject; Result : TResultMesage);
+    class function Add(aOwner: TComponent): TDepositAddress;
+  end;
+
+var
+  FrmDepositList: TFrmDepositList;
+
+implementation
+
+uses
+  GApp, GLibs, Clipbrd
+  , UUpbitWithdraw
+  , UBitWithdraw
+  , UBinanceWithdraw
+  ;
+
+
+{$R *.dfm}
+
+class function TFrmDepositList.Add(aOwner: TComponent): TDepositAddress;
+var
+  Dlg: TFrmDepositList;
+begin
+  Result := Default(TDepositAddress);
+  Dlg := TFrmDepositList.Create(aOwner);
+  try
+    Dlg.Caption := '주소 추가';
+    Dlg.FIsEdit := False;
+
+    if Dlg.ShowModal = mrOK then
+    begin
+      Result.Exchange := TExchangeKindDesc[Dlg.FExKind];
+      Result.Coin     := UpperCase(Dlg.edtCode.Text);
+      Result.Network  := Dlg.cbNetType.Items[Dlg.cbNetType.ItemIndex];
+      Result.Address  := Trim(Dlg.sgAddr.Cells[1, 0]);
+      Result.Memo     := Trim(Dlg.sgAddr.Cells[1, 1]);
+    end;
+  finally
+    Dlg.Free;
+  end;
+
+end;
+
+procedure TFrmDepositList.btnAddr1Click(Sender: TObject);
+begin
+  if sgAddr.Cells[1,0] <> '' then
+    Clipboard.AsText := sgAddr.Cells[1,0];
+end;
+
+procedure TFrmDepositList.btnAddr2Click(Sender: TObject);
+begin
+  if sgAddr.Cells[1,1] <> '' then
+    Clipboard.AsText := sgAddr.Cells[1,1];
+end;
+
+procedure TFrmDepositList.Button1Click(Sender: TObject);
+begin
+
+  if FSymbol = nil then
+  begin
+    ShowMessage('종목선택을 먼저');
+    Exit;
+  end;
+
+  if FReq[FExKind] = nil then Exit;
+
+  FReq[FExKind].RequestDepositAddress( UpperCase(edtCode.Text),  cbNetType.Items[cbNetType.ItemIndex] );
+end;
+
+procedure TFrmDepositList.Button2Click(Sender: TObject);
+begin
+  ModalResult := mrCancel;
+end;
+
+procedure TFrmDepositList.Button3Click(Sender: TObject);
+begin
+  if Trim(sgAddr.Cells[1, 0]) = '' then
+  begin
+    MessageDlg('주소를 입력하세요.', mtWarning, [mbOK], 0);
+    Exit;
+  end;
+  ModalResult := mrOK;
+end;
+
+procedure TFrmDepositList.Button4Click(Sender: TObject);
+begin
+  if FExKind <> ekBinance then
+  begin
+    if FSymbol = nil then
+    begin
+      ShowMessage('종목선택을 먼저');
+      Exit;
+    end;
+
+    if FReq[FExKind] = nil then Exit;
+
+    FReq[FExKind].RequestNewDepositAddress( UpperCase(edtCode.Text),  cbNetType.Items[cbNetType.ItemIndex] );
+  end;
+end;
+
+procedure TFrmDepositList.cbExKindChange(Sender: TObject);
+begin
+  if FExKind <> TExchangeKind(cbExKind.ItemIndex) then
+  begin
+    FExKind := TExchangeKind(cbExKind.ItemIndex);
+    Clear;
+  end;
+end;
+
+procedure TFrmDepositList.cbNetTypeChange(Sender: TObject);
+var
+  aDnw : TDnwNetWork;
+begin
+{
+  if cbNetType.Items.Objects[cbNetType.ItemIndex] <> nil then begin
+    aDnw := TDnwNetWork( cbNetType.Items.Objects[cbNetType.ItemIndex] );
+    lbDesc.Caption := Format('입금 : %s, 출금 : %s', [
+      ifThenStr(aDnw.DepositState, '가능','불가'),
+      ifThenStr(aDnw.WithDrawlState, '가능','불가') ]);
+  end else
+    lbDesc.Caption := ''
+}
+end;
+
+procedure TFrmDepositList.Clear;
+begin
+  FSymbol := nil;
+
+  sgAddr.Cells[1,1]  := '';
+  sgAddr.Cells[1,0]  := '';
+
+  btnAddr1.Visible  := false;
+  btnAddr2.Visible  := false;
+
+  cbNetType.Items.Clear;
+end;
+
+procedure TFrmDepositList.DrawActionButtons(aCanvas: TCanvas;
+  aRect: TRect; aRow: Integer);
+var
+  BtnRect: TRect;
+  i: Integer;
+  Caption: string;
+  BtnLeft: Integer;
+begin
+  Caption := #$2398;   // 복사
+
+  BtnLeft := aRect.Left + 10;
+
+  BtnRect.Left := BtnLeft;
+  BtnRect.Top := aRect.Top + 8;
+  BtnRect.Right := BtnRect.Left + 28;
+  BtnRect.Bottom := BtnRect.Top + 28;
+
+  aCanvas.Pen.Color := clGray;
+  aCanvas.RoundRect(aRect.Left, aRect.Top,
+    aRect.Right, aRect.Bottom, 6, 6);
+  aCanvas.Font.Name := 'Segoe UI Symbol';
+  aCanvas.Font.Size := 10;
+  aCanvas.Font.Style := [];
+  aCanvas.TextOut(aRect.Left + 6, aRect.Top + 2, Caption);
+
+  aCanvas.Font.Name := 'Segoe UI';
+end;
+
+procedure TFrmDepositList.edtCodeKeyDown(Sender: TObject; var Key: Word;
+  Shift: TShiftState);
+  var
+    sText : string;
+    aSymbol : TSymbol;
+    I: Integer;
+begin
+  if Key = VK_RETURN then
+  begin
+    sText := UpperCase(edtCode.Text);
+
+    if sText <> '' then
+    begin
+      aSymbol := App.Engine.SymbolCore.BaseSymbols.FindSymbol( sText, FExKind, eaSpot );
+      if aSymbol = FSymbol then
+      begin
+        if aSymbol = nil then ShowMessageAtCursor('잘못된 코드', TMsgDlgType.mtConfirmation, [mbOK]);
+        Exit;
+      end;
+
+      cbNetType.Clear;
+
+      FSymbol   := aSymbol;
+      for I := 0 to aSymbol.NetworkList.Count-1 do
+        cbNetType.AddItem( aSymbol.NetworkList.Network[i].Name, aSymbol.NetworkList.Network[i] );
+
+      if cbNetType.Items.Count > 0 then begin
+        cbNetType.ItemIndex := 0;
+        cbNetTypeChange(nil);
+      end;
+    end;
+  end;
+
+end;
+
+procedure TFrmDepositList.FormClose(Sender: TObject; var Action: TCloseAction);
+begin
+  Action := caFree;
+end;
+
+procedure TFrmDepositList.FormCreate(Sender: TObject);
+var
+  aRect : TRect;
+begin
+  FSymbol := nil;
+
+  for var e := ekBinance to High(TExchangeKind) do
+    cbExKind.Items.Add(TExchangeKindDesc[e]);
+
+  cbExKind.ItemIndex  := 0;
+  cbExKindChange(nil);
+
+  sgAddr.Cells[0,0] := '입금주소';
+  sgAddr.Cells[0,1] := '2차주소';
+
+  FReq[ekBinance] := TBinanceWithdraw.Create;  FReq[ekBinance].OnNotify:= ResultNotifyEvent;
+  FReq[ekUpbit]   := TUpbitWithdraw.Create;    FReq[ekUpbit].OnNotify := ResultNotifyEvent;
+  FReq[ekBithumb] := TBitWithdraw.Create;      FReq[ekBithumb].OnNotify := ResultNotifyEvent;
+
+  btnAddr2.Caption  := #$2398;
+  btnAddr1.Caption  := #$2398;
+
+  btnAddr1.Visible  := false;
+  btnAddr2.Visible  := false;
+
+end;
+
+procedure TFrmDepositList.FormDestroy(Sender: TObject);
+var
+  I: TExchangeKind;
+begin
+  for I := ekBinance to High(TExchangeKind) do
+    FreeAndNil(FReq[i]);
+end;
+
+procedure TFrmDepositList.ResultNotifyEvent(Sender: TObject;
+  Result: TResultMesage);
+  var
+    stArr, stArr2 : TArray<string>;
+    iLen  : integer;
+begin
+
+  sgAddr.BeginUpdate;
+
+  try
+    sgAddr.Cells[1,1]  := '';
+    sgAddr.Cells[1,0]  := '';
+
+    if Result.Code <> 0 then begin
+      lbResult.Caption  := Result.Reason;
+      sgAddr.Cells[1,0]  := '';
+      sgAddr.Cells[1,1]  := '';
+
+      btnAddr1.Visible  := false;
+      btnAddr2.Visible  := false;
+    end
+    else begin
+      lbResult.Caption  := '조회성공';
+
+      stArr := Result.Reason.Split(['=']);
+      iLen  := Length(stArr );
+
+      with sgAddr do
+        case iLen of
+          1 :
+            begin
+              Cells[1,0]  := stArr[0];
+              Cells[1,1]  := '';
+              btnAddr1.Visible  := true;
+              btnAddr2.Visible  := false;
+            end;
+          2 :
+            begin
+
+              Cells[1,0]  := stArr[0];
+              Cells[1,1]  := stArr[1];
+
+              btnAddr1.Visible  := true;
+              btnAddr2.Visible  := true;
+            end;
+        end;
+    end;
+  finally
+    sgAddr.EndUpdate;
+  end;
+end;
+
+procedure TFrmDepositList.sgAddrDrawCell(Sender: TObject; ACol, ARow: Integer;
+  Rect: TRect; State: TGridDrawState);
+  var
+    sTxt: string;
+    clBack: TColor;
+    dFmt : DWORD;
+    aRect: TRect;
+begin
+  //
+  clBack := clWhite;
+  dFmt   := DT_SINGLELINE or DT_VCENTER ;
+  aRect  := Rect;
+
+  with sgAddr do
+  begin
+    sTxt := Cells[ACol, ARow];
+
+    case ACol of
+      0 : clBack := clBtnFace;
+//      2 : DrawActionButtons(Canvas, Rect, ARow);
+    end;
+
+    case ACol of
+      0 : dFmt := dFmt or DT_CENTER;
+      1 : aRect.Left := Rect.Left + 2;
+    end;
+
+    DrawText(Canvas.Handle, PChar(sTxt), Length(sTxt), aRect, dFmt);
+  end;
+
+end;
+
+end.

@@ -1,0 +1,583 @@
+﻿unit UDepositAddressForm;
+{
+  거래소별 코인 입금 주소 관리 폼
+  ================================
+  - TDrawGrid 가상 렌더링 (대량 데이터 대응)
+  - TSQLiteManager 연동 (CRUD)
+  - 거래소 탭 필터링
+  - 추가 / 수정 / 삭제 / 클립보드 복사
+  - 코인 선택 시 네트워크 자동 연동
+}
+interface
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Classes,
+  System.Generics.Collections, System.Variants,
+  Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.Grids,
+  Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Buttons, Vcl.Clipbrd,
+  UDBManager, FireDAC.Comp.Client, FireDAC.VCLUI.Wait,
+  UApiTypes, UApiConsts
+  ;
+type
+  TFrmDepositAddress = class(TForm)
+    PnlTabs: TPanel;
+    BtnAdd: TButton;
+    SbtnAll: TSpeedButton;
+    SbtnUpbit: TSpeedButton;
+    SbtnBithumb: TSpeedButton;
+    SbtnBinance: TSpeedButton;
+    SbtnMEXC: TSpeedButton;
+    Grid: TDrawGrid;
+    procedure FormCreate(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+    procedure BtnAddClick(Sender: TObject);
+    procedure TabClick(Sender: TObject);
+    procedure GridDrawCell(Sender: TObject; ACol, ARow: Integer;
+      Rect: TRect; State: TGridDrawState);
+    procedure GridMouseDown(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
+    procedure GridMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
+    procedure GridSelectCell(Sender: TObject; ACol, ARow: Integer;
+      var CanSelect: Boolean);
+  private
+    // 마우스 호버
+    FHoverRow: Integer;
+    FHoverAction: Integer;  // 0=none, 1=copy, 2=edit, 3=delete
+    // 데이터
+    FDB: TSQLiteManager;
+    FAllData: TList<TDepositAddress>;
+    FFiltered: TList<TDepositAddress>;
+
+    FActiveTab: string;  // 'all' 또는 거래소명
+    // 컬럼 인덱스
+    const
+      COL_EXCHANGE = 0;
+      COL_COIN     = 1;
+      COL_NETWORK  = 2;
+      COL_ADDRESS  = 3;
+      COL_MEMO     = 4;
+      COL_ACTIONS  = 5;
+      COL_COUNT    = 6;
+    // 색상
+    class var
+      FColorXRP: TColor;
+      FColorBTC: TColor;
+      FColorETH: TColor;
+      FColorADA: TColor;
+      FColorUSDT: TColor;
+      FColorTabActive: TColor;
+      FColorTabActiveText: TColor;
+      FColorGridLine: TColor;
+      FColorHover: TColor;
+      FColorAccent: TColor;
+    procedure InitColors;
+    procedure InitDB;
+    // 데이터 로드
+    procedure LoadData;
+    procedure ApplyFilter;
+    procedure RefreshGrid;
+    // CRUD
+    procedure DoAdd;
+    procedure DoEdit(aIndex: Integer);
+    procedure DoDelete(aIndex: Integer);
+    procedure DoCopy(aIndex: Integer);
+    // 그리기 헬퍼
+    procedure DrawCoinBadge(aCanvas: TCanvas; const aCoin, aNetwork: string;
+      aRect: TRect);
+    procedure DrawActionButtons(aCanvas: TCanvas; aRect: TRect; aRow: Integer);
+    function GetCoinColor(const aCoin: string): TColor;
+    function GetCoinTextColor(const aCoin: string): TColor;
+  end;
+
+  var FrmDepositAddress : TFrmDepositAddress;
+implementation
+uses
+  GApp, GLIbs
+  , UDepositAddressEditDlg
+  , FDepositList
+  ;
+{$R *.dfm}
+
+{ TDepositAddressForm }
+procedure TFrmDepositAddress.InitColors;
+begin
+  FColorXRP        := $00EEF5E1;  // 연한 민트
+  FColorBTC        := $00DAEEFA;  // 연한 앰버
+  FColorETH        := $00FBF1E6;  // 연한 블루
+  FColorADA        := $00FEEDEE;  // 연한 퍼플
+  FColorUSDT       := $00DEF3EA;  // 연한 그린
+  FColorTabActive  := $00B74A53;  // 퍼플 (#534AB7 BGR)
+  FColorTabActiveText := clWhite;
+  FColorGridLine   := $00E8E8E8;
+  FColorHover      := $00F5F5F2;
+  FColorAccent     := $00B74A53;
+end;
+procedure TFrmDepositAddress.FormCreate(Sender: TObject);
+var
+  DBPath, Dir: string;
+begin
+  InitColors;
+  FAllData := TList<TDepositAddress>.Create;
+  FFiltered := TList<TDepositAddress>.Create;
+  FActiveTab := 'all';
+  FHoverRow := -1;
+  FHoverAction := 0;
+  // DB 초기화
+  DBPath := ExtractFilePath(Application.ExeName) + 'deposit.db';
+  Dir := ExtractFilePath(DBPath);
+  if (Dir <> '') and not DirectoryExists(Dir) then
+    ForceDirectories(Dir);
+  FDB := App.Engine.DBManager;
+  Grid.ColCount := COL_COUNT;
+  InitDB;
+  LoadData;
+  FDB.StartWriter;
+end;
+procedure TFrmDepositAddress.FormDestroy(Sender: TObject);
+begin
+  FFiltered.Free;
+  FAllData.Free;
+end;
+procedure TFrmDepositAddress.InitDB;
+begin
+  FDB.Execute(
+    'CREATE TABLE IF NOT EXISTS deposit_addresses (' +
+    '  id INTEGER PRIMARY KEY AUTOINCREMENT,' +
+    '  exchange TEXT NOT NULL,' +
+    '  coin TEXT NOT NULL,' +
+    '  network TEXT NOT NULL,' +
+    '  address TEXT NOT NULL,' +
+    '  memo TEXT DEFAULT '''',' +
+    '  updated_at TEXT DEFAULT (datetime(''now'',''localtime''))' +
+    ')'
+  );
+  FDB.Execute(
+    'CREATE INDEX IF NOT EXISTS idx_deposit_exchange ON deposit_addresses(exchange)');
+  FDB.Execute(
+    'CREATE INDEX IF NOT EXISTS idx_deposit_coin ON deposit_addresses(coin)');
+end;
+procedure TFrmDepositAddress.LoadData;
+begin
+  FAllData.Clear;
+  FDB.Query(
+    'SELECT id, exchange, coin, network, address, memo, updated_at ' +
+    'FROM deposit_addresses ORDER BY exchange, coin',
+    [],
+    procedure(Q: TFDQuery)
+    var
+      Rec: TDepositAddress;
+    begin
+      while not Q.Eof do
+      begin
+        Rec.ID       := Q.FieldByName('id').AsInteger;
+        Rec.Exchange := Q.FieldByName('exchange').AsString;
+        Rec.Coin     := Q.FieldByName('coin').AsString;
+        Rec.NetType  := Q.FieldByName('network').AsString;
+        Rec.Address  := Q.FieldByName('address').AsString;
+        Rec.Memo     := Q.FieldByName('memo').AsString;
+        Rec.UpdatedAt := Q.FieldByName('updated_at').AsString;
+        FAllData.Add(Rec);
+        Q.Next;
+      end;
+    end
+  );
+  ApplyFilter;
+end;
+procedure TFrmDepositAddress.ApplyFilter;
+var
+  Rec: TDepositAddress;
+begin
+  FFiltered.Clear;
+  for Rec in FAllData do
+  begin
+    if (FActiveTab = 'all') or (Rec.Exchange = FActiveTab) then
+      FFiltered.Add(Rec);
+  end;
+  RefreshGrid;
+end;
+procedure TFrmDepositAddress.RefreshGrid;
+begin
+  if FFiltered.Count = 0 then
+    Grid.RowCount := 2
+  else
+    Grid.RowCount := FFiltered.Count + 1;  // +1 for header
+  Grid.Invalidate;
+end;
+{ Grid 이벤트 }
+procedure TFrmDepositAddress.GridDrawCell(Sender: TObject;
+  ACol, ARow: Integer; Rect: TRect; State: TGridDrawState);
+var
+  Canvas: TCanvas;
+  Rec: TDepositAddress;
+  S: string;
+  DataIdx: Integer;
+  TextRect: TRect;
+begin
+  Canvas := Grid.Canvas;
+  DataIdx := ARow - 1;
+  // 배경
+  if ARow = 0 then
+    Canvas.Brush.Color := clWhite
+  else if ARow = FHoverRow then
+    Canvas.Brush.Color := FColorHover
+  else
+    Canvas.Brush.Color := clWhite;
+  Canvas.FillRect(Rect);
+  // 하단 라인
+  Canvas.Pen.Color := FColorGridLine;
+  Canvas.Pen.Width := 1;
+  Canvas.MoveTo(Rect.Left, Rect.Bottom - 1);
+  Canvas.LineTo(Rect.Right, Rect.Bottom - 1);
+  // 헤더
+  if ARow = 0 then
+  begin
+    Canvas.Font.Color := clGray;
+    Canvas.Font.Size := 8;
+    Canvas.Font.Style := [];
+    case ACol of
+      COL_EXCHANGE: S := '거래소';
+      COL_COIN:     S := '코인';
+      COL_NETWORK:  S := '네트워크';
+      COL_ADDRESS:  S := '주소';
+      COL_MEMO:     S := '메모/태그';
+      COL_ACTIONS:  S := '';
+    end;
+    TextRect := Rect;
+    TextRect.Left := Rect.Left + 10;
+    TextRect.Top := Rect.Top + 4;
+    Canvas.TextRect(TextRect, TextRect.Left, TextRect.Top, S);
+    Exit;
+  end;
+  // 데이터가 없는 경우
+  if (DataIdx < 0) or (DataIdx >= FFiltered.Count) then
+  begin
+    if (ACol = COL_ADDRESS) and (FFiltered.Count = 0) then
+    begin
+      Canvas.Font.Color := clGray;
+      Canvas.Font.Size := 9;
+      S := '등록된 주소가 없습니다';
+      Canvas.TextOut(Rect.Left + 10, Rect.Top + 14, S);
+    end;
+    Exit;
+  end;
+  Rec := FFiltered[DataIdx];
+  case ACol of
+    COL_EXCHANGE:
+    begin
+      Canvas.Font.Color := clBlack;
+      Canvas.Font.Size := 9;
+      Canvas.Font.Style := [fsBold];
+      Canvas.TextOut(Rect.Left + 10, Rect.Top + 14, Rec.Exchange);
+    end;
+    COL_COIN:
+    begin
+      DrawCoinBadge(Canvas, Rec.Coin, Rec.NetType, Rect);
+    end;
+    COL_NETWORK:
+    begin
+      Canvas.Font.Color := clGray;
+      Canvas.Font.Size := 9;
+      Canvas.Font.Style := [];
+      Canvas.TextOut(Rect.Left + 10, Rect.Top + 14, Rec.NetType);
+    end;
+    COL_ADDRESS:
+    begin
+      Canvas.Font.Name := 'Consolas';
+      Canvas.Font.Color := clBlack;
+      Canvas.Font.Size := 9;
+      Canvas.Font.Style := [];
+      TextRect := Rect;
+      TextRect.Left := Rect.Left + 10;
+      TextRect.Right := Rect.Right - 4;
+      TextRect.Top := Rect.Top + 14;
+      // 긴 주소는 잘라서 표시
+      S := Rec.Address;
+      Canvas.TextRect(TextRect, S, [tfEndEllipsis, tfSingleLine]);
+    end;
+    COL_MEMO:
+    begin
+      Canvas.Font.Name := 'Consolas';
+      Canvas.Font.Size := 9;
+      Canvas.Font.Style := [];
+      if Rec.Memo = '' then
+      begin
+        Canvas.Font.Color := $00C0C0C0;
+        Canvas.TextOut(Rect.Left + 10, Rect.Top + 14, '-');
+      end
+      else
+      begin
+        Canvas.Font.Color := clBlack;
+        Canvas.TextOut(Rect.Left + 10, Rect.Top + 14, Rec.Memo);
+      end;
+    end;
+    COL_ACTIONS:
+    begin
+      DrawActionButtons(Canvas, Rect, ARow);
+    end;
+  end;
+  Canvas.Font.Name := 'Segoe UI';  // 복원
+end;
+procedure TFrmDepositAddress.DrawCoinBadge(aCanvas: TCanvas;
+  const aCoin, aNetwork: string; aRect: TRect);
+var
+  BgColor, TxtColor: TColor;
+  BadgeRect: TRect;
+  TextW: Integer;
+begin
+  BgColor := GetCoinColor(aCoin);
+  TxtColor := GetCoinTextColor(aCoin);
+  // 뱃지
+  aCanvas.Font.Name := 'Segoe UI';
+  aCanvas.Font.Size := 8;
+  aCanvas.Font.Style := [fsBold];
+  TextW := aCanvas.TextWidth(aCoin);
+  BadgeRect.Left := aRect.Left + 10;
+  BadgeRect.Top := aRect.Top + 6;
+  BadgeRect.Right := BadgeRect.Left + TextW + 14;
+  BadgeRect.Bottom := BadgeRect.Top + 20;
+  aCanvas.Brush.Color := BgColor;
+  aCanvas.Pen.Style := psClear;
+  aCanvas.RoundRect(BadgeRect.Left, BadgeRect.Top,
+    BadgeRect.Right, BadgeRect.Bottom, 8, 8);
+  aCanvas.Pen.Style := psSolid;
+  aCanvas.Font.Color := TxtColor;
+  aCanvas.TextOut(BadgeRect.Left + 7, BadgeRect.Top + 2, aCoin);
+  // 네트워크 (아래 작은 텍스트)
+  aCanvas.Font.Size := 7;
+  aCanvas.Font.Style := [];
+  aCanvas.Font.Color := clGray;
+  aCanvas.Brush.Color := aCanvas.Pixels[aRect.Left, aRect.Top];  // 배경 복원
+  aCanvas.Brush.Style := bsClear;
+  aCanvas.TextOut(aRect.Left + 10, aRect.Top + 28, aNetwork);
+  aCanvas.Brush.Style := bsSolid;
+end;
+
+procedure TFrmDepositAddress.DrawActionButtons(aCanvas: TCanvas;
+  aRect: TRect; aRow: Integer);
+var
+  BtnRect: TRect;
+  i: Integer;
+  Captions: array[0..2] of string;
+  BtnLeft: Integer;
+begin
+  Captions[0] := #$2398;   // 복사
+  Captions[1] := #$270E;   // 수정
+  Captions[2] := #$2715;   // 삭제
+  BtnLeft := aRect.Left + 10;
+  for i := 0 to 2 do
+  begin
+    BtnRect.Left := BtnLeft + i * 32;
+    BtnRect.Top := aRect.Top + 8;
+    BtnRect.Right := BtnRect.Left + 28;
+    BtnRect.Bottom := BtnRect.Top + 28;
+    // 호버 효과
+    if (ARow = FHoverRow) and (FHoverAction = i + 1) then
+    begin
+      if i = 2 then  // 삭제: 빨간색
+      begin
+        aCanvas.Brush.Color := $00EBEBFC;
+        aCanvas.Font.Color := $002D2DA3;
+      end
+      else
+      begin
+        aCanvas.Brush.Color := FColorHover;
+        aCanvas.Font.Color := $00B74A53;
+      end;
+    end
+    else
+    begin
+      aCanvas.Brush.Color := clWhite;
+      aCanvas.Font.Color := clGray;
+    end;
+    aCanvas.Pen.Color := FColorGridLine;
+    aCanvas.RoundRect(BtnRect.Left, BtnRect.Top,
+      BtnRect.Right, BtnRect.Bottom, 6, 6);
+    aCanvas.Font.Name := 'Segoe UI Symbol';
+    aCanvas.Font.Size := 10;
+    aCanvas.Font.Style := [];
+    aCanvas.TextOut(BtnRect.Left + 6, BtnRect.Top + 4, Captions[i]);
+  end;
+  aCanvas.Font.Name := 'Segoe UI';
+end;
+
+function TFrmDepositAddress.GetCoinColor(const aCoin: string): TColor;
+begin
+  if aCoin = 'XRP' then Result := FColorXRP
+  else if aCoin = 'BTC' then Result := FColorBTC
+  else if aCoin = 'ETH' then Result := FColorETH
+  else if aCoin = 'ADA' then Result := FColorADA
+  else if aCoin = 'USDT' then Result := FColorUSDT
+  else Result := $00F0F0F0;
+end;
+function TFrmDepositAddress.GetCoinTextColor(const aCoin: string): TColor;
+begin
+  if aCoin = 'XRP' then Result := $00415008
+  else if aCoin = 'BTC' then Result := $00063863
+  else if aCoin = 'ETH' then Result := $007C440C
+  else if aCoin = 'ADA' then Result := $00893434
+  else if aCoin = 'USDT' then Result := $000A5027
+  else Result := clBlack;
+end;
+procedure TFrmDepositAddress.GridMouseMove(Sender: TObject;
+  Shift: TShiftState; X, Y: Integer);
+var
+  ACol, ARow: Integer;
+  NewHoverAction: Integer;
+  BtnLeft, BtnIdx: Integer;
+  CellRect: TRect;
+begin
+  Grid.MouseToCell(X, Y, ACol, ARow);
+  NewHoverAction := 0;
+  if (ACol = COL_ACTIONS) and (ARow > 0) then
+  begin
+    CellRect := Grid.CellRect(ACol, ARow);
+    BtnLeft := CellRect.Left + 10;
+    BtnIdx := (X - BtnLeft) div 32;
+    if (BtnIdx >= 0) and (BtnIdx <= 2) then
+      NewHoverAction := BtnIdx + 1;
+  end;
+  if (ARow <> FHoverRow) or (NewHoverAction <> FHoverAction) then
+  begin
+    FHoverRow := ARow;
+    FHoverAction := NewHoverAction;
+    Grid.Invalidate;
+  end;
+end;
+procedure TFrmDepositAddress.GridMouseDown(Sender: TObject;
+  Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+var
+  ACol, ARow: Integer;
+  DataIdx: Integer;
+  CellRect: TRect;
+  BtnLeft, BtnIdx: Integer;
+begin
+  if Button <> mbLeft then Exit;
+  Grid.MouseToCell(X, Y, ACol, ARow);
+  DataIdx := ARow - 1;
+  if (DataIdx < 0) or (DataIdx >= FFiltered.Count) then Exit;
+  if ACol = COL_ACTIONS then
+  begin
+    CellRect := Grid.CellRect(ACol, ARow);
+    BtnLeft := CellRect.Left + 10;
+    BtnIdx := (X - BtnLeft) div 32;
+    case BtnIdx of
+      0: DoCopy(DataIdx);
+      1: DoEdit(DataIdx);
+      2: DoDelete(DataIdx);
+    end;
+  end;
+end;
+procedure TFrmDepositAddress.GridSelectCell(Sender: TObject;
+  ACol, ARow: Integer; var CanSelect: Boolean);
+begin
+  CanSelect := ARow > 0;
+end;
+procedure TFrmDepositAddress.BtnAddClick(Sender: TObject);
+begin
+  DoAdd;
+end;
+procedure TFrmDepositAddress.TabClick(Sender: TObject);
+var
+  Btn: TSpeedButton;
+begin
+  Btn := Sender as TSpeedButton;
+  if Btn.Tag = 0 then
+    FActiveTab := 'all'
+  else
+    FActiveTab := TExchangeKindDesc[TExchangeKind(Btn.Tag - 1)];
+  ApplyFilter;
+end;
+{ CRUD }
+procedure TFrmDepositAddress.DoAdd;
+var
+  Rec: TDepositAddress;
+  Exists: Boolean;
+begin
+  Rec := TFrmDepositList.Add(Self);
+  if Rec.Address <> '' then
+  begin
+    Exists := False;
+    FDB.Query(
+      'SELECT COUNT(*) FROM deposit_addresses ' +
+      'WHERE exchange=? AND coin=? AND network=? AND address=?',
+      [Rec.Exchange, Rec.Coin, Rec.NetType, Rec.Address],
+      procedure(Q: TFDQuery)
+      begin
+        Exists := Q.Fields[0].AsInteger > 0;
+      end
+    );
+    if Exists then
+    begin
+      MessageDlg('이미 등록된 주소입니다.', mtWarning, [mbOK], 0);
+      Exit;
+    end;
+    FDB.Execute(
+      'INSERT INTO deposit_addresses (exchange, coin, network, address, memo) ' +
+      'VALUES (?, ?, ?, ?, ?)',
+      [Rec.Exchange, Rec.Coin, Rec.NetType, Rec.Address, Rec.Memo]
+    );
+    LoadData;
+  end;
+end;
+procedure TFrmDepositAddress.DoEdit(aIndex: Integer);
+var
+  OldRec, NewRec: TDepositAddress;
+begin
+  if (aIndex < 0) or (aIndex >= FFiltered.Count) then Exit;
+  OldRec := FFiltered[aIndex];
+  NewRec := TDepositAddressEditDlg.Edit(Self, OldRec);
+  if NewRec.Address <> '' then
+  begin
+    FDB.Execute(
+      'UPDATE deposit_addresses SET exchange=?, coin=?, network=?, ' +
+      'address=?, memo=?, updated_at=datetime(''now'',''localtime'') WHERE id=?',
+      [NewRec.Exchange, NewRec.Coin, NewRec.NetType,
+       NewRec.Address, NewRec.Memo, OldRec.ID]
+    );
+    LoadData;
+  end;
+end;
+procedure TFrmDepositAddress.DoDelete(aIndex: Integer);
+var
+  Rec: TDepositAddress;
+begin
+  if (aIndex < 0) or (aIndex >= FFiltered.Count) then Exit;
+  Rec := FFiltered[aIndex];
+  if MessageDlg(
+    Format('%s %s 주소를 삭제하시겠습니까?', [Rec.Exchange, Rec.Coin]),
+    mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+  begin
+    FDB.Execute('DELETE FROM deposit_addresses WHERE id=?', [Rec.ID]);
+    LoadData;
+  end;
+end;
+procedure TFrmDepositAddress.DoCopy(aIndex: Integer);
+var
+  Rec: TDepositAddress;
+  S: string;
+begin
+  if (aIndex < 0) or (aIndex >= FFiltered.Count) then Exit;
+  Rec := FFiltered[aIndex];
+  S := Rec.Address;
+  if Rec.Memo <> '' then
+    S := S + '  (memo: ' + Rec.Memo + ')';
+  Clipboard.AsText := S;
+  // 간단한 피드백 (타이틀바)
+  Caption := '입금 주소 관리 - 복사됨!';
+  TThread.CreateAnonymousThread(
+    procedure
+    var
+      F: TFrmDepositAddress;
+    begin
+      F := Self;
+      Sleep(1500);
+      TThread.Synchronize(nil,
+        procedure
+        begin
+          if Assigned(F) then
+            F.Caption := '입금 주소 관리';
+        end
+      );
+    end
+  ).Start;
+end;
+end.

@@ -1,0 +1,87 @@
+unit UStrategyItem;
+
+interface
+
+uses
+  System.Classes,
+
+  UApiTypes, UTypes
+
+  ;
+
+type
+
+  TSPObject = class(TCollectionItem)
+  public
+    SPType    : TSPType;
+    AcntCode  : string;
+    SymbolCode: string;
+  end;
+
+  TSPObjects = class(TCollection)
+  public
+    constructor Create;
+    procedure SetObject(aSpType : TSPType; aAcntCode, aSymbolCode : string);
+    procedure DeleteObject(aSpType : TSPType; aAcntCode, aSymbolCode : string);
+    function Find(aSpType : TSPType; aAcntCode, aSymbolCode : string): TSPObject;
+  end;
+
+implementation
+
+{ TSPObjects }
+
+constructor TSPObjects.Create;
+begin
+  inherited Create(TSPObject);
+end;
+
+procedure TSPObjects.DeleteObject(aSpType: TSPType; aAcntCode,
+  aSymbolCode: string);
+var
+  I: Integer;
+  spObj  : TSPObject;
+begin
+  for I := 0 to Count-1 do
+  begin
+    spObj := Items[i] as TSPObject;
+    if (spObj.SPType = aSpType) and (spObj.AcntCode = aAcntCode) and (spObj.SymbolCode = aSymbolCode) then
+    begin
+      Delete(i);
+      Break;
+    end;
+  end;
+end;
+
+function TSPObjects.Find(aSpType: TSPType; aAcntCode,
+  aSymbolCode: string): TSPObject;
+var
+  I: Integer;
+  spObj  : TSPObject;
+begin
+  Result := nil;
+  for I := 0 to Count-1 do
+  begin
+    spObj := Items[i] as TSPObject;
+    if (spObj.SPType = aSpType) and (spObj.AcntCode = aAcntCode) and (spObj.SymbolCode = aSymbolCode) then
+    begin
+      Result := spObj;
+      Break;
+    end;
+  end;
+end;
+
+procedure TSPObjects.SetObject(aSpType: TSPType; aAcntCode,
+  aSymbolCode: string);
+  var
+    spObj : TSPObject;
+begin
+  spObj := Find(aSpType, aAcntCode, aSymbolCode);
+  if spObj = nil then
+  begin
+    spObj := Add as TSPObject;
+    spObj.AcntCode  := aAcntCode;
+    spObj.SymbolCode  := aSymbolCode;
+  end;
+end;
+
+end.

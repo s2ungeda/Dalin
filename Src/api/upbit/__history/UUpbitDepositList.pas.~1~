@@ -1,0 +1,310 @@
+unit UUpbitDepositList;
+
+interface
+
+uses
+  System.Classes, System.SysUtils,
+
+  UApiWithdraw,
+
+  UApiTypes, UApiConsts
+
+  ;
+
+type
+
+  TUpbitWithdraw = class( TApiWithdraw )
+  private
+    FAddress: TStrings;
+    procedure DoWithdrawAble;
+    procedure ReuqestWithdraw;
+    procedure DoWithdraw; override;
+    procedure Parse(const aType, aData: string);
+  public
+    Constructor Create; override;
+    Destructor  Destroy; override;
+    procedure RecvRequest(Sender : TObject);  override;
+    procedure RequestWithdrawAddress(sCurrency, sNetType: string); override;
+
+    property  Address : TStrings read FAddress;
+  end;
+
+implementation
+
+uses
+  GApp, GLibs
+  , UBithSpot
+  , REST.Types
+  , System.JSON
+  , IdGlobal
+  , idcodermime
+  , Web.HTTPApp
+  , UEncrypts
+  , System.Hash
+  , JOSE.Core.JWT,
+  JOSE.Core.JWK,
+  JOSE.Core.JWS,
+  JOSE.Core.JWA,
+  JOSE.Core.Builder,
+  JOSE.Types.JSON,
+  JOSE.Encoding.Base64
+  ;
+
+{ TBitWithdraw }
+
+
+constructor TUpbitWithdraw.Create;
+begin
+  inherited Create;
+  FAddress  := TStringList.Create;
+end;
+
+destructor TUpbitWithdraw.Destroy;
+begin
+  FAddress.free;
+  inherited;
+end;
+
+procedure TUpbitWithdraw.DoWithdraw;
+begin
+  DoWithdrawAble;
+
+end;
+
+procedure TUpbitWithdraw.DoWithdrawAble;
+var
+  LToken: TJWT;
+  guid : TGUID;
+  sSig, sID, sToken, sOut, sJson, sRsrc : string;
+  vHash : THashSHA2;
+begin
+
+  LToken:= TJWT.Create(TJWTClaims);
+  try
+    sID := GetUUID;
+
+    sJson  := format('currency=%s&net_type=%s', [ Param.currency, Param.nettype]) ;
+    sOut  := vHash.gethashstring( sJson, SHA512 );
+
+    LToken.Claims.SetClaimOfType<string>('access_key', App.Engine.ApiConfig.GetApiKey( ekUpbit, mtSpot));
+    LToken.Claims.SetClaimOfType<string>('nonce', sID );
+    LToken.Claims.SetClaimOfType<string>('query_hash', sOut );
+
+    LToken.Claims.SetClaimOfType<string>('query_hash_alg', 'SHA512' );
+
+    Req.Client.Params.Clear;
+    Req.Req.Params.Clear;
+
+    sSig := TJOSE.SerializeCompact(App.Engine.ApiConfig.GetSceretKey(ekUpbit, mtSpot),  TJOSEAlgorithmId.HS512, LToken);
+    sToken := Format('Bearer %s', [sSig ]);
+
+    with Req do
+      Req.AddParameter( 'Authorization', sToken, TRESTRequestParameterKind.pkHTTPHEADER, [poDoNotEncode] );
+
+    sRsrc := '/v1/withdraws/chance?'+sJson;
+    Req.init(rmGET, 'https://api.upbit.com', sRsrc, 'status' )  ;
+
+    Req.RequestAsync;
+  finally
+    LToken.Free;
+  end;
+
+end;
+
+procedure TUpbitWithdraw.RequestWithdrawAddress(sCurrency, sNetType: string);
+var
+  LToken: TJWT;
+  guid : TGUID;
+  sSig, sID, sToken, sOut, sJson, sRsrc : string;
+  vHash : THashSHA2;
+begin
+
+  if (sCurrency ='') or (sNetType='') then Exit;
+
+  LToken:= TJWT.Create(TJWTClaims);
+  try
+    sID := GetUUID;
+
+//    sJson  := format('currency=%s&net_type=%s', [ Param.currency, Param.nettype]) ;
+//    sOut  := vHash.gethashstring( sJson, SHA512 );
+
+    LToken.Claims.SetClaimOfType<string>('access_key', App.Engine.ApiConfig.GetApiKey( ekUpbit, mtSpot));
+    LToken.Claims.SetClaimOfType<string>('nonce', sID );
+//    LToken.Claims.SetClaimOfType<string>('query_hash', sOut );
+
+    LToken.Claims.SetClaimOfType<string>('query_hash_alg', 'SHA512' );
+
+    Req.Client.Params.Clear;
+    Req.Req.Params.Clear;
+
+    sSig := TJOSE.SerializeCompact(App.Engine.ApiConfig.GetSceretKey(ekUpbit, mtSpot),  TJOSEAlgorithmId.HS512, LToken);
+    sToken := Format('Bearer %s', [sSig ]);
+
+    with Req do
+      Req.AddParameter( 'Authorization', sToken, TRESTRequestParameterKind.pkHTTPHEADER, [poDoNotEncode] );
+
+    sRsrc := '/v1/withdraws/coin_addresses';//?'+sJson;
+    Req.init(rmGET, 'https://api.upbit.com', sRsrc, 'address' )  ;
+    Req.Field1  := sCurrency;
+    Req.Field2  := sNetType;
+
+//    Req.Request(outJson, outRes);;
+  finally
+    LToken.Free;
+  end;
+
+end;
+
+procedure TUpbitWithdraw.ReuqestWithdraw;
+var
+  LToken: TJWT;
+  guid : TGUID;
+  sSig, sID, sToken, sOut, sJson, sRsrc : string;
+  vHash : THashSHA2;
+begin
+
+  LToken:= TJWT.Create(TJWTClaims);
+  try
+    sID := GetUUID;
+    sJson  := format('currency=%s&net_type=%s&amount=%s&address=%s&secondary_address=%s',
+      [Param.currency, Param.nettype, Param.qty, Param.addr1, Param.addr2 ]) ;
+
+    sOut  := vHash.gethashstring( sJson, SHA512 );
+
+    LToken.Claims.SetClaimOfType<string>('access_key', App.Engine.ApiConfig.GetApiKey( ekUpbit, mtSpot));
+    LToken.Claims.SetClaimOfType<string>('nonce', sID );
+    LToken.Claims.SetClaimOfType<string>('query_hash', sOut );
+
+    LToken.Claims.SetClaimOfType<string>('query_hash_alg', 'SHA512' );
+
+    Req.Client.Params.Clear;
+    Req.Req.Params.Clear;
+
+    sSig := TJOSE.SerializeCompact(App.Engine.ApiConfig.GetSceretKey(ekUpbit, mtSpot),  TJOSEAlgorithmId.HS512, LToken);
+    sToken := Format('Bearer %s', [sSig ]);
+
+    with Req do
+      Req.AddParameter( 'Authorization', sToken, TRESTRequestParameterKind.pkHTTPHEADER, [poDoNotEncode] );
+
+    sRsrc := '/v1/withdraws/coin?'+sJson;
+    Req.init(rmPOST, 'https://api.upbit.com', sRsrc, 'withdraw' )  ;
+
+    Req.RequestAsync;
+  finally
+    LToken.Free;
+  end;
+end;
+
+
+procedure TUpbitWithdraw.Parse(const aType, aData: string);
+var
+  aObj, aSub : TJsonObject;
+  aArr  : TJsonArray;
+  aErr, aVal : TJsonValue;
+  aPair: TJsonPair;
+  i: Integer;
+  stTmp : string;
+  bOK : boolean;
+begin
+  if aDAta = '' then
+  begin
+    DoNotify( '출금 요청 실패', 999);
+    Exit;
+  end;
+
+  if aType = 'status' then
+  begin
+    aObj := TJsonObject.ParseJSONValue( aData) as TJsonObject;
+    try
+      aErr  := aObj.GetValue('error');
+      if aErr <> nil then
+      begin
+        DoNotify(aErr.GetValue<string>('message'), 999 );
+        Exit;
+      end;
+
+      aSub  := aObj.GetValue('currency') as TJsonObject;
+      if aSub = nil then
+      begin
+        DoNotify('출금 불가', 999 );
+        Exit;
+      end;
+
+      bOK := false;
+      aArr  := aSub.GetValue('wallet_support') as TJsonArray;
+      for i := 0 to aArr.Size-1 do
+      begin
+        stTmp := aArr.Get(i).Value;
+        if stTmp = 'withdraw' then
+          bOK := true;
+      end;
+
+      if not bOK then
+      begin
+        DoNotify('출금 불가', 999 );
+        Exit;
+      end else
+        ReuqestWithdraw;
+
+    finally
+      FreeAndNil(aObj);
+    end;
+
+  end else
+  if aType = 'withdraw' then
+  begin
+    aObj := TJsonObject.ParseJSONValue( aData) as TJsonObject;
+    try
+      aErr  := aObj.GetValue('error');
+      if aErr <> nil then
+      begin
+        DoNotify(aErr.GetValue<string>('message'), 999 );
+        Exit;
+      end;
+
+      DoNotify('출금 성공');
+
+    finally
+      FreeAndNil(aObj);
+    end;
+  end else
+  if aType = 'address' then
+  begin
+    aArr  := TJsonObject.ParseJSONValue( aData) as TJsonArray;
+    try
+      FAddress.Clear;
+
+      aErr  := aObj.GetValue('error');
+      if aErr <> nil then
+      begin
+        DoNotify(aErr.GetValue<string>('message'), 999 );
+        Exit;
+      end;
+
+      for I := 0 to aArr.Size-1 do
+      begin
+        aVal  := aArr.Get(i) ;
+        if (Req.Field1 = aVal.GetValue<string>('currency')) and ( Req.Field2 = aVal.GetValue<string>('net_type')) then
+        begin
+          stTmp := aVal.GetValue<string>('secondary_address', '');
+          FAddress.Add(aVal.GetValue<string>('withdraw_address')+','+stTmp);
+        end;
+      end;
+
+      DoNotify(aType);
+
+    finally
+      FreeAndNil(aArr);
+      Req.Field1 := ''; Req.Field2 := '';
+    end;
+  end;
+
+end;
+
+procedure TUpbitWithdraw.RecvRequest(Sender: TObject);
+begin
+  Parse( Req.Name, Req.Rsp.Content );
+end;
+
+
+end.

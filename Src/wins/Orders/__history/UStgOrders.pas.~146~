@@ -1,0 +1,1192 @@
+unit UStgOrders;
+
+interface
+
+uses
+  System.Classes, System.SysUtils, System.Generics.Collections,
+
+  UTypes, UApiTypes, UOrders, UAccounts, USymbols,
+
+  USignalTypes, UDustManager, UFills
+
+  ;
+
+type
+
+
+
+  TStgOrderItem = class(TCollectionItem)
+  private
+
+    FMakerCount: integer;
+    // 0:Maker, T:Taker
+    FOrderList: array [0..1] of TList<TOrder>;
+
+    FSide: TSideType;
+    FOrdPrice: double;
+//    FCurKip: array [TExchangeKind] of double;
+//  FTarketCEX: TExchangeKind;
+//  최소주문 수량보다 작게 체결 되었을때 처리를 위해..
+
+    FDone: boolean;
+    FRsltStr: string;
+    FAvgPrice: double;
+    FFilledQty: double;
+    FKip: double;
+    FOwner: TObject;
+//    FDusts: TDusts;
+    FMethod: TMethodType;
+    FAOType: TAutoOrderType;
+    FPutFilledQty: double;
+    FExRate: double;
+
+    function IsAfterOrder(const f:TFill): boolean;
+
+    function GetOrderList(i: integer): TList<TOrder>;
+    function GetAfterOrders : TList<TOrder>;
+    function GetAfterOrderQty(fs:TMethodType): double; overload;
+    function GetAfterOrderQty(const f:TFill; aOrdSymbol: TSymbol): double; overload;
+
+    function CalcAfterOrderQty(const d, dUnit:double) : double;
+
+    procedure SetAfterOrderQty(const d:double);
+    procedure SetMakerCount(const Value: integer);
+
+    procedure CalcFillAvgKip(const dPutFilledQty, dFilledQty, dPutOrdAvgPrice, dAvgPrice: double);
+    procedure DoCancelOrder(aOrder: TOrder);
+    procedure DoChange(aOrder: TOrder; dPrice: double);
+    procedure DoLog(sLog: string);
+
+    function DoTakerOrder(aAccount: TAccount; aSymbol: TSymbol;
+      iSide: integer; dPrice: double; dQty: double; aoType: TAutoOrderType): TOrder;
+    function GetName: string;
+
+    function MakeNewLiqOrder(aTarget: TOrder; dPrice: double): TOrder;
+  public
+
+    Constructor Create(aColl : TCollection); override;
+    Destructor  Destroy; override;
+
+    procedure AllCancel;
+
+    function CheckOrder(const dPrice: double): boolean; overload;
+
+    function DoOrder(aAccount: TAccount; aSymbol: TSymbol;
+      iSide: integer; dPrice: double; dQty: double; aoType: TAutoOrderType; trgCEX: TExchangeKind) : TOrder;
+
+    function ReLiquidOrder(aTarget: TOrder): boolean;
+    function LiquidOrder(const f:TFill; aAccount: TAccount; aSymbol: TSymbol): boolean;
+
+    function GetActiveOrderQty : double; overload;
+    function GetActiveOrderQty(tarCEX: TExchangeKind) : double; overload;
+
+    function ExistActiveOrder : boolean;
+    function IsDone(const sCode: string) : boolean;
+
+    function GetStateToStr: string;
+    function GetSTate : TSignalState;
+    function GetPutExKind : TExchangeKind;
+    function GetLiqExKindToStr : string;
+
+    property MakerCount : integer read FMakerCount write SetMakerCount;
+    property OrderList[i:integer] : TList<TOrder> read GetOrderList;
+
+    property Side : TSideType read FSide write FSide;
+    property OrdPrice : double read FOrdPrice write FOrdPrice;
+
+    property Name : string read GetName;
+    property RsltStr : string read FRsltStr;
+    property Done : boolean read FDone;
+    property Owner: TObject read FOwner write FOwner;
+
+    // 로그용 변수들..
+    property Kip      : double read FKip;
+    property FilledQty: double read FFilledQty;
+    property PutFilledQty : double read FPutFilledQty;
+    property AvgPrice : double read FAvgPrice;
+    property ExRate   : double read FExRate;
+
+    property Method   : TMethodType read FMethod;
+    property AOType   : TAutoOrderType read FAOType;
+
+  end;
+
+  TStgOrders = class(TCollection)
+  private
+
+    FPutCount: integer;
+    // TTVSignal
+    FOwner: TObject;
+
+    FMethod: TMethodType;
+    FAOType: TAutoOrderType;
+
+    // 통계용
+    // 0:MK(Maker), 1:TK(Taker)
+    FMTFilledQty: array [0..1] of double;
+    FKipData : array [TSideType] of TKipData;
+
+    FSumFilledQty: double;
+    FSumRealKip : double;
+    FExKind: TExchangeKind;
+    FSumExRate: double;
+
+    FWaitStartTick: UInt64;
+    FRejectCount: Integer;
+    FSuspend: boolean;
+    FAvgBidPrice: double;
+    FAvgAskPrice: double;
+
+    function GetConfig: TSignalConfig;
+    function GetLast: TStgOrderItem;
+    function GetStgOrders(i: integer): TStgOrderItem;
+
+    function GetCode: string;
+    function GetName: string;
+    function GetDusts: TDusts;
+    function GetMTFilledQty(i: integer): double;
+    function GetAfterOrders(fs: TMethodType): TList<TOrder>;
+
+    procedure SetMTFilledQty(i: integer; const Value: double);
+    procedure SendMessageAboutSuspend;
+    function GetKipData(s: TSideType): TKipData;
+
+  public
+
+    Constructor Create(AOwner: TObject; ACount: integer; AExKind: TExchangeKind; AType: TAutoOrderType); overload;
+    Destructor  Destroy; override;
+
+    procedure init;
+    procedure RjtInit;
+    procedure CheckTimer;
+    procedure ManualResume(bManual: boolean = true);
+    procedure DoLog(sLog: string);
+
+    function New : TStgOrderItem;
+    function Find(const aOrder: TOrder; iMT: integer): boolean;
+    function GetAvgRealKip: double;
+
+    procedure CalcAvgData(f:TFill; dExRate: double; iOrdDiv: integer);
+    procedure DoSumRealKipParam(const aItem: TStgOrderItem);
+    procedure ClearOrder(aOrder: TOrder);
+    procedure RejectOrderProc(aOrder: TOrder);
+    procedure OnOrder(aOrder: TOrder);
+    procedure SetSumFiiledQtyNRealKip(const f, r, e: double);
+    procedure KipDataInit;
+
+    // SMP 거부 방지...(될려나);
+    procedure DoCancelForSMP(const f:TFill; aAccount: TAccount; aSymbol: TSymbol);
+
+    function OnOrderFill(const f:TFill; tarCEX: TExchangeKind): boolean;
+
+    procedure AllCancels;
+    procedure IsDone;
+    procedure InitMTFilledQty;
+    procedure TestSuspend;
+
+    property PutCount: integer read FPutCount;
+    property Config : TSignalConfig read GetConfig;
+    property Last :  TStgOrderItem read GetLast;
+    property MTFilledQty[i:integer] : double read GetMTFilledQty write SetMTFilledQty;
+    property Name : string read GetName ;
+    property Method : TMethodType read FMethod;
+    property ExKind : TExchangeKind read FExKind;
+
+    property SumFilledQty: double read FSumFilledQty;
+    property SumRealKip : double  read FSumRealKip;
+    property SumExRate  : double  read FSumExRate;
+    property KipData[s: TSideType] : TKipData read GetKipData;
+
+    property StgOrders[i: integer] : TStgOrderItem read GetStgOrders;
+    property Dusts : TDusts read GetDusts;
+    property AOType: TAutoOrderType read FAOType;
+    property AfterOrders[fs: TMethodType] : TList<TOrder> read GetAfterOrders;
+
+    // 거부처리
+    property RejectCount: Integer read FRejectCount;
+    property Suspend : boolean read FSuspend;
+
+
+  end;
+
+implementation
+
+uses
+  GApp, GLibs
+  , UConsts, UApiConsts
+  , UTVSignals
+  , USymbolCore
+  , Winapi.Windows
+  , Math
+  ;
+
+{ TStgOrderItem }
+
+procedure TStgOrderItem.AllCancel;
+var
+  I: Integer;
+begin
+  for I := 0 to FOrderList[MK].Count-1 do
+    if (FOrderList[MK][i] <> nil) and (FOrderList[MK][i].IsCancelAble) then
+      DoCancelOrder(FOrderList[MK][i]);
+end;
+
+procedure TStgOrderItem.DoCancelOrder( aOrder : TOrder );
+var
+  aCnlOrder : TOrder;
+begin
+  with App.Engine do
+  begin
+    aCnlOrder := TradeCore.Orders[aOrder.Account.ExchangeKind].NewCancelOrder(aOrder, aOrder.ActiveQty);
+    if aCnlOrder <> nil then begin
+      TradeBroker.Send( aCnlOrder);
+      DoLog( Format('주문 취소- %s', [ aOrder.Represent ]  ) );
+    end;
+  end;
+
+end;
+
+procedure TStgOrderItem.DoChange(aOrder: TOrder; dPrice: double);
+begin
+  if (aOrder.OrderType = otNormal) and (aOrder.State = osActive) and (not aORder.Modify) then
+  begin
+    App.Engine.TradeBroker.Send(
+      App.Engine.TradeCore.Orders[aOrder.Account.ExchangeKind].NewChangeOrder(aOrder, dPrice)
+      );
+//    DoLog( Format('주문 정정- %s', [ aOrder.Represent ]  ) );
+
+  end;
+end;
+
+procedure TStgOrderItem.DoLog(sLog: string);
+begin
+  TStgOrders(Collection).DoLog(sLog);
+end;
+
+function TStgOrderItem.IsAfterOrder(const f: TFill): boolean;
+var
+  fs : TMethodType;
+  i : integer;
+  aFill : TFill;
+  dSum: double;
+begin
+
+  Result := false;
+
+  if TOrder(f.Order).Symbol.Spec.ExchangeType = ekBinance then
+    fs := mtF
+  else
+    fs := mtS;
+end;
+
+function TStgOrderItem.IsDone(const sCode: string): boolean;
+var
+
+  b1: boolean;
+  I: Integer;
+  dPutOrdFillQty : double;
+
+begin
+  Result := false;
+  if FDone then Exit;
+  if FOrderList[MK].Count <= 0 then Exit;
+
+  b1 := false;    dPutOrdFillQty := 0;
+  for I := 0 to FOrderList[MK].Count-1 do
+    if FOrderList[MK][i].State = osFilled then
+    begin
+      dPutOrdFillQty := dPutOrdFillQty+ FOrderList[MK][i].FilledQty;
+      b1 := true;
+    end;
+
+  if b1 then
+    if GetAfterOrderQty(FMethod) < gAOConfig.GetMajorTradeSymbolLotSize(sCode) then
+      Result := true;
+
+  FDone := result;
+
+  if FDone then
+  begin
+    DoLog(Format('------------ %d.th  %s %s Next Order -------------- %s', [
+      Collection.Count, ifThenStr(FAOType  = aoEntry, '진입','청산'),
+      FOrderList[MK][0].SideToStr,
+      //
+      Format('선주문 체결:%s, 선-후 : %s', [ doubleToStr(dPutOrdFillQty),
+        doubleToStr(GetAfterOrderQty(FMethod)) ])
+    ]) );
+  end;
+end;
+
+//   TK 체결량,   MK 체결평균가,  TK 체결평균가
+procedure TStgOrderItem.CalcFillAvgKip(const dPutFilledQty,dFilledQty, dPutOrdAvgPrice, dAvgPrice: double);
+var
+  I: Integer;
+  dAsk, dBid : double;
+begin
+
+  FMethod    := TStgOrders(Collection).Method;
+
+  FPutFilledQty := dPutFilledQty;
+
+  if dFilledQty <= EPSILON then
+  begin
+    FFilledQty  := 0.0;
+    FAvgPrice   := 0.0;
+    FKip        := WRONG_VALUE;
+
+    Exit;
+  end;
+
+  FFilledQty := dFilledQty;
+  FAvgPrice  := dAvgPrice;
+
+  if FAOType = aoEntry {GetState = ssEntry} then begin
+    if TStgOrders(Collection).Method = S then begin
+      dAsk := dAvgPrice * App.Engine.ApiManager.ExRate.Value;
+      dBid := dPutOrdAvgPrice;
+    end else
+    begin
+      dAsk := dPutOrdAvgPrice * App.Engine.ApiManager.ExRate.Value;
+      dBid := dAvgPrice;
+    end;
+    if dAsk <= 0 then
+      dAsk := 1;
+    FKip := (dBid / dAsk - 1) * 100;
+//    FIdxPk  := FKip - ( App.Engine.SymbolCore.Tethers[aS
+
+  end else
+  if FAOType = aoExit {GetState = ssExit} then begin
+    if TStgOrders(Collection).Method = S then begin
+      dAsk := dPutOrdAvgPrice;
+      dBid := dAvgPrice * App.Engine.ApiManager.ExRate.Value;
+    end else
+    begin
+      // F - 해외 매수, 국내 매도.
+      dAsk := dAvgPrice;
+      dBid := dPutOrdAvgPrice * App.Engine.ApiManager.ExRate.Value;
+    end;
+    if dBid <= 0 then
+      dBid := 1;
+    FKip := (dAsk / dBid -1) * 100;
+  end;
+
+  TStgOrders(Collection).DoSumRealKipParam(Self);
+
+end;
+
+
+function TStgOrderItem.CheckOrder(const dPrice: double): boolean;
+var
+  i : integer;
+begin
+
+  Result := false;
+
+  for I := 0 to FOrderList[MK].Count-1 do
+    if (FOrderList[MK][i] <> nil) and (FOrderList[MK][i].IsCancelAble) then
+    begin
+      var aOrder :=FOrderList[MK][i];
+      if CmpVal(dPrice, aOrder.Price) <> 0 then
+      begin
+        if aOrder.Symbol.Spec.ExApiType = eaFutUsdt then begin
+          if aOrder.ModifyCnt > 50 then
+            DoCancelOrder(aOrder)
+          else
+            DoChange(aOrder, dPrice);
+        end  else
+          DoCancelOrder(aOrder);
+
+        Result := true;
+
+        DoLog(Format('주문가격 변동으로 정정/취소 : %s -> %s', [
+          aORder.PriceToStr, aOrder.Symbol.PriceToStr(dPrice) ] )  );
+      end;
+    end;
+end;
+
+constructor TStgOrderItem.Create(aColl: TCollection);
+begin
+  inherited;
+
+  FOrderList[MK]  := TList<TOrder>.Create;
+  FOrderList[TK]  := TList<TOrder>.Create;
+
+  FMakerCount := 1;
+  FDone       := false;
+  FKip        := WRONG_VALUE;
+end;
+
+destructor TStgOrderItem.Destroy;
+begin
+
+  FOrderList[MK].Free;
+  FOrderList[TK].Free;
+
+  inherited;
+end;
+
+// Only Maker Order
+function TStgOrderItem.DoOrder(aAccount: TAccount; aSymbol: TSymbol; iSide: integer;
+  dPrice, dQty: double; aoType: TAutoOrderType; trgCEX: TExchangeKind) : TOrder;
+begin
+  Result := nil;
+  if not App.Engine.TradeCore.CheckLimitOrder(aAccount, aSymbol, iSide, dPrice, dQty, ORD_AUTO) then
+  begin
+    DoLog( '=========== 공통 리스크 제한에 걸림 ===============');
+    if aoType = aoEntry then
+      TTVSignal(TStgOrders(Collection).FOwner).SendMessageToOwner(mtResult, integer(srtERSK))
+    else
+      TTVSignal(TStgOrders(Collection).FOwner).SendMessageToOwner(mtResult, integer(srtXRSK));
+    Exit;
+  end;
+
+  Result := App.Engine.TradeCore.Orders[aSymbol.Spec.ExchangeType].NewOrder(
+    aAccount, aSymbol, iSide, dQty, pcLimit, dPrice, tmGTX
+  );
+
+  if (Result<> nil) then
+  begin
+    FOrderList[MK].Add(Result);
+
+    Result.StgType   := stTVSignal;
+    Result.GroupNo   := Name;
+    Result.Tag       := PUT_ORD;
+    Result.Entry     := aoType = aoEntry ;
+    Result.TargetCEX := integer(trgCEX);
+
+    App.Engine.TradeBroker.Send( Result );
+    FAOType := aoType;
+    // 환율 저장..
+    FExRate := Result.ExRate;
+
+    DoLog(Format('Put 주문(%d) %s - %s, (%s|%s) ', [
+      Index, Result.SideToStr, Result.RepresentWithEx ,
+      aSymbol.PriceToStr(aSymbol.Asks[0].Price), aSymbol.PriceToStr(aSymbol.Bids[0].Price)
+      ] ) );
+
+    if Result.Entry then
+      TTVSignal(TStgOrders(Collection).FOwner).SendMessageToOwner(mtResult, integer(srtEORD))
+    else
+      TTVSignal(TStgOrders(Collection).FOwner).SendMessageToOwner(mtResult, integer(srtXORD));
+
+  end;
+end;
+
+function TStgOrderItem.DoTakerOrder(aAccount: TAccount; aSymbol: TSymbol;
+  iSide: integer; dPrice, dQty: double; aoType: TAutoOrderType): TOrder;
+begin
+  Result := nil;
+
+  Result := App.Engine.TradeCore.Orders[aSymbol.Spec.ExchangeType ].NewOrder(
+        aAccount, aSymbol, iSide, dQty, pcLimit, dPrice, tmGTC
+      );
+
+  if Result = nil then Exit;
+
+  Result.GroupNo  := Name;
+  Result.StgType  := stTVSignal;
+  Result.Tag      := LIQ_ORD;
+  Result.Entry    := aoType = aoEntry ;
+  Result.TargetCEX:= integer(TStgOrders(Collection).ExKind);
+
+  // 거부를 내기 위해
+//  Result.OrderQtyBI.convert('0');
+//  Result.OrderQty := 0;
+
+  if (aSymbol.Spec.ExchangeType = ekBinance) and (aoType = aoExit) then
+    Result.ReduceOnly := gAOConfig.Result.UseReduce;
+
+  App.Engine.TradeBroker.Send(Result);
+
+  // 다음 거부 방지를 위해
+//  Result.OrderQty := dQty;
+//  Result.OrderQtyBI.convert(FmtString(REsult.Symbol.Spec.QtyPrecision, dQty, 1) );
+
+  DoLog(Format('%s Hit 주문 %s - (%s|%s)', [ GetStateToStr, Result.RepresentWithEx,
+    Result.Symbol.PriceToStr(Result.Symbol.Asks[0].Price),
+    Result.Symbol.PriceToStr(Result.Symbol.Bids[0].Price)
+    ] ));
+end;
+
+// 체결된 주문,  나가야 할 주문의 계좌, 종목
+function TStgOrderItem.LiquidOrder(const f:TFill; aAccount: TAccount; aSymbol: TSymbol): boolean;
+var
+  iSide, iTick: integer;
+  dPrice: double;
+  rOrder, aTarget: TOrder;
+
+  dTmp, dQty : double;
+  o: TOrder;
+begin
+  Result := false;
+
+  o := f.Order as TOrder;
+
+  dQty := GetAfterOrderQty(f, aSymbol);
+  if dQty <= EPSILON then Exit;
+  // 해외체결 -> 국내 주문(STick)
+  iTick := ifThen(aSymbol.Spec.ExchangeType = ekBinance,
+    gAOConfig.Result.FTick, gAOConfig.Result.STick);
+
+  if f.Side > 0 then begin
+    dPrice  := TicksFromPrice(aSymbol, aSymbol.Bids[0].Price , -iTick);
+    iSide   := -1;
+  end
+  else begin
+    dPrice  := TicksFromPrice(aSymbol, aSymbol.Asks[0].Price, iTick);
+    iSide   := 1;
+  end;
+  // 위 아래 범위 제한 체크(only  binance)
+  dPrice := aSymbol.GetHitOrderPrice(iSide, dPrice);
+
+  rOrder := nil;
+  try
+    if not aSymbol.IsOrderAble(dPrice, dQty) then
+    begin
+      DoLog( Format('+++++ Dust 발생 (%s > %s(%s), TotD(%s)) +++++ ', [
+        aSymbol.Spec.MinNotional.ToString, doubleToStr(dPrice * dQty),
+        doubleToStr(dQty),  doubleToStr(GetAfterOrderQty(FMethod) + dQty) ] ));
+    end else
+    begin
+      rOrder := DoTakerOrder(aAccount, aSymbol, iSide, dPrice, dQty, FAOType);
+      if rOrder = nil then
+      begin
+        DoLog('--------------- 청산 주문 실패 !!!----------------');
+      end else
+      begin
+        GetAfterOrders.Add(rOrder);
+        //FOrderList[TK].Add(rOrder);
+      end;
+    end;
+  finally
+    if rOrder = nil then
+      SetAfterOrderQty(dQty);
+  end;
+
+end;
+
+
+function TStgOrderItem.ReLiquidOrder(aTarget: TOrder): boolean;
+var
+  iTick: integer;
+  dPrice: double;
+  aOrder: TOrder;
+  bDust : boolean;
+begin
+  Result := false;
+  bDust  := false;
+
+  if aTarget.ModifyCnt + 1 > gAOConfig.Result.ReTryCount then
+  begin
+    DoLog( Format('+++++ Try count over Dust 발생 (Add Dust %s) +++++ ', [DoubleToStr(aTarget.OrderQty)] ));
+    bDust := true;
+  end else
+  begin
+    if aTarget.Symbol.Spec.ExchangeType = ekBinance then begin
+      iTick   := gAOConfig.Result.FTick;
+    end
+    else begin
+      iTick   := gAOConfig.Result.STick;
+    end;
+
+    if aTarget.Side > 0 then
+      dPrice  := TicksFromPrice(aTarget.Symbol, aTarget.Symbol.Asks[0].Price, iTick)
+    else
+      dPrice  := TicksFromPrice(aTarget.Symbol, aTarget.Symbol.Bids[0].Price, -iTick);
+
+    dPrice := aTarget.Symbol.GetHitOrderPrice(aTarget.Side, dPrice);
+
+    if not aTarget.Symbol.IsOrderAble(dPrice, aTarget.OrderQty) then
+    begin
+      DoLog( Format('+++++ Liq timer Dust 발생 (%s > %s(%s)) +++++ ', [
+        aTarget.Symbol.Spec.MinNotional.ToString, doubleToStr(dPrice * aTarget.OrderQty), doubleToStr(aTarget.OrderQty)] ));
+      bDust := true;
+    end else
+    begin
+      aOrder := MakeNewLiqOrder(aTarget, dPrice);
+      if aOrder <> nil then
+      begin
+        aOrder.ModifyCnt  := aTarget.ModifyCnt + 1;
+        GetAfterOrders.Add(aOrder);
+        //FOrderList[TK].Add(aOrder);
+        DoLog(Format('%d.th Hit 주문 %s', [aOrder.ModifyCnt, aOrder.Represent]) );
+        //FOrderList[TK].Remove(aTarget);
+        GetAfterOrders.Remove(aTarget);
+        Result := true;
+      end;
+    end;
+  end;
+
+  if bDust then
+  begin
+//    FDusts.AddDust(aTarget.Symbol, aTarget.Side, aTarget.OrderQty).GroupNo  := aTarget.GroupNo;
+    //FOrderList[TK].Remove(aTarget);
+    SetAfterOrderQty(aTarget.OrderQty);
+    GetAfterOrders.Remove(aTarget);
+    Result:= true;
+  end;
+
+end;
+
+function TStgOrderItem.MakeNewLiqOrder(aTarget: TOrder; dPrice: double): TOrder;
+begin
+  Result := App.Engine.TradeCore.Orders[aTarget.Symbol.Spec.ExchangeType].NewOrder(
+    aTarget.Account, aTarget.Symbol, aTarget.Side, aTarget.OrderQty, pcLimit, dPrice, tmGTC
+  );
+
+  if Result = nil then Exit;
+
+  Result.GroupNo  := aTarget.GroupNo;
+  Result.StgType  := aTarget.StgType;
+  Result.Tag      := LIQ_ORD;
+  Result.Entry    := aTarget.Entry;
+  Result.TargetCEX:= aTarget.TargetCEX;
+
+//  if aTarget.ModifyCnt < gAOConfig.Result.ReTryCount then
+//  Result.OrderQtyBI.convert('0');
+//  Result.OrderQty := 0;
+
+  if aTarget.Symbol.Spec.ExchangeType = ekBinance then
+    Result.ReduceOnly := gAOConfig.Result.UseReduce;
+
+  App.Engine.TradeBroker.Send(Result);
+
+  // 다음 거부 방지를 위해
+//  Result.OrderQty := Result.OrgOrderQty;
+//  Result.OrderQtyBI.convert(FmtString(REsult.Symbol.Spec.QtyPrecision, Result.OrgOrderQty, 1) );
+
+  DoLog(Format('Hit 주문 %s - (%s|%s)', [Result.RepresentWithEx,
+    Result.Symbol.PriceToStr(Result.Symbol.Asks[0].Price),
+    Result.Symbol.PriceToStr(Result.Symbol.Bids[0].Price)
+    ] ));
+
+end;
+
+function TStgOrderItem.GetSTate: TSignalState;
+begin
+  Result := TTVSignal(TStgOrders(Collection).FOwner).GetState;
+end;
+
+function TStgOrderItem.GetStateToStr: string;
+begin
+  Result := TTVSignal(TStgOrders(Collection).FOwner).GetStateToStr;
+end;
+
+function TStgOrderItem.ExistActiveOrder: boolean;
+var
+  i: Integer;
+begin
+  Result := false;
+  for I := 0 to FOrderList[MK].Count-1 do
+    if FOrderList[MK][i].IsCancelAble then
+      Exit (true);
+end;
+
+function TStgOrderItem.GetName: string;
+begin
+  Result := TStgOrders(Collection).Name;
+end;
+
+function TStgOrderItem.GetOrderList(i: integer): TList<TOrder>;
+begin
+  Result := FOrderList[i];
+end;
+
+function TStgOrderItem.GetPutExKind: TExchangeKind;
+begin
+  Result := TStgOrders(Collection).ExKind;
+end;
+
+function TStgOrderItem.GetActiveOrderQty(tarCEX: TExchangeKind): double;
+var
+  I: Integer;
+begin
+  Result := 0;
+
+  for I := 0 to FOrderList[MK].Count-1 do
+    if FOrderList[MK][i].TargetCEX = integer(tarCEX) then
+      if FOrderList[MK][i].State = osSent then
+        Result := Result +  FOrderList[MK][i].OrderQty
+      else if FOrderList[MK][i].State = osActive then
+        Result := Result +  FOrderList[MK][i].ActiveQty;
+
+end;
+
+function TStgOrderItem.GetAfterOrderQty(fs: TMethodType): double;
+begin
+  Result := TTVSignal(TStgOrders(Collection).FOwner).SigOrders[FAOType].AfterOrdOrderQty[fs];
+end;
+
+function TStgOrderItem.GetAfterOrderQty(const f: TFill; aOrdSymbol: TSymbol): double;
+var
+  dUnit, dSum: double;
+  fs: TMethodType;
+begin
+
+  Result := 0;
+
+  fs := FMethod;
+
+  dUnit := gAOConfig.GetMajorTradeSymbolLotSize(TOrder(f.Order).Symbol.Spec.BaseCode);
+  dSum  := CalcAfterOrderQty(f.Volume, dUnit);
+
+  if dUnit < 0 then begin
+    if aOrdSymbol.Spec.ExchangeType = ekBinance then begin
+      // 1. 국내 부분 체결시, 해외와 소수점이 다르기땜시  맞추기 위하 노오오오력...
+      Result := TruncDecimal(dSum, aOrdSymbol.Spec.QtyPrecision);
+      if not CheckZero(dSum - Result) then begin
+        SetAfterOrderQty(dSum - Result);
+        DoLog( Format('+++++ 소수점으로 인한 수량 변경 :  %s -> %s +++++',
+          [doubleToStr(dSum), DoubleToStr(Result)]));
+      end;
+    end else
+      Result := dSum;
+  end else
+  begin
+    Result := dSum;
+  end;
+
+end;
+
+function TStgOrderItem.GetAfterOrders: TList<TOrder>;
+begin
+  Result := TStgOrders(Collection).AfterOrders[FMethod];
+end;
+
+// 없을수도 있어서.. 스트링으로 넘김
+function TStgOrderItem.GetLiqExKindToStr: string;
+var
+  i: integer;
+  cnt: array [TExchangeKind] of integer;
+  e, es : TExchangeKind;
+begin
+  Result := '';
+  for e := ekBinance to High(TExchangeKind) do cnt[e] := 0;
+
+  for I := 0 to FOrderList[TK].Count-1 do
+    if FOrderList[TK][i].State = osFilled then
+    begin
+      e := FOrderList[TK][i].Symbol.Spec.ExchangeType;
+      inc(cnt[e]);
+    end;
+
+  i := -1;
+  for e := ekBinance to High(TExchangeKind) do
+    if (cnt[e] > EPSILON) and (cnt[e] > i) then
+    begin
+      i := cnt[e];
+      es:= e;
+    end;
+
+  if i < 0  then
+    Result := ''
+  else
+    Result := TExShortDesc[es];
+end;
+
+function TStgOrderItem.GetActiveOrderQty: double;
+var
+  I: Integer;
+begin
+  Result := 0;
+
+  for I := 0 to FOrderList[MK].Count-1 do
+    if FOrderList[MK][i].State = osSent then
+      Result := Result +  FOrderList[MK][i].OrderQty
+    else if FOrderList[MK][i].State = osActive then
+      Result := Result +  FOrderList[MK][i].ActiveQty;
+end;
+
+//function TStgOrderItem.GetKip(e: TExchangeKind): double;
+//begin
+//  Result := FCurKip[e];
+//end;
+//
+//procedure TStgOrderItem.SetKip(e: TExchangeKind; const Value: double);
+//begin
+//  FCurKip[e]  := Value;
+//end;
+
+function TStgOrderItem.CalcAfterOrderQty(const d, dUnit: double): double;
+begin
+  Result := TTVSignal(TStgOrders(Collection).FOwner).SigOrders[FAoType].CalcAfterOrderQty(d, dUnit, FMethod);
+end;
+
+procedure TStgOrderItem.SetAfterOrderQty(const d: double);
+begin
+  TTVSignal(TStgOrders(Collection).FOwner).SigOrders[FAoType].AfterOrdOrderQty[FMethod] := d;
+end;
+
+procedure TStgOrderItem.SetMakerCount(const Value: integer);
+var
+  i: integer;
+begin
+  if Value = FMakerCount then Exit;
+
+  if Value > FMakerCount then begin
+    // Add Order
+    for I := FMakerCount-1 to Value - 1 do
+
+
+  end
+  else begin
+    // Cancel Order
+  end;
+
+  FMakerCount := Value;
+end;
+
+
+//procedure TStgOrderItem.SetTarketCEX(const Value: TExchangeKind);
+//begin
+//  FTarketCEX := Value;
+//end;
+
+{ TStgOrders }
+
+procedure TStgOrders.AllCancels;
+begin
+  if Last <> nil then
+    Last.AllCancel;
+end;
+
+procedure TStgOrders.ClearOrder(aOrder: TOrder);
+var
+  i, iMT : integer;
+begin
+  if Last = nil then Exit;
+
+  case aOrder.Tag of
+    PUT_ORD : iMT := MK;
+    LIQ_ORD : iMT := TK;
+    else Exit;
+  end;
+
+  Last.OrderList[iMT].Remove(aOrder);
+end;
+
+constructor TStgOrders.Create(AOwner: TObject; ACount:integer; AExKind: TExchangeKind; AType: TAutoOrderType);
+begin
+  FPutCount:= ACount;
+  // FOwner = TTVSignal;
+  FOwner  := AOwner;
+  FExKind := AExKind;
+  case FExKind of
+    ekBinance: FMethod := F;
+    else FMethod := S;
+  end;
+  FAOType := AType;
+  // 잠시 중단
+  FSuspend  := false;
+
+  inherited Create(TStgOrderItem);
+
+  init;
+end;
+
+destructor TStgOrders.Destroy;
+begin
+  inherited;
+end;
+
+procedure TStgOrders.CalcAvgData(f:TFill; dExRate: double; iOrdDiv: integer );
+var s : TSideType;
+  dPrice : double;
+begin
+  // 누적체결은 적은걸 선택(후주문이 항상 작다);
+  FSumFilledQty := FMTFilledQty[TK];
+  if iORdDiv = LIQ_ORD then
+    FSumExRate  := FSumExRate + (dExRate * f.Volume);
+
+  s := TSideType(ifThen(f.Side > 0, 0, 1));
+
+  if f.Symbol.Spec.ExchangeType = ekBinance then
+    dPrice := f.Price * dExRate
+  else
+    dPrice := f.Price;
+
+  FKipData[s].AvgPrice  :=(FKipData[s].AvgPrice * FKipData[s].FilledQty + dPrice * f.Volume)
+    / (FKipData[s].FilledQty + f.Volume);
+
+  FKipData[s].FilledQty := FKipData[s].FilledQty + f.Volume;
+end;
+
+procedure TStgOrders.CheckTimer;
+var
+  ElapsedMs: UInt64;
+begin
+  if FWaitStartTick = 0 then
+    Exit;
+
+  ElapsedMs := GetTickCount64 - FWaitStartTick;
+
+  if FSuspend then
+      begin
+        if (gAOConfig.Result.ResumeType = 0) and
+           (ElapsedMs >= gAOConfig.Result.ResumeDelay * 1000) then
+        begin
+          RjtInit;
+          DoLog(Format('--- %s %s %s 자동 거래 재개 (%d)  ---', [
+            TAutoOrderTypeDesc[FAoType], ifThenStr(FExKind = ekBinance, 'F', 'S'),
+            TExchangeKindDesc[FExKind],  ElapsedMs
+            ]) );
+
+          SendMessageAboutSuspend;
+        end;
+      end;
+end;
+
+procedure TStgOrders.DoCancelForSMP(const f:TFill; aAccount: TAccount; aSymbol: TSymbol);
+  var
+    iRes:integer;
+begin
+
+  iRes := App.Engine.TradeCore.Orders[aSymbol.Spec.ExchangeType].CancelActiveOrders(
+    f.Side * -1, aAccount, aSymbol) ;
+
+  if iRes > 0 then
+  begin
+    DoLog( Format(' -- SMP 회피 %d 개 주문 취소-- ', [ iRes ]  ) );
+  end;
+
+end;
+
+procedure TStgOrders.DoLog(sLog: string);
+begin
+  TTVSignal(FOwner).DoLog(sLog);
+end;
+
+procedure TStgOrders.DoSumRealKipParam(const aItem: TStgOrderItem);
+var
+  d: double;
+begin
+  d := Min(aItem.PutFilledQty, aItem.FilledQty);
+  if (d <= EPSILON) or (aItem.Kip = WRONG_VALUE) then Exit;
+
+  FSumFilledQty := FSumFilledQty + d;
+  FSumRealKip   := FSumRealKip + (aItem.Kip * d);
+  FSumExRate    := FSumExRate + (aItem.ExRate * d);
+end;
+
+function TStgOrders.Find(const aOrder: TOrder; iMT: Integer): boolean;
+var
+  I: Integer;
+begin
+  Result := false;
+  if Last = nil then Exit;
+
+  for I := 0 to Last.FOrderList[iMT].Count-1 do
+  begin
+    if aOrder = Last.FOrderList[iMT][i] then
+    begin
+      Result := true;
+      break;
+    end;
+  end;
+
+end;
+
+function TStgOrders.GetAfterOrders(fs: TMethodType): TList<TOrder>;
+begin
+  Result := TTVSignal(FOwner).SigOrders[FAoType].AfterOrders[FMethod];
+end;
+
+
+function TStgOrders.GetAvgRealKip: double;
+begin
+  Result := CalcDiv(FSumRealKip, FSumFilledQty);
+end;
+
+function TStgOrders.GetCode: string;
+begin
+  Result := TTVSignal(FOwner).GetSymbol(ekBinance).Spec.BaseCode;
+end;
+
+function TStgOrders.GetConfig: TSignalConfig;
+begin
+  Result := TTVSignal(FOwner).Config;
+end;
+
+function TStgOrders.GetDusts: TDusts;
+begin
+  Result := TTVSignal(FOwner).GetDusts;
+end;
+
+function TStgOrders.GetKipData(s: TSideType): TKipData;
+begin
+  Result := FKipData[s];
+end;
+
+function TStgOrders.GetMTFilledQty(i: integer): double;
+begin
+  Result := FMTFilledQty[i];
+end;
+
+function TStgOrders.GetLast: TStgOrderItem;
+begin
+  if Count <= 0 then New;
+  Result := GetStgOrders(Count-1);
+end;
+
+function TStgOrders.GetName: string;
+begin
+  Result := TTVSignal(FOwner).Config.StgCode;
+end;
+
+function TStgOrders.GetStgOrders(i: integer): TStgOrderItem;
+begin
+  if (i < 0) or (i >= Count) then
+    Result := nil
+  else
+    Result := Items[i] as TStgOrderItem;
+end;
+
+
+procedure TStgOrders.init;
+begin
+  Clear;
+
+  FMTFilledQty[MK]  := 0;
+  FMTFilledQty[TK]  := 0;
+
+  FSumFilledQty:= 0;
+  FSumRealKip  := 0;
+  FSumExRate   := 0;
+
+  FKipData[stLong].Init;
+  FKipData[stShort].Init;
+
+  RjtInit;
+end;
+
+procedure TStgOrders.SendMessageAboutSuspend;
+var srType: TSigResultType;
+begin
+  case FAoType of
+    aoEntry: if FSuspend then srType := srtERJT else srType := srtERSM;
+    aoExit:  if FSuspend then srType := srtXRJT else srType := srtXRSM;
+  end;
+
+  TTVSignal(FOwner).SendMessageToOwner(mtResult, integer(srType));
+end;
+
+procedure TStgOrders.ManualResume(bManual: boolean);
+var ival: integer;
+begin
+  if FSuspend  then
+  begin
+    RjtInit;
+
+    DoLog(Format('--- %s %s %s %s 거래 재개 ---', [
+      TAutoOrderTypeDesc[FAoType], ifThenStr(FExKind = ekBinance, 'F', 'S'),
+      TExchangeKindDesc[FExKind] ,
+      ifThenStr(bManual,'수동', '바로')
+      ]) );
+
+    SendMessageAboutSuspend;
+  end;
+end;
+
+procedure TStgOrders.InitMTFilledQty;
+begin
+  FMTFilledQty[MK] := 0;
+  FMTFilledQty[TK] := 0;
+end;
+
+procedure TStgOrders.IsDone;
+begin
+  if Last = nil then Exit;
+  if not Last.IsDone(GetCode) then Exit;
+  {
+  후주문 체결시 로그 보내는걸로 변경...
+  TTVSignal(FOwner).Results[FAoType].Add(Last);
+  // 결과 로그..
+  if FAOType = aoEntry then begin
+    TTVSignal(FOwner).SendMessageToOwner(mtResult, integer(srtEFILL))
+  end
+  else begin
+    TTVSignal(FOwner).SendMessageToOwner(mtResult, integer(srtXFILL))  ;
+  end;
+    }
+
+  TTVSignal(FOwner).CheckNextOrder(FAOType, FExKind);
+end;
+
+procedure TStgOrders.KipDataInit;
+begin
+  FKipData[stLong].init;
+  FKipData[stShort].init;
+end;
+
+// MK..PUT 주문 체결처리..
+procedure TStgOrders.OnOrder(aOrder: TOrder);
+begin
+  if FSuspend then
+    ManualResume(false)
+  else
+    FRejectCount := 0;
+end;
+
+function TStgOrders.OnOrderFill(const f:TFill; tarCEX: TExchangeKind): boolean;
+begin
+  // SMP 거부를 위해 주문 취소 필요
+  if tarCEX <> ekBinance then
+    DoCancelForSMP(f, TTVSignal(FOwner).GetAccount(tarCEX),
+                      TTVSignal(FOwner).GetSymbol(tarCEX));
+  //
+  Result := Last.LiquidOrder(f, TTVSignal(FOwner).GetAccount(tarCEX),
+                                TTVSignal(FOwner).GetSymbol(tarCEX));
+end;
+
+procedure TStgOrders.RejectOrderProc(aOrder: TOrder);
+begin
+  Inc(FRejectCount);
+
+  if FRejectCount >= gAOConfig.Result.RjtMaxCnt then
+  begin
+    FWaitStartTick := GetTickCount64;
+    FSuspend       := true;
+    DoLog(Format('--- %s %s %s 연속 거부 %d.th -> 잠시중단 ---', [
+      TAutoOrderTypeDesc[FAoType], ifThenStr(FExKind = ekBinance, 'F', 'S'),
+      TExchangeKindDesc[FExKind],  FRejectCount
+      ]) );
+
+    SendMessageAboutSuspend;
+  end;
+end;
+
+procedure TStgOrders.RjtInit;
+begin
+  FRejectCount := 0;
+  FWaitStartTick := 0;
+  FSuspend  := false;
+end;
+
+function TStgOrders.New: TStgOrderItem;
+begin
+  // maker side
+  Result := Add as TStgOrderItem;
+  Result.FMakerCount  := FPutCount;
+  Result.FMethod      := FMethod;
+  Result.FAOType      := FAoType;
+end;
+
+procedure TStgOrders.SetMTFilledQty(i: integer; const Value: double);
+begin
+  FMTFilledQty[i]  := FMTFilledQty[i] + Value;
+end;
+
+procedure TStgOrders.SetSumFiiledQtyNRealKip(const f, r, e: double);
+begin
+  FSumFilledQty:= f;
+  FSumRealKip  := r;
+  FSumExRate   := e;
+end;
+
+procedure TStgOrders.TestSuspend;
+begin
+  FWaitStartTick := GetTickCount64;
+  FSuspend       := true;
+end;
+
+end.

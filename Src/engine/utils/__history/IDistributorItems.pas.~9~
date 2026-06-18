@@ -1,0 +1,475 @@
+unit IDistributorItems;
+
+interface
+
+uses
+  System.Classes, System.Generics.Collections, System.SyncObjs, System.SysUtils
+  , UTypes
+  , UConsts
+  ;
+
+type
+
+  TSnapshotItem = record
+    Key: string;
+    Data: TObject;
+    UpdateSeq: Int64;
+  end;
+  // 시세는 TQuote 를 Topic 으로  사용
+  // LP, IH Item 은 DataID 를 Topic 으로 사용..
+
+  TSnapshotBuffer = class
+  private
+    FItems: TArray<TSnapshotItem>;
+    FCount: Integer;
+    FLastUpdateSeq: Int64;
+    FLock: TSpinLock;
+    function FindIndex(const Key: string; out Index: Integer): Boolean;
+  public
+    constructor Create;
+    destructor Destroy; override;
+    procedure Overwrite(const Item: TObject);
+    function FetchUpdated(var LastSeq: Int64): TArray<TSnapshotItem>;
+  end;
+
+  ISubscriberInfo = interface
+    ['{4D65B3DF-3345-476D-9B63-8B65F587F8A6}']
+    function GetSubscriber : TObject;
+    function GetDataID: integer;
+    function GetDataObj: TObject;
+    function GetEventIDs : TDistributorIDs;
+    function GetHanlder :  TDistributorEvent;
+
+    function GetLastSendTime: TDateTime;
+    function GetBusy: boolean;
+    procedure SetBusy(Value: boolean);
+
+    //property Handle: UInt64 read GetHandle;
+    property Subscriber: TObject read GetSubscriber;
+    property DataID: Integer read GetDataID;
+    property DataObj: TObject read GetDataObj;
+    property EventIDs: TDistributorIDs read GetEventIDs;
+    property Handler: TDistributorEvent read GetHanlder;
+    property LastSendTime : TDateTime read GetLastSendTime;
+    property Busy: boolean read GetBusy write SetBusy;
+  end;
+
+  TSubscriberInfo = class(TInterfacedObject, ISubscriberInfo)
+  private
+//    FHandle: UInt64;;
+    FSubscriber: TObject;
+    FDataID: Integer;
+    FDataObj: TObject;
+    FEventIDs: TDistributorIDs;
+    FHandler: TDistributorEvent;
+    FLastSendTime : TDateTime;
+    FBusy: boolean;
+  public
+    constructor Create(ASubscriber: TObject; ADataID: integer; AHandler: TDistributorEvent );
+//    function GetHandle: HWND;
+    function GetBusy: Boolean;
+    procedure SetBusy(Value: Boolean);
+
+    function GetSubscriber : TObject;
+    function GetDataID: integer;
+    function GetDataObj: TObject;
+    function GetEventIDs : TDistributorIDs;
+    function GetHanlder :  TDistributorEvent;
+
+    function GetLastSendTime: TDateTime;
+  end;
+
+  TDispatcher = class;
+
+  TDispatchThread = class(TThread)
+  private
+    FOwner: TDispatcher;
+    FQueue: TThreadedQueue<TObject>;
+    FMode: TTopicMode;
+  protected
+    procedure Execute; override;
+  public
+    constructor Create(Owner: TDispatcher; Queue: TThreadedQueue<TObject>; Mode: TTopicMode);
+  end;
+
+
+  TDispatcher = class
+  private
+    FSanpThread: TDispatchThread;
+    // 소켓 스레드가 그냥 FSanpQueue 에 push;
+    FSnapQueue: TThreadedQueue<TObject>;
+
+    FSnapshotBuffers : TSnapshotBuffer;
+
+    FSubscriptions: TObjectDictionary<integer, TList<ISubscriberInfo>>;
+
+    FLock: TCriticalSection;
+
+  public
+    constructor Create;
+    destructor Destroy; override;
+
+    function GetSnapshotBuffer(Mode: TTopicMode): TSnapshotBuffer;
+
+    procedure EnqueueData(const Data: TObject);
+
+    procedure Subscribe(aSubscriber: TObject; iDataID: Integer; aDataObj: TObject;
+      EventIDs: TDistributorIDs; aHandler: TDistributorEvent);
+
+//    procedure Cancel(aSubscriber: TObject; iDataID: Integer; aDataObj: TObject); overload;
+//    procedure Cancel(aSubscriber: TObject; iDataID: Integer); overload;
+    procedure Cancel(iDataID: integer; aSubscriber: TObject); overload;
+  end;
+
+
+
+implementation
+
+
+{ TDispatcher }
+
+procedure TDispatcher.Cancel(iDataID: integer; aSubscriber: TObject);
+var
+  aList: TList<ISubscriberInfo>;
+  I: Integer;
+begin
+  FLock.Enter;
+  try
+    if FSubscriptions.TryGetValue(iDataID, aList) then
+      for i := aList.Count-1 downto 0 do
+      begin
+        if aList[i].Subscriber = aSubscriber then
+        begin
+          aList.Delete(i);
+          break;
+        end;
+      end;
+  finally
+    FLock.Leave;
+  end;
+end;
+
+constructor TDispatcher.Create;
+begin
+  FLock := TCriticalSection.Create;
+
+  FSnapQueue  := TThreadedQueue<TObject>.Create(10000, 100, 100);
+  FSnapshotBuffers := TSnapshotBuffer.Create;
+
+  FSanpThread:= TDispatchThread.Create(Self, FSnapQueue, tmSnapData);
+end;
+
+destructor TDispatcher.Destroy;
+begin
+  if FSanpThread <> nil then
+  begin
+    FSanpThread.Terminate;
+    FSanpThread.WaitFor;
+    FSanpThread.Free
+  end;
+
+  FSnapQueue.Free;
+  FSnapshotBuffers.Free;
+
+  FSubscriptions.Free;
+
+  FLock.Free;
+  inherited;
+end;
+
+function TDispatcher.GetSnapshotBuffer(Mode: TTopicMode): TSnapshotBuffer;
+begin
+
+  case Mode of
+    tmSequence: ;
+    tmSnapQuote: Result := FSnapshotBuffers;
+    tmSnapData: ;
+  end;
+
+end;
+
+procedure TDispatcher.EnqueueData(const Data: TObject);
+begin
+  if Data = nil then Exit;
+
+  FSnapQueue.PushItem(Data);
+end;
+
+procedure TDispatcher.Subscribe(aSubscriber: TObject; iDataID: Integer;
+  aDataObj: TObject; EventIDs: TDistributorIDs; aHandler: TDistributorEvent);
+var
+  aList: TList<ISubscriberInfo>;
+  Info: ISubscriberInfo;
+  bFound: Boolean;
+begin
+
+  FLock.Enter;
+  try
+    if not FSubscriptions.TryGetValue(iDataID, aList) then
+    begin
+      aList  := TList<ISubscriberInfo>.Create;
+      FSubscriptions.Add(iDataID, aList);
+    end;
+
+    bFound := false;
+    for Info in aList do
+      if Info.Subscriber = aSubscriber then
+      begin
+        bFound := true;
+        break;
+      end;
+
+    if not bFound then
+      aList.Add(TSubscriberInfo.Create(aSubscriber, iDataID, aHandler));
+
+  finally
+    FLock.Leave;
+  end;
+
+end;
+
+{ TDispatchThread }
+
+constructor TDispatchThread.Create(Owner: TDispatcher;
+  Queue: TThreadedQueue<TObject>; Mode: TTopicMode);
+begin
+  inherited Create(False); // Start immediately
+  FOwner := Owner;
+  FQueue := Queue;
+  FMode  := Mode;
+  FreeOnTerminate := False;
+end;
+
+procedure TDispatchThread.Execute;
+var
+  Data: TObject;
+  DataID: Integer;
+
+  Snap: TSnapshotBuffer;
+  PendingNotifications: TDictionary<integer, Boolean>;
+  BatchCount: integer;
+begin
+  PendingNotifications := TDictionary<integer, Boolean>.Create;
+  BatchCount := 0;
+  try
+    while not Terminated do
+    begin
+      // Blocking pop with timeout to allow termination check
+      if FQueue.PopItem(Data) = TWaitResult.wrSignaled then
+      begin
+        DataID := Data.InstanceSize;
+
+        // Update Buffer
+        if FMode = tmSequence then
+        begin
+//          Ring := FOwner.GetRingBuffer(DataID);
+//          if Assigned(Ring) then
+//            Ring.Push(Data);
+        end
+        else
+        begin
+          Snap := FOwner.GetSnapshotBuffer(FMode);
+          if Assigned(Snap) then
+            Snap.Overwrite(Data);
+        end;
+
+        // Coalescing: Mark for notification
+        if not PendingNotifications.ContainsKey(DataID) then
+          PendingNotifications.Add(DataID, True);
+
+        Inc(BatchCount);
+
+        // Flush condition: Queue is empty OR we processed a large batch (avoid starvation)
+        if (FQueue.QueueSize = 0) or (BatchCount >= 100) then
+        begin
+          // NEW: Batch Notification logic
+          if PendingNotifications.Count > 0 then
+            FOwner.NotifySubscribers(PendingNotifications.Keys);
+
+          PendingNotifications.Clear;
+          BatchCount := 0;
+        end;
+      end;
+    end;
+  finally
+    PendingNotifications.Free;
+  end;
+end;
+
+{ TSubscriberInfo }
+
+constructor TSubscriberInfo.Create(ASubscriber: TObject; ADataID: integer;
+  AHandler: TDistributorEvent);
+begin
+  FSubscriber := ASubscriber;
+  FDataID     := ADataID;
+  FHandler    := AHandler;
+end;
+
+function TSubscriberInfo.GetBusy: Boolean;
+begin
+  Result := FBusy;
+end;
+
+function TSubscriberInfo.GetDataID: integer;
+begin
+  Result := FDataID;
+end;
+
+function TSubscriberInfo.GetDataObj: TObject;
+begin
+  Result := FDataObj;
+end;
+
+function TSubscriberInfo.GetEventIDs: TDistributorIDs;
+begin
+  Result := FEventIDs;
+end;
+
+function TSubscriberInfo.GetHanlder: TDistributorEvent;
+begin
+  Result := FHandler;
+end;
+
+function TSubscriberInfo.GetLastSendTime: TDateTime;
+begin
+  Result := FLastSendTime;
+end;
+
+function TSubscriberInfo.GetSubscriber: TObject;
+begin
+  Result := FSubscriber;
+end;
+
+procedure TSubscriberInfo.SetBusy(Value: Boolean);
+begin
+  FBusy := Value;
+end;
+
+{ TSnapshotBuffer }
+
+constructor TSnapshotBuffer.Create;
+begin
+  SetLength(FItems, 128); // Pre-allocate initial capacity
+  FCount := 0;
+  FLastUpdateSeq := 0;
+  FLock := TSpinLock.Create(False);
+end;
+
+destructor TSnapshotBuffer.Destroy;
+var
+  I: Integer;
+begin
+  for I := 0 to FCount - 1 do
+    FItems[I].Data := nil;
+  SetLength(FItems, 0);
+  inherited;
+end;
+
+function TSnapshotBuffer.FindIndex(const Key: string;
+  out Index: Integer): Boolean;
+var
+  L, H, I, C: Integer;
+begin
+  Result := False;
+  L := 0;
+  H := FCount - 1;
+  while L <= H do
+  begin
+    I := L + (H - L) shr 1;
+    C := CompareStr(FItems[I].Key, Key);
+    if C < 0 then
+      L := I + 1
+    else
+    begin
+      H := I - 1;
+      if C = 0 then
+      begin
+        Result := True;
+        L := I;
+      end;
+    end;
+  end;
+  Index := L;
+
+end;
+
+function TSnapshotBuffer.FetchUpdated(var LastSeq: Int64): TArray<TSnapshotItem>;
+var
+  I, Count: Integer;
+  MaxSeq: Int64;
+begin
+  FLock.Enter;
+  try
+    Count := 0;
+    MaxSeq := LastSeq;
+
+    // 1st pass: count updated items
+    for I := 0 to High(FItems) do
+    begin
+      if FItems[I].UpdateSeq > LastSeq then
+        Inc(Count);
+    end;
+
+    SetLength(Result, Count);
+
+    // 2nd pass: extract and find highest sequence seen
+    Count := 0;
+    for I := 0 to High(FItems) do
+    begin
+      if FItems[I].UpdateSeq > LastSeq then
+      begin
+        Result[Count].Data := FItems[I].Data;
+        if FItems[I].UpdateSeq > MaxSeq then
+          MaxSeq := FItems[I].UpdateSeq;
+        Inc(Count);
+      end;
+    end;
+
+    // Let subscriber know the highest seq seen
+    LastSeq := MaxSeq;
+  finally
+    FLock.Exit;
+  end;
+
+end;
+
+procedure TSnapshotBuffer.Overwrite(const Item: TObject);
+var
+  Index, J: Integer;
+  Key: string;
+begin
+  if Item = nil then Exit;
+  Key := '';//Item.GetKey;
+
+  FLock.Enter;
+  try
+    Inc(FLastUpdateSeq); // Monotonically increase internal state sequence
+
+    if FindIndex(Key, Index) then
+    begin
+      // Update existing
+      FItems[Index].Data := Item;
+      FItems[Index].UpdateSeq := FLastUpdateSeq;
+    end
+    else
+    begin
+      // Insert new element maintaining sorted order
+      if FCount >= Length(FItems) then
+        SetLength(FItems, Length(FItems) * 2); // Double capacity
+
+      for J := FCount downto Index + 1 do
+        FItems[J] := FItems[J - 1];
+
+      FItems[Index].Key := Key;
+      FItems[Index].Data := Item;
+      FItems[Index].UpdateSeq := FLastUpdateSeq;
+      Inc(FCount);
+    end;
+  finally
+    FLock.Exit;
+  end;
+
+end;
+
+end.

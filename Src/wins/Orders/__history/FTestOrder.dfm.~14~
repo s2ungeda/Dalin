@@ -1,0 +1,163 @@
+object FrmTestOrder: TFrmTestOrder
+  Left = 0
+  Top = 0
+  Caption = #53580#49828#53944' '#51452#47928
+  ClientHeight = 233
+  ClientWidth = 562
+  Color = clBtnFace
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -18
+  Font.Name = 'Segoe UI'
+  Font.Style = []
+  OnClose = FormClose
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  PixelsPerInch = 144
+  TextHeight = 25
+  object Edit1: TEdit
+    Left = 10
+    Top = 10
+    Width = 111
+    Height = 33
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    TabOrder = 0
+    Text = 'BTC'
+    OnKeyDown = Edit1KeyDown
+  end
+  object cbStart: TCheckBox
+    Left = 130
+    Top = 16
+    Width = 75
+    Height = 21
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = 'Start'
+    TabOrder = 1
+    OnClick = cbStartClick
+  end
+  object cbUpbit: TCheckBox
+    Left = 36
+    Top = 112
+    Width = 85
+    Height = 25
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = #50629#48708#53944
+    Checked = True
+    State = cbChecked
+    TabOrder = 2
+  end
+  object cbBithumb: TCheckBox
+    Left = 36
+    Top = 148
+    Width = 85
+    Height = 25
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = #48727#50040
+    Checked = True
+    State = cbChecked
+    TabOrder = 3
+  end
+  object cbBinance: TCheckBox
+    Left = 36
+    Top = 76
+    Width = 109
+    Height = 25
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = #48148#51060#45240#49828
+    TabOrder = 4
+  end
+  object stBar: TStatusBar
+    Left = 0
+    Top = 205
+    Width = 562
+    Height = 28
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Panels = <
+      item
+        Width = 50
+      end
+      item
+        Width = 50
+      end>
+  end
+  object Button1: TButton
+    Left = 456
+    Top = 148
+    Width = 76
+    Height = 24
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = #47196#44536#48372#44592
+    TabOrder = 6
+    OnClick = Button1Click
+  end
+  object Button2: TButton
+    Left = 240
+    Top = 144
+    Width = 76
+    Height = 26
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = 'Button2'
+    TabOrder = 7
+    OnClick = Button2Click
+  end
+  object Button3: TButton
+    Left = 240
+    Top = 96
+    Width = 113
+    Height = 38
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = 'Button3'
+    TabOrder = 8
+    OnClick = Button3Click
+  end
+  object bnTimer: TTimer
+    Enabled = False
+    Interval = 10000
+    OnTimer = bnTimerTimer
+    Left = 428
+    Top = 40
+  end
+  object upTimer: TTimer
+    Tag = 1
+    Enabled = False
+    Interval = 10000
+    OnTimer = bnTimerTimer
+    Left = 480
+    Top = 32
+  end
+  object btTimer: TTimer
+    Tag = 2
+    Enabled = False
+    Interval = 10000
+    OnTimer = bnTimerTimer
+    Left = 352
+    Top = 72
+  end
+end

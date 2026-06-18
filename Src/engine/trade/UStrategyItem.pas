@@ -1,0 +1,105 @@
+unit UStrategyItem;
+
+interface
+
+uses
+  System.Classes,
+
+  UApiTypes, UTypes
+
+  ;
+
+type
+
+  TSPObject = class(TCollectionItem)
+  public
+    SymbolCode: string;
+    MajorEx : TExchangeKind;
+    SubEx   : TExchangeKind;
+
+  end;
+
+  TSPObjects = class(TCollection)
+  public
+    constructor Create;
+    procedure SetObject(aME, aSE : TExchangeKind; aSymbolCode : string);
+    procedure DeleteObject(aME, aSE : TExchangeKind; aSymbolCode : string);
+    function Find(aME, aSE : TExchangeKind; aSymbolCode : string): TSPObject; overload;
+    function Find(aME : TExchangeKind; aSymbolCode : string): TSPObject; overload;
+  end;
+
+implementation
+
+{ TSPObjects }
+
+constructor TSPObjects.Create;
+begin
+  inherited Create(TSPObject);
+end;
+
+procedure TSPObjects.DeleteObject(aME, aSE : TExchangeKind; aSymbolCode : string);
+var
+  I: Integer;
+  spObj  : TSPObject;
+begin
+  for I := 0 to Count-1 do
+  begin
+    spObj := Items[i] as TSPObject;
+    if (spObj.MajorEx = aME) and (spObj.SubEx = aSE) and (spObj.SymbolCode = aSymbolCode) then
+    begin
+      Delete(i);
+      Break;
+    end;
+  end;
+end;
+
+function TSPObjects.Find(aME: TExchangeKind; aSymbolCode: string): TSPObject;
+var
+  I: Integer;
+  spObj  : TSPObject;
+begin
+  Result := nil;
+  for I := 0 to Count-1 do
+  begin
+    spObj := Items[i] as TSPObject;
+    if (spObj.MajorEx = aME) and (spObj.SymbolCode = aSymbolCode) then
+    begin
+      Result := spObj;
+      Break;
+    end;
+  end;
+
+end;
+
+function TSPObjects.Find(aME, aSE : TExchangeKind; aSymbolCode : string): TSPObject;
+var
+  I: Integer;
+  spObj  : TSPObject;
+begin
+  Result := nil;
+  for I := 0 to Count-1 do
+  begin
+    spObj := Items[i] as TSPObject;
+    if (spObj.MajorEx = aME) and (spObj.SubEx = aSE) and (spObj.SymbolCode = aSymbolCode) then
+    begin
+      Result := spObj;
+      Break;
+    end;
+  end;
+end;
+
+procedure TSPObjects.SetObject(aME, aSE : TExchangeKind; aSymbolCode : string);
+  var
+    spObj : TSPObject;
+begin
+  spObj := Find(aME, aSE, aSymbolCode);
+  if spObj = nil then
+  begin
+    spObj := Add as TSPObject;
+    spObj.MajorEx := aME;
+    spObj.SubEx   := aSE;
+    spObj.SymbolCode  := aSymbolCode;
+  end;
+end;
+
+end.

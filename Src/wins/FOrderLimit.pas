@@ -1,0 +1,627 @@
+unit FOrderLimit;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
+  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.Grids, Vcl.ComCtrls, Vcl.StdCtrls,
+  Vcl.ExtCtrls
+
+  , UStorage   , UApiTypes, Vcl.Mask
+  ;
+
+type
+  TFrmOrderLimit = class(TForm)
+    PageControl1: TPageControl;
+    TabSheet1: TTabSheet;
+    TabSheet2: TTabSheet;
+    GroupBox2: TGroupBox;
+    sgCond: TStringGrid;
+    Panel1: TPanel;
+    btnApply: TButton;
+    btnCancel: TButton;
+    btnConfirm: TButton;
+    GroupBox3: TGroupBox;
+    sgCond1: TStringGrid;
+    Panel2: TPanel;
+    Button1: TButton;
+    Button2: TButton;
+    Button3: TButton;
+    TabSheet3: TTabSheet;
+    CheckBox1: TCheckBox;
+    CheckBox2: TCheckBox;
+    Edit1: TEdit;
+    Edit2: TEdit;
+    Label2: TLabel;
+    Panel3: TPanel;
+    Button4: TButton;
+    Button5: TButton;
+    Button6: TButton;
+    TabSheet4: TTabSheet;
+    GroupBox4: TGroupBox;
+    sgDnw: TStringGrid;
+    Panel4: TPanel;
+    btnDnw: TButton;
+    Button8: TButton;
+    Button9: TButton;
+    TabSheet5: TTabSheet;
+    Panel5: TPanel;
+    btFeeConfirm: TButton;
+    Button10: TButton;
+    Button11: TButton;
+    GroupBox5: TGroupBox;
+    sgFee: TStringGrid;
+    Button7: TButton;
+    Button12: TButton;
+    edtUpbitNormalFee: TLabeledEdit;
+    edtBithumbNormalFee: TLabeledEdit;
+    Label1: TLabel;
+    TabSheet6: TTabSheet;
+    GroupBox1: TGroupBox;
+    edtKorName: TLabeledEdit;
+    edtEngName: TLabeledEdit;
+    Panel6: TPanel;
+    btnExCommon: TButton;
+    Button14: TButton;
+    Button15: TButton;
+    procedure FormCreate(Sender: TObject);
+    procedure sgCondMouseUp(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
+    procedure sgCondDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect;
+      State: TGridDrawState);
+    procedure btnApplyClick(Sender: TObject);
+    procedure btnCancelClick(Sender: TObject);
+    procedure btnConfirmClick(Sender: TObject);
+    procedure Button1Click(Sender: TObject);
+    procedure Button4Click(Sender: TObject);
+    procedure btnDnwClick(Sender: TObject);
+    procedure btFeeConfirmClick(Sender: TObject);
+    procedure Button7Click(Sender: TObject);
+    procedure Button12Click(Sender: TObject);
+    procedure btnExCommonClick(Sender: TObject);
+  private
+    { Private declarations }
+    FCol , FRow : integer;
+    function CheckInputValue( sg : TStringGrid ): boolean;
+    procedure SaveFeeToFiles;
+    procedure UpdateData(aExKind: TExchangeKind);
+    procedure UpdateData1(aExKind: TExchangeKind);
+    procedure UpdateDataDnw(aExKind: TExchangeKind);
+  public
+    { Public declarations }
+    procedure SaveEnv( aStorage : TStorage );
+    procedure LoadEnv( aStorage : TStorage );
+  end;
+
+var
+  FrmOrderLimit: TFrmOrderLimit;
+
+implementation
+
+uses
+  GApp  , GLibs
+  , UApiConsts, Utypes
+  , DalinMain
+  , System.IniFiles
+  ;
+
+{$R *.dfm}
+
+
+procedure TFrmOrderLimit.btnCancelClick(Sender: TObject);
+begin
+  close;
+end;
+
+procedure TFrmOrderLimit.btnConfirmClick(Sender: TObject);
+begin
+
+  case TComponent(Sender).Tag of
+    0 : Button1Click( nil );
+    1 : btnApplyClick( nil );
+    2 : Button4Click(nil);      // 시세로그
+    3 : btnDnwClick(nil);       // 입출금제한
+    4 : btFeeConfirmClick(nil); // 수수료
+    5 : btnExCommonClick(nil) ; // 거래소별 설정
+  end;
+
+  close;
+end;
+
+procedure TFrmOrderLimit.btnDnwClick(Sender: TObject);
+var
+  iEk : TExchangeKind;
+begin
+  if not CheckInputValue(sgDnw) then begin
+    ShowMessage('입려값은 0 보다 크거가 공백은 안됨');
+    Exit;
+  end;
+
+  for iEk := ekUpbit to High(TExchangeKind) do
+    UpdateDataDnw( iEk );
+
+  FrmDalinMain.SaveRegedit(4);
+end;
+
+procedure TFrmOrderLimit.btnExCommonClick(Sender: TObject);
+begin
+  //
+  App.Engine.ApiConfig.ExchangeInfo[2].ApiInfo[eaSpot].KorName := edtKorName.Text;
+  App.Engine.ApiConfig.ExchangeInfo[2].ApiInfo[eaSpot].EngName := edtEngName.Text;
+
+  FrmDalinMain.SaveRegedit(5);
+end;
+
+procedure TFrmOrderLimit.Button12Click(Sender: TObject);
+var
+  sFileName: string;
+  ini : TIniFile;
+  bRead : boolean;
+begin
+
+  sFileName := App.RootDir + '\Config\fees.ini';
+  if not FileExists(sFileName) then
+    Exit;
+
+  bRead := false;
+  ini := TIniFile.Create(sFileName);
+
+  try
+
+    try
+      try
+        with App.Engine.ApiConfig do
+        begin
+          SetFee(ekBinance, eaSpot,    scUSDT, ftTaker, ini.ReadString('BIN_S_DT', 'taker', '0.05') );
+          SetFee(ekBinance, eaSpot,    scUSDT, ftMaker, ini.ReadString('BIN_S_DT', 'maker', '0.05'));
+          SetFee(ekBinance, eaSpot,    scUSDC, ftTaker, ini.ReadString('BIN_S_DC', 'taker', '0.05'));
+          SetFee(ekBinance, eaSpot,    scUSDC, ftMaker, ini.ReadString('BIN_S_DC', 'maker', '0.05') );
+
+          SetFee(ekBinance, eaFutUsdt,    scUSDT, ftTaker, ini.ReadString('BIN_F_DT', 'taker','0.05'));
+          SetFee(ekBinance, eaFutUsdt,    scUSDT, ftMaker, ini.ReadString('BIN_F_DT', 'maker','0.05'));
+          SetFee(ekBinance, eaFutUsdt,    scUSDC, ftTaker, ini.ReadString('BIN_F_DC', 'taker','0.05'));
+          SetFee(ekBinance, eaFutUsdt,    scUSDC, ftMaker, ini.ReadString('BIN_F_DC', 'maker','0.05'));
+
+          SetFee(ekUpbit,   eaSpot,    scKRW,  ftTaker, ini.ReadString('UPT_S', 'taker', '0.05'));
+          SetFee(ekUpbit,   eaSpot,    scKRW,  ftMaker, ini.ReadString('UPT_S', 'maker', '0.05'));
+
+          SetFee(ekBithumb, eaSpot,    scKRW,  ftTaker, ini.ReadString('BTH_S', 'taker', '0.05'));
+          SetFee(ekBithumb, eaSpot,    scKRW,  ftMaker, ini.ReadString('BTH_S', 'maker', '0.05'));
+
+          SetStandardFee(ekUpbit,   eaSpot, ini.ReadString('UPT_S', 'standard', '0.05'));
+          SetStandardFee(ekBithumb, eaSpot, ini.ReadString('BTH_S', 'standard', '0.05'));
+
+          bRead := true;
+        end;
+      except
+      end;
+
+    finally
+      ini.Free;
+    end;
+
+    if bRead then
+      with sgFee do
+      begin
+        Cells[1,1] := App.Engine.ApiConfig.FeeToStr(ekBinance, eaSpot,    scUSDT, ftTaker);
+        Cells[2,1] := App.Engine.ApiConfig.FeeToStr(ekBinance, eaSpot,    scUSDC, ftTaker);
+        Cells[3,1] := App.Engine.ApiConfig.FeeToStr(ekBinance, eaFutUsdt, scUSDT, ftTaker);
+        Cells[4,1] := App.Engine.ApiConfig.FeeToStr(ekBinance, eaFutUsdt, scUSDC, ftTaker);
+        Cells[5,1] := App.Engine.ApiConfig.FeeToStr(ekUpbit,   eaSpot,    scKRW,  ftTaker);
+        Cells[6,1] := App.Engine.ApiConfig.FeeToStr(ekBithumb, eaSpot,    scKRW,  ftTaker);
+
+        Cells[1,2] := App.Engine.ApiConfig.FeeToStr(ekBinance, eaSpot,    scUSDT, ftMaker);
+        Cells[2,2] := App.Engine.ApiConfig.FeeToStr(ekBinance, eaSpot,    scUSDC, ftMaker);
+        Cells[3,2] := App.Engine.ApiConfig.FeeToStr(ekBinance, eaFutUsdt, scUSDT, ftMaker);
+        Cells[4,2] := App.Engine.ApiConfig.FeeToStr(ekBinance, eaFutUsdt, scUSDC, ftMaker);
+        Cells[5,2] := App.Engine.ApiConfig.FeeToStr(ekUpbit,   eaSpot,    scKRW,  ftMaker);
+        Cells[6,2] := App.Engine.ApiConfig.FeeToStr(ekBithumb, eaSpot,    scKRW,  ftMaker);
+      end;
+
+    if bRead then
+    begin
+      edtUpbitNormalFee.Text  := App.Engine.ApiConfig.ExchangeInfo[integer(ekUpbit)].
+                                 ApiInfo[eaSpot].StandardFeeRate.ToString;
+      edtBithumbNormalFee.Text:= App.Engine.ApiConfig.ExchangeInfo[integer(ekBithumb)].
+                                 ApiInfo[eaSpot].StandardFeeRate.ToString;
+    end;
+  except
+    on e:exception do
+    begin
+      App.Log(llError, 'LoadFees Error: %s', [e.Message]);
+    end;
+
+  end;
+end;
+
+procedure TFrmOrderLimit.Button1Click(Sender: TObject);
+var
+  iEk : TExchangeKind;
+begin
+  if not CheckInputValue( sgCond1 ) then begin
+    ShowMessage('입려값은 0 보다 크거가 공백은 안됨');
+    Exit;
+  end;
+
+  for iEk := ekBinance to High(TExchangeKind) do
+    UpdateData1( iEk );
+
+  FrmDalinMain.SaveRegedit(1);
+
+  for iEk := ekBinance to High(TExchangeKind) do
+    App.DebugLog( '%s %d, %d ', [  TExchangeKindDesc[iEk],
+      App.Engine.ApiConfig.OrderLimit.DefOrderLimit[iEk].OneTimeLimit
+      ,App.Engine.ApiConfig.OrderLimit.DefOrderLimit[iEk].LestrictArea
+    ]);
+end;
+
+procedure TFrmOrderLimit.Button4Click(Sender: TObject);
+begin
+  //
+  With App.Engine.ApiConfig do
+  begin
+    QuoteOrderLog[0].Use := CheckBox1.Checked;
+    QuoteOrderLog[0].Code:= Edit1.Text;
+
+    QuoteOrderLog[1].Use := CheckBox2.Checked;
+    QuoteOrderLog[1].Code:= Edit2.Text;
+
+    FrmDalinMain.SaveRegedit(3);
+  end;
+end;
+
+procedure TFrmOrderLimit.Button7Click(Sender: TObject);
+begin
+  //
+  OpenMemojang(Handle, App.RootDir + '\Config\fees.ini');
+end;
+
+// 수수료 적용
+procedure TFrmOrderLimit.btFeeConfirmClick(Sender: TObject);
+begin
+  if not CheckInputValue(sgFee) then begin
+    ShowMessage('입력값은 0 보다 커야함, 공백은 안됨');
+    Exit;
+  end;
+
+  with sgFee do
+  begin
+
+    App.Engine.ApiConfig.SetFee(ekBinance, eaSpot,    scUSDT, ftTaker, Cells[1,1]);
+    App.Engine.ApiConfig.SetFee(ekBinance, eaSpot,    scUSDC, ftTaker, Cells[2,1]);
+    App.Engine.ApiConfig.SetFee(ekBinance, eaFutUsdt, scUSDT, ftTaker, Cells[3,1]);
+    App.Engine.ApiConfig.SetFee(ekBinance, eaFutUsdt, scUSDC, ftTaker, Cells[4,1]);
+    App.Engine.ApiConfig.SetFee(ekUpbit,   eaSpot,    scKRW,  ftTaker, Cells[5,1]);
+    App.Engine.ApiConfig.SetFee(ekBithumb, eaSpot,    scKRW,  ftTaker, Cells[6,1]);
+
+    App.Engine.ApiConfig.SetFee(ekBinance, eaSpot,    scUSDT, ftMaker, Cells[1,2]);
+    App.Engine.ApiConfig.SetFee(ekBinance, eaSpot,    scUSDC, ftMaker, Cells[2,2]);
+    App.Engine.ApiConfig.SetFee(ekBinance, eaFutUsdt, scUSDT, ftMaker, Cells[3,2]);
+    App.Engine.ApiConfig.SetFee(ekBinance, eaFutUsdt, scUSDC, ftMaker, Cells[4,2]);
+    App.Engine.ApiConfig.SetFee(ekUpbit,   eaSpot,    scKRW,  ftMaker, Cells[5,2]);
+    App.Engine.ApiConfig.SetFee(ekBithumb, eaSpot,    scKRW,  ftMaker, Cells[6,2]);
+
+    App.Engine.ApiConfig.SetStandardFee(ekUpbit, eaSpot, edtUpbitNormalFee.Text);
+    App.Engine.ApiConfig.SetStandardFee(ekBithumb, eaSpot, edtBithumbNormalFee.Text);
+  end;
+
+  SaveFeeToFiles;
+
+end;
+
+function TFrmOrderLimit.CheckInputValue( sg : TStringGrid ) : boolean;
+var
+  aCol: Integer;
+  aRow: Integer;
+  dData : double;
+begin
+  Result := false;
+
+  with sg do
+    for aCol := 1 to ColCount-1 do
+      for aRow := 1 to RowCount-1 do
+        if not TryStrToFloat(Cells[aCol, aRow], dData) then
+          Exit;
+
+  if not TryStrToFloat(edtUpbitNormalFee.Text, dData) then Exit;
+  if not TryStrToFloat(edtBithumbNormalFee.Text, dData) then Exit;
+
+  Result := true;
+end;
+
+procedure TFrmOrderLimit.btnApplyClick(Sender: TObject);
+var
+  iEk : TExchangeKind;
+begin
+  if not CheckInputValue(sgCond) then begin
+    ShowMessage('입려값은 0 보다 커야함, 공백은 안됨');
+    Exit;
+  end;
+
+  for iEk := ekBinance to High(TExchangeKind) do
+    UpdateData( iEk );
+
+  FrmDalinMain.SaveRegedit(2);
+
+  for iEk := ekBinance to High(TExchangeKind) do
+    App.DebugLog( '%s %d, %d, %d, %d ', [  TExchangeKindDesc[iEk],
+      App.Engine.ApiConfig.OrderLimit.OrderLimit[iEk].OneTimeLimit
+      ,App.Engine.ApiConfig.OrderLimit.OrderLimit[iEk].BusyHogaRate
+      ,App.Engine.ApiConfig.OrderLimit.OrderLimit[iEk].SpreadRate
+      ,App.Engine.ApiConfig.OrderLimit.OrderLimit[iEk].OneDayLimit
+    ]);
+end;
+
+procedure TFrmOrderLimit.UpdateData( aExKind : TExchangeKind );
+var item : TLimitItem;
+  iRow : integer;
+begin
+  with sgCond do
+  begin
+    iRow := integer( aExKind ) + 1;
+
+    item.OneTimeLimit := StrToInt( Cells[1,iRow] ) ;
+    item.BusyHogaRate := StrToInt( Cells[2,iRow] );
+    item.SpreadRate   := StrToInt( Cells[3,iRow] );
+    item.OneDayLimit  := StrToInt( Cells[4,iRow] );
+  end;
+
+  App.Engine.ApiConfig.SetOrderLimit(aExKind, item);
+end;
+
+procedure TFrmOrderLimit.UpdateData1(aExKind: TExchangeKind);
+var
+  item : TDefOrderLimit;
+  iRow : integer;
+begin
+  with sgCond1 do
+  begin
+    iRow := integer( aExKind ) + 1;
+
+    item.OneTimeLimit := StrToInt( Cells[1,iRow] ) ;
+    item.LestrictArea := StrToInt( Cells[2,iRow] );
+  end;
+
+  App.Engine.ApiConfig.SetDefOrderLimit(aExKind, item);
+end;
+
+procedure TFrmOrderLimit.UpdateDataDnw(aExKind: TExchangeKind);
+var
+  iRow : integer;
+begin
+  with sgDnw do
+  begin
+    iRow  :=  integer(aExKind);
+    App.Engine.ApiConfig.DnwLimit.DepositLimit[aExKind] := StrToInt(Cells[1, iRow]);
+    App.Engine.ApiConfig.DnwLimit.WidthDrawLimit[aExKind] := StrToInt(Cells[2, iRow]);
+  end;
+end;
+
+procedure TFrmOrderLimit.FormCreate(Sender: TObject);
+var
+  I: TExchangeKind;
+begin
+
+  with sgCond1 do
+  begin
+    Cells[0,0]  := '거래소';
+    Cells[0,1]  := '바이낸스';
+    Cells[0,2]  := '업비트';
+    Cells[0,3]  := '빗썸';
+
+    Cells[1,0]  := '1회최대주문액(￦,$)';
+    Cells[2,0]  := '주문불가영역';
+
+    for I := ekBinance to High(TExchangeKind) do
+    begin
+      Cells[1,integer(i)+1] := Format('%d', [App.Engine.ApiConfig.OrderLimit.DefOrderLimit[i].OneTimeLimit]);
+      Cells[2,integer(i)+1] := Format('%d', [App.Engine.ApiConfig.OrderLimit.DefOrderLimit[i].LestrictArea]);
+    end;
+  end;
+
+
+  with sgCond do
+  begin
+    Cells[0,0]  := '거래소';
+    Cells[0,1]  := '바이낸스';
+    Cells[0,2]  := '업비트';
+    Cells[0,3]  := '빗썸';
+
+    Cells[1,0]  := '1회최대주문액(￦,$)';
+    Cells[2,0]  := '급등락매매불가(5분)';
+    Cells[3,0]  := '호가차';
+    Cells[4,0]  := '1일최대거래금액한도(￦,$)';
+
+    for I := ekBinance to High(TExchangeKind) do
+    begin
+      Cells[1,integer(i)+1] := Format('%d', [App.Engine.ApiConfig.OrderLimit.OrderLimit[i].OneTimeLimit]);
+      Cells[2,integer(i)+1] := Format('%d', [App.Engine.ApiConfig.OrderLimit.OrderLimit[i].BusyHogaRate]);
+      Cells[3,integer(i)+1] := Format('%d', [App.Engine.ApiConfig.OrderLimit.OrderLimit[i].SpreadRate]);
+      Cells[4,integer(i)+1] := Format('%d', [App.Engine.ApiConfig.OrderLimit.OrderLimit[i].OneDayLimit]);
+    end;
+
+  end;
+
+  CheckBox1.Checked := App.Engine.ApiConfig.QuoteOrderLog[0].Use;
+  Edit1.Text        := App.Engine.ApiConfig.QuoteOrderLog[0].Code;
+
+  CheckBox2.Checked := App.Engine.ApiConfig.QuoteOrderLog[1].Use;
+  Edit2.Text        := App.Engine.ApiConfig.QuoteOrderLog[1].Code;
+
+  FCol := -1;
+  FRow := -1;
+
+  with sgDnw do
+  begin
+    Cells[0, 0] := '1일';
+    Cells[0, 1] := '업비트';
+    Cells[0, 2] := '빗썸';
+
+    Cells[1, 0] := '원화입금한도';
+    Cells[2, 0] := '원화출금한도';
+
+    for I := ekUpbit to High(TExchangeKind) do
+    begin
+      Cells[1,integer(i)] := Format('%.0n', [App.Engine.ApiConfig.DnwLimit.DepositLimit[i] + 0.001 ]);
+      Cells[2,integer(i)] := Format('%.0n', [App.Engine.ApiConfig.DnwLimit.WidthDrawLimit[i] + 0.001 ]);
+    end;
+  end;
+
+
+  with sgFee do
+  begin
+    Cells[0, 1] := 'taker(%)';
+    Cells[0, 2] := 'maker(%)';
+
+    Cells[1, 0] := '바이낸 S DT';
+    Cells[2, 0] := '바이낸 S DC';
+    Cells[3, 0] := '바이낸 F DT';
+    Cells[4, 0] := '바이낸 F DC';
+//    Cells[3, 0] := 'MEXC S';
+//    Cells[4, 0] := 'MEXC F';
+    Cells[5, 0] := '업비트';
+    Cells[6, 0] := '빗썸';
+  end;
+
+  edtKorName.Text := App.Engine.ApiConfig.ExchangeInfo[2].ApiInfo[eaSpot].KorName;
+  edtEngName.Text := App.Engine.ApiConfig.ExchangeInfo[2].ApiInfo[eaSpot].EngName;
+
+  Button12Click(nil);
+
+end;
+
+procedure TFrmOrderLimit.LoadEnv(aStorage: TStorage);
+begin
+
+end;
+
+procedure TFrmOrderLimit.SaveEnv(aStorage: TStorage);
+begin
+
+end;
+
+procedure TFrmOrderLimit.SaveFeeToFiles;
+var
+  ini: TIniFile;
+  sFileName: string;
+begin
+
+  sFileName := App.RootDir + '\Config\fees.ini';
+  if not FileExists(sFileName) then
+  begin
+    // to do
+    ini := TIniFile.Create(sFileName);
+    try
+      // 초기 섹션과 키, 값을 설정
+      ini.WriteString('BIN_S_DT', 'taker', '0.05');
+      ini.WriteString('BIN_S_DT', 'maker', '0.05');
+      ini.WriteString('BIN_S_DC', 'taker', '0.05');
+      ini.WriteString('BIN_S_DC', 'maker', '0.05');
+      ini.WriteString('BIN_F_DT', 'taker', '0.05');
+      ini.WriteString('BIN_F_DT', 'maker', '0.05');
+      ini.WriteString('BIN_F_DC', 'taker', '0.05');
+      ini.WriteString('BIN_F_DC', 'maker', '0.05');
+      ini.WriteString('UPT_S', 'taker', '0.05');
+      ini.WriteString('UPT_S', 'maker', '0.05');
+      ini.WriteString('BTH_S', 'taker', '0.05');
+      ini.WriteString('BTH_S', 'maker', '0.05');
+      // 필요에 따라 다른 초기값들도 추가
+      ini.WriteString('BTH_S', 'standard', '0.05');
+      ini.WriteString('UPT_S', 'standard', '0.05');
+    finally
+      ini.Free;
+    end;
+  end;
+
+  ini := TIniFile.Create(sFileName);
+  try
+    with App.Engine.ApiConfig do
+    begin
+      ini.WriteString('BIN_S_DT', 'taker', GetFee(ekBinance, eaSpot,    scUSDT, ftTaker).ToString);
+      ini.WriteString('BIN_S_DT', 'maker', GetFee(ekBinance, eaSpot,    scUSDT, ftMaker).ToString);
+      ini.WriteString('BIN_S_DC', 'taker', GetFee(ekBinance, eaSpot,    scUSDC, ftTaker).ToString);
+      ini.WriteString('BIN_S_DC', 'maker', GetFee(ekBinance, eaSpot,    scUSDC, ftMaker).ToString);
+      ini.WriteString('BIN_F_DT', 'taker', GetFee(ekBinance, eaFutUsdt, scUSDT, ftTaker).ToString);
+      ini.WriteString('BIN_F_DT', 'maker', GetFee(ekBinance, eaFutUsdt, scUSDT, ftMaker).ToString);
+      ini.WriteString('BIN_F_DC', 'taker', GetFee(ekBinance, eaFutUsdt, scUSDC, ftTaker).ToString);
+      ini.WriteString('BIN_F_DC', 'maker', GetFee(ekBinance, eaFutUsdt, scUSDC, ftMaker).ToString);
+      ini.WriteString('UPT_S',    'taker', GetFee(ekUpbit,   eaSpot,    scKRW,  ftTaker).ToString);
+      ini.WriteString('UPT_S',    'maker', GetFee(ekUpbit,   eaSpot,    scKRW,  ftMaker).ToString);
+      ini.WriteString('BTH_S',    'taker', GetFee(ekBithumb, eaSpot,    scKRW,  ftTaker).ToString);
+      ini.WriteString('BTH_S',    'maker', GetFee(ekBithumb, eaSpot,    scKRW,  ftMaker).ToString);
+
+      ini.WriteString('UPT_S', 'standard', GetStandardFee(ekUpbit, eaSpot).ToString);
+      ini.WriteString('BTH_S', 'standard', GetStandardFee(ekBithumb, eaSpot).ToString );
+    end;
+  finally
+    ini.Free;
+  end;
+end;
+
+procedure TFrmOrderLimit.sgCondDrawCell(Sender: TObject; ACol, ARow: Integer;
+  Rect: TRect; State: TGridDrawState);
+  var
+    aBack : TColor;
+    stTxt : string;
+    dFormat : word;
+    rec : TRect;
+    iData :integer;
+begin
+
+  aBack := clWhite;
+  dFormat := DT_VCENTER or DT_CENTER;
+  rec := Rect;
+
+  with TStringGrid(Sender) do
+  begin
+    stTxt := Cells[ACol, ARow];
+
+    if (ARow = 0) or (ACol = 0) then
+      aBack := clBtnFace
+    else begin
+      dFormat := DT_VCENTER or DT_RIGHT;
+
+      case ACol of
+        1, 4 :
+          begin
+            iData := StrTointDef( stTxt, 0 );
+            stTxt := FormatFloat('#,##0', iData);
+          end;
+        2, 3 : stTxt := stTxt + ' %'
+      end;
+    end;
+
+    rec.Top := rec.Top + 4;
+    rec.Right := rec.Right - 4;
+
+    Canvas.Font.Size := 11;
+    Canvas.Brush.Color  := aBack;
+    Canvas.FillRect( Rect);
+
+    DrawText( Canvas.Handle, PChar( stTxt ), Length( stTxt ), rec, dFormat );
+  end;
+
+
+end;
+
+procedure TFrmOrderLimit.sgCondMouseUp(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: Integer);
+  var
+    aCol, aRow : integer;
+begin
+  TStringGrid(Sender).MouseToCell( X, Y, aCol, aRow);
+
+  with TStringGrid(Sender) do
+    if  ( aRow > 0 ) and ( aCol > 0 ) then
+    begin
+      Options     := Options + [ goEditing ];
+      EditorMode  := true;
+    end else begin
+      EditorMode  := true;
+      Options     := Options - [ goEditing ];
+    end;
+end;
+
+
+
+end.

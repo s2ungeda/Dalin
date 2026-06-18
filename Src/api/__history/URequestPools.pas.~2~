@@ -1,0 +1,183 @@
+unit URequestPools;
+
+interface
+
+uses
+  System.Classes, System.Generics.Collections, system.SysUtils,
+  REST.Client, REST.Types, System.SyncObjs,
+  UTypes
+  ;
+
+type
+
+  TObjectPool<T: class> = class
+  private
+    FPool: TQueue<T>;
+    FFactory: TFunc<T>;
+    FCriticalSection: TCriticalSection;
+  public
+    constructor Create(AFactory: TFunc<T>);
+    destructor Destroy; override;
+    function Acquire: T;
+    procedure Release(AObject: T);
+    function PoolCount: Integer; // 현재 객체 풀의 개수를 반환
+  end;
+
+  TRequestTask = class
+  private
+    FRESTClient: TRESTClient;
+    FRESTRequest: TRESTRequest;
+    FRESTResponse: TRESTResponse;
+    FRequestID: Integer; // 요청에 대한 식별자
+    FOnCompleted: TProc<TRequestTask>;
+    procedure SetCompleted(const Value: TProc<TRequestTask>); // 작업 완료 후 호출될 이벤트
+  public
+    constructor Create(ARequestID: Integer; AOnCompleted: TProc<TRequestTask>);
+    destructor Destroy; override;
+    procedure Execute;
+    procedure ProcessResponse(idx:integer);
+    property OnCompleted: TProc<TRequestTask> read FOnCompleted write SetCompleted;
+    property RequestID: Integer read FRequestID write FRequestID;
+  end;
+
+implementation
+
+uses
+  GApp, GLibs
+  ;
+
+{ TObjectPool<T> }
+
+constructor TObjectPool<T>.Create(AFactory: TFunc<T>);
+begin
+  inherited Create;
+  FPool := TQueue<T>.Create;
+  FFactory := AFactory;
+  FCriticalSection := TCriticalSection.Create;
+end;
+destructor TObjectPool<T>.Destroy;
+var
+  Obj: T;
+begin
+  FCriticalSection.Enter;
+  try
+    while FPool.Count > 0 do
+    begin
+      Obj := FPool.Dequeue;
+      FreeAndNil(Obj);
+    end;
+    FPool.Free;
+  finally
+    FCriticalSection.Leave;
+    FCriticalSection.Free;
+  end;
+  inherited;
+end;
+function TObjectPool<T>.Acquire: T;
+begin
+  FCriticalSection.Enter;
+  try
+    if FPool.Count > 0 then
+      Result := FPool.Dequeue
+    else
+      Result := FFactory();
+  finally
+    FCriticalSection.Leave;
+  end;
+end;
+procedure TObjectPool<T>.Release(AObject: T);
+begin
+  FCriticalSection.Enter;
+  try
+    FPool.Enqueue(AObject);
+  finally
+    FCriticalSection.Leave;
+  end
+end;
+
+function TObjectPool<T>.PoolCount: Integer;
+begin
+  FCriticalSection.Enter;
+  try
+    Result := FPool.Count;
+  finally
+    FCriticalSection.Leave;
+  end;
+end;
+
+{ TRequestTask }
+
+constructor TRequestTask.Create(ARequestID: Integer;
+  AOnCompleted: TProc<TRequestTask>);
+begin
+  inherited Create;
+  FRequestID := ARequestID;
+  FOnCompleted := AOnCompleted;
+  FRESTClient := TRESTClient.Create('');
+  FRESTRequest := TRESTRequest.Create(FRESTClient);
+  FRESTResponse := TRESTResponse.Create(nil);
+  FRESTRequest.Client := FRESTClient;
+  FRESTRequest.Response := FRESTResponse;
+  FRESTRequest.SynchronizedEvents := False;
+
+  FRESTClient.BaseURL   := 'https://api.bithumb.com'; // Bithumb API의 기본 URL 설정
+  FRESTRequest.Resource := 'v1/trades/ticks?market=KRW-BTC&count=1'; // 요청할 리소스 설정
+  FRESTRequest.Method   := rmGET; // GET 요청 설정
+end;
+
+destructor TRequestTask.Destroy;
+begin
+  FRESTRequest.Free;
+  FRESTClient.Free;
+  FRESTResponse.Free;
+  inherited;
+end;
+
+procedure TRequestTask.Execute;
+begin
+  try
+    FRESTRequest.Execute;
+    ProcessResponse(TThread.Current.ThreadID);
+  except
+    on E: Exception do
+      TThread.Synchronize(nil,
+        procedure
+        begin
+          App.Log(llError, 'Error during request execution: ' + E.Message );
+        end);
+  end;
+end;
+
+procedure TRequestTask.ProcessResponse(idx: integer);
+begin
+  TThread.Synchronize(nil,
+    procedure
+    begin
+      try
+        // 응답을 처리하고, 식별자를 사용하여 요청과 매칭
+        if FRESTResponse.StatusCode = 200 then
+        begin
+//          ShowMessage(Format('Request ID %d Response: %s', [FRequestID, FRESTResponse.Content]));
+         // Form1.Memo1.Lines.Add( Format('%d Request ID %d Response: %20.20s', [idx, FRequestID, FRESTResponse.Content]) )
+        end
+        else
+        begin
+//          Form1.Memo1.Lines.Add(Format('%d Request ID %d failed with status code: %d - %s',
+//            [idx, FRequestID, FRESTResponse.StatusCode, FRESTResponse.StatusText]));
+        end;
+      except
+        on E: Exception do
+          App.Log(llError,'Error processing response for Request ID %d: %s', [FRequestID, E.Message]);
+      end;
+      // 응답 처리가 완료되면 객체를 풀에 반환
+      if Assigned(FOnCompleted) then
+        FOnCompleted(Self);
+    end);
+end;
+
+procedure TRequestTask.SetCompleted(const Value: TProc<TRequestTask>);
+begin
+  FOnCompleted := Value;
+end;
+
+end.

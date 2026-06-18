@@ -1,0 +1,2851 @@
+unit FTVSignals;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes,
+  System.Generics.Collections,
+  Vcl.Graphics,  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.Grids, Vcl.ComCtrls, Vcl.ExtCtrls,
+  Vcl.StdCtrls, Vcl.Mask, REST.Types, REST.Client, Data.Bind.Components,  Data.Bind.ObjectScope,
+
+  UStorage, UTypes, UApiTypes, USymbols, UPositions, UOrders, UAssets,
+
+  UTVSignals, USignalTypes, //UMainThreadProc,
+
+  UDistributor,  UAccounts,
+
+  UTimerThread, Vcl.Buttons
+  ;
+
+const
+  WM_LOG            = WM_USER + $0001;
+  WM_DATA_RECEIVED  = WM_USER + $0002;
+
+  TITLE_CNT = 24;
+  CKON = 100;
+  CKOFF = 101;
+  OBJ_COL = 0;
+  STA_COL = 1;
+  RUN_COL = 2;
+
+  STA_VAL = 1000;
+
+  // fill Log
+  EX_COL = 3;
+//  FS_COL = 2;
+  TITLE : array [0..TITLE_CNT-1] of string =
+    (
+     '','전략코드',
+     '1회주문수량', '1회주문수량',          // 2
+     'KIP조정', '','목표진입량', 'RT선진입', '체결차',        // 4
+     '설정',                                    // 9
+     'On', 'B-Kip', 'RT선진입','A-Kip','A-ExR',  // 10
+     'On', 'B-Kip', 'RT선진입','A-Kip','A-ExR',  // 15
+     'BDiff','RDiff','ExDiff', '실행'               // 20
+     );
+
+  WIDs : array [0..TITLE_CNT-1] of integer =
+    ( 30, 100,
+      80, 80,
+      50, 30, 80, 80, 80,
+      30,
+      30, 45, 80, 45, 55,
+      30, 45, 80, 45, 55,
+      45, 45, 45, 30
+    );
+
+  CFG_COL = 9;
+  ENT_COL = 7;
+  EXE_COL = TITLE_CNT-1;
+
+  FCOL : array [0..1] of integer = (2, 2);
+  SCOL : array [0..1] of integer = (3, 3);
+  ECOL : array [0..1] of integer = (10, 14);
+  XCOL : array [0..1] of integer = (15, 19);
+
+  EDIT_CNT = 2;
+  EDIT_COLs : array [0..EDIT_CNT-1] of integer = (12, 17);
+
+  TITLE2_CNT = 9;
+  TITLE2 : array [0..TITLE2_CNT-1] of string = (
+  '시각','전략코드','후거래소','상태','',
+  '방향','평균가', '체결량','환율');
+
+  TITLE3 : array [0..4] of string = (
+  '시각','전량명','LS','S-KIP','Index');
+
+//  TMP_TEXT : array [0..TITLE_CNT-1] of string =
+//    ('30','DIS_KIP_MID','BTCUSDT','10,000', '12345678.234','0.12',
+//     '20','10,000', '12345678.234','0.12','200',
+//     'A', 'F', '12345678','98765432', '진입',
+//     '-0.234','-0.234', '100','1234578.12345','12.12345678',
+//     '진입','-0.234','-0.234', '100','1234578.12345','12.12345678');
+
+  TITLE_RLOG_CNT = 10;
+  TITLE_RLOG : array [0..TITLE_RLOG_CNT-1] of string = (
+    'UP-Kip','BT-Kip','RT선진입','선-후수량','체결율',
+    'A-Kip','A-ExR','상태','B/U','BT');
+  TITLE_RLOG_WID : array [0..TITLE_RLOG_CNT-1] of integer = (
+    45,45,80,70,45,
+    45,45,40,30,30);
+
+type
+  TFrmTVSignals = class(TForm)
+    Panel1: TPanel;
+    stsLog: TStatusBar;
+    sg: TStringGrid;
+    Button1: TButton;
+    Button2: TButton;
+    edtCode: TLabeledEdit;
+    RESTClient1: TRESTClient;
+    rq: TRESTRequest;
+    Splitter1: TSplitter;
+    Panel2: TPanel;
+    PageControl1: TPageControl;
+    TabSheet1: TTabSheet;
+    sgContent: TStringGrid;
+    sgFillLog: TStringGrid;
+    btnSymbol: TButton;
+    plUpEntryKip: TPanel;
+    cbSettleType: TComboBox;
+    CheckBox1: TCheckBox;
+    plUpExitKip: TPanel;
+    plBtEntryKip: TPanel;
+    plBtExitKip: TPanel;
+    Panel7: TPanel;
+    Panel8: TPanel;
+    Panel9: TPanel;
+    Panel10: TPanel;
+    Timer1: TTimer;
+    edtTmpQty: TEdit;
+    DustTimer: TTimer;
+    Label1: TLabel;
+    Label2: TLabel;
+    ComboBox1: TComboBox;
+    plEnDiff: TPanel;
+    plExDiff: TPanel;
+    Button4: TButton;
+    sgRLog: TStringGrid;
+    ckSig: TCheckBox;
+    Splitter2: TSplitter;
+    Panel3: TPanel;
+    Button5: TButton;
+    ckDataLock: TCheckBox;
+    DataLockTimer: TTimer;
+    cbInterval: TComboBox;
+    Panel5: TPanel;
+    edtSigCntLimit: TLabeledEdit;
+    Panel11: TPanel;
+    TabSheet2: TTabSheet;
+    ListBox1: TListBox;
+    m: TMemo;
+    Button6: TButton;
+    Button7: TButton;
+    SpeedButtonPrefs: TSpeedButton;
+    cbAoType: TComboBox;
+    Resume: TButton;
+    Button3: TButton;
+    Button8: TButton;
+    OrderTimer: TTimer;
+    procedure FormCreate(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+
+    procedure sgDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect;
+      State: TGridDrawState);
+    procedure sgMouseDown(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
+    procedure sgMouseUp(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
+    procedure Button1Click(Sender: TObject);
+    procedure Button2Click(Sender: TObject);
+    procedure sgMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
+
+    procedure Button4Click(Sender: TObject);
+    procedure sgContentDrawCell(Sender: TObject; ACol, ARow: Integer;
+      Rect: TRect; State: TGridDrawState);
+    procedure Button5Click(Sender: TObject);
+    procedure Button3Click(Sender: TObject);
+    procedure btnSymbolClick(Sender: TObject);
+    procedure CheckBox1Click(Sender: TObject);
+    procedure Timer1Timer(Sender: TObject);
+    procedure stsLogDrawPanel(StatusBar: TStatusBar; Panel: TStatusPanel;
+      const Rect: TRect);
+    procedure DustTimerTimer(Sender: TObject);
+    procedure ComboBox1Change(Sender: TObject);
+    procedure sgFillLogMouseDown(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
+    procedure sgRLogDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect;
+      State: TGridDrawState);
+
+    procedure DataLockTimerTimer(Sender: TObject);
+    procedure ckDataLockClick(Sender: TObject);
+    procedure cbIntervalClick(Sender: TObject);
+    procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure Button7Click(Sender: TObject);
+    procedure Button6Click(Sender: TObject);
+    procedure SpeedButtonPrefsClick(Sender: TObject);
+    procedure ResumeClick(Sender: TObject);
+    procedure Button8Click(Sender: TObject);
+    procedure sgClick(Sender: TObject);
+    procedure OrderTimerTimer(Sender: TObject);
+  private
+    { Private declarations }
+    FStartTime  : TDateTime;
+    FDustOrderQty : array [TSideType, TExchangeKind] of double;
+    FSelectedRow : integer;
+    FSelectedCol : integer;
+    FRow         : integer;
+    FDown        : boolean;
+    FTVSignals   : TTVSignals;
+    FIndex       : integer;
+
+    FCount : int64;
+    FThread: TTimerThread;
+
+    FMsg: string;
+
+    FNwContent: TRqContents;
+    FSigTimeList  : TList<TDateTime>;
+
+//    FMainThread: TMainThread;
+
+    FSymbols  : array [TExchangeKind] of TSymbol;
+    FAccounts : array [TExchangeKind] of TAccount;
+    FPosition: TPosition;
+
+    FPrevLogIdx : integer;
+    FSignal: TTVSignal;
+
+    FEntryValue : array [TExchangeKind, TMethodType] of double ;
+    FExitValue :  array [TExchangeKind, TMethodType] of double  ;
+
+    FLastKnownIDs : TDictionary<string, int64>;
+
+    procedure AddSignal(aItem: TTVSignal; iRow:integer);
+
+    function  CheckProcTime: boolean;
+    procedure CheckSignalTurnover;
+    procedure CheckStgTurnover;
+    procedure ClearStgData(aRow: integer);
+
+    procedure DisplayAllKip;
+    procedure DisplayLog;
+    procedure DoCheckAllRunColl(bCheck: boolean);
+
+    procedure initControls;
+    procedure OpenConfig(iRow:integer);
+    procedure MakeSignal(iRow: integer);
+    procedure UpdateSignalConfig(aItem: TTVSignal; iRow: integer);
+    procedure UpdateSiganlContent(aSignal: TTVSignal; iRow: integer; bEntry: boolean);
+    procedure UpdateSingalData(aSignal: TTVSignal);
+
+    procedure OnLog(const S: string);
+    procedure OnTimer(Sender: TObject);
+
+    function  GetCode : string;
+    function  ParseData(AData: string; aColl: TRqContents): boolean;
+
+    procedure PutContent(aData: TRqContent; iRow: integer);
+    procedure PutFillLog(aSignal: TTVSignal; aoType: TAutoOrderType);
+
+    procedure SetRKip(e:TExchangeKind; aoType: TAutoOrderType; FS:TMethodType; const dValue: double);
+    function SetSymbols: boolean;
+    procedure SetControlEnables(bEnable: Boolean);
+    procedure StartSignal;
+    procedure StopSignal;
+
+    procedure StopMainThread;
+
+    procedure QuoteProc(Sender, Receiver: TObject; DataID: Integer;
+                    DataObj: TObject; EventID: TDistributorID);
+    procedure TradeProc(Sender, Receiver: TObject; DataID: Integer;
+                    DataObj: TObject; EventID: TDistributorID);
+
+    procedure OnPosition(aPos: TPosition);
+
+    function GetSymbols(ek: TExchangeKind): TSymbol;
+    function GetAccounts(ek: TExchangeKind): TAccount;
+    //
+    procedure WMSignalState(var Msg: TMessage); message  WM_SIGNAL_STATE;
+    procedure WMSignalResult(var Msg: TMessage); message WM_SIGNAL_RESULT;
+    procedure WMAfterOrderNotify(var Msg: TMessage); message WM_AFTERORDER_NOTIFY;
+    procedure WMStrategyStatus(var Msg: TMessage); message WM_STRATEGY_STATUS;
+
+    function FindStgName(const s : string): boolean;
+    procedure ChangeStateColor(aSignal: TTVSignal; rtType: TSigResultType);
+    procedure ChangeState(iRow:integer; ival: Integer);
+
+    //procedure Run(aSignal: TTVSignal);
+    procedure Run(iRow: integer; bDraw: boolean = true);
+    procedure Stop(aSignal: TTVSignal); overload;
+    procedure Stop(aSignal: TTVSignal; iRow: integer); overload;
+    procedure RunAll;
+    procedure StopAll;
+
+  public
+    { Public declarations }
+    procedure ChangeAllState(ival:integer);
+    function GetKipAvg(dFJa, dFMo, dSJa, dSMo, dEx: double): double;
+
+    procedure LoadEnv( aStorage : TStorage );
+    procedure SaveEnv( aStorage : TStorage );
+
+    procedure OnNotifyDust(Sender: TObject; aOrder: TOrder);
+    procedure StartDataLockTimer;
+
+    procedure WMLog(var Msg: TMessage); message WM_LOG;
+    procedure WMDataReceived(var Msg: TMessage); message WM_DATA_RECEIVED;
+
+    property TVSignals : TTVSignals read FTVSignals;
+    property Signal  : TTVSignal read FSignal;
+
+    property NwContent: TRqContents read FNwContent;
+
+//    property MainThread : TMainThread read FMainThread;
+    property Thread : TTimerThread read FThread  ;
+    property Symbols[ek: TExchangeKind] : TSymbol read GetSymbols;
+    property Accounts[ek: TExchangeKind] : TAccount read GetAccounts;
+    property Position : TPosition read FPosition;
+
+  end;
+
+var
+  FrmTVSignals: TFrmTVSignals;
+
+implementation
+
+uses
+  GApp, GLibs, UConsts, UApiConsts
+  , UQuoteBroker, USymbolCore
+  , FSignalConfig, UDustManager
+  , System.StrUtils, System.JSON, Math, System.DateUtils
+  , UStgOrders
+  , FAssetsMonitor
+  ;
+
+{$R *.dfm}
+
+procedure SetData(sg: TStringGrid; var iCol: integer; iRow: integer; sData: string);
+begin
+  with sg do
+    Cells[iCol, iRow] := sData;
+  inc(iCol);
+end;
+
+procedure TFrmTVSignals.UpdateSiganlContent(aSignal: TTVSignal;
+  iRow: integer; bEntry: boolean);
+  var
+    iCol : integer;
+    aoType: TAutoOrderType;
+begin
+  if bEntry then begin
+    iCol  := ECOL[0] + 1;
+    aoType:= aoEntry;
+  end
+  else begin
+    iCol  := XCOL[0] + 1;
+    aoType:= aoExit;
+  end;
+
+  with sg do
+    SetData(sg, iCol, iRow, Format('%.2f', [aSignal.Data[aoType].BaseKip]));
+end;
+
+procedure TFrmTVSignals.UpdateSignalConfig(aItem: TTVSignal; iRow: integer);
+var
+  iCol: integer;
+  sTmp: string;
+begin
+
+  iCol := 1;
+  with sg do begin
+
+    SetData(sg, iCol, iRow, aItem.Config.StgCode);
+
+//    SetData(sg, iCol, iRow, aItem.Config.Input[F].Delay.ToString);
+    SetData(sg, iCol, iRow, aItem.Config.Input[F].OrderQty.ToString);
+//    SetData(sg, iCol, iRow, aItem.Config.Input[F].KipAdjust.ToString);
+
+//    SetData(sg, iCol, iRow, aItem.Config.Input[S].Delay.ToString);
+    SetData(sg, iCol, iRow, aItem.Config.Input[S].OrderQty.ToString);
+//    SetData(sg, iCol, iRow, aItem.Config.Input[S].KipAdjust.ToString);
+
+    SetData(sg, iCol, iRow, aItem.Config.KipAdjust.ToString);
+//    SetData(sg, iCol, iRow, aItem.Config.DelayKip.ToString);
+
+    SetData(sg, iCol, iRow, ifThenStr(aItem.Config.Method = 0, 'A',
+      ifThenStr(aItem.Config.Method = 1, 'F', 'S')));
+
+    SetData(sg, iCol, iRow, aItem.Config.TradeTotQty.ToString);
+  end;
+
+end;
+
+procedure TFrmTVSignals.UpdateSingalData(aSignal: TTVSignal);
+var
+  iRow : integer;
+  dTmp : double;
+begin
+  iRow := sg.Cols[OBJ_COL].IndexOfObject(aSignal);
+     {
+     'FS', '목표진입량', 'RT진입량', '체결차',  // 8
+     '설정',                                    // 12
+     'Run', 'BaseKip', 'SigKip', '누적수량','AvgKip',  // 13
+     }
+  if iRow > 0 then
+    with sg do
+    begin
+      Cells[ECOL[0]+1, iRow] := Format('%.2f', [aSignal.Data[aoEntry].BaseKip]);
+      Cells[XCOL[0]+1, iRow] := Format('%.2f', [aSignal.Data[aoExit].BaseKip]);
+
+      //dNetQty := aSignal.GetEntryQty;// SigOrders[aoEntry].GetTotFilledQty - aSignal.SigOrders[aoExit].GetTotFilledQty;
+      Cells[CFG_COL-2, iRow] := DblToStrEx(aSignal.GetEntryQty, 3);
+
+      Cells[CFG_COL-1, iRow] := DblToStrEx(aSignal.GetDifFilledQty, 3);
+
+      // 거래소의 MTFilledQty[MK] 의 합
+      dTmp  := aSignal.SigOrders[aoEntry].GetTotFilledQty;
+      // 누적 체결
+      Cells[ECOL[0]+2, iRow] := DblToStrEx(dTmp, 2);
+      // AvgKip
+      var d1 := aSignal.GetAvgKip(aoEntry);
+      Cells[ECOL[0]+3, iRow] := Format('%.3f', [d1]);
+      var e1 := aSignal.GetAvgExRate(aoEntry);
+      Cells[ECOL[0]+4, iRow] := Format('%.1f', [e1]);
+
+      dTmp  := aSignal.SigOrders[aoExit].GetTotFilledQty;
+      // 누적체결
+      Cells[XCOL[0]+2, iRow] := DblToStrEx(dTmp, 2);
+      // AvgKip
+      var d2 := aSignal.GetAvgKip(aoExit);
+      Cells[XCOL[0]+3, iRow] := Format('%.3f', [d2]);
+
+      var e2 := aSignal.GetAvgExRate(aoExit);
+      Cells[XCOL[0]+4, iRow] := Format('%.1f', [e2]);
+
+      Cells[XCOL[1]+1, iRow] := Format('%.2f', [aSignal.Data[aoExit].BaseKip - aSignal.Data[aoEntry].BaseKip]);
+      Cells[XCOL[1]+2, iRow] := Format('%.2f', [d2 - d1]);
+      Cells[XCOL[1]+3, iRow] := Format('%.1f', [e2 - e1]);
+    end;
+end;
+
+procedure TFrmTVSignals.PutContent(aData: TRqContent; iRow:integer);
+begin
+
+  with sgContent do
+  begin
+    Cells[0, iRow] := FormatDateTime('dd hh:nn:ss', aData.Time);
+    Cells[1, iRow] := aData.StgName;
+    Cells[2, iRow] := aData.SigType;
+    Cells[3, iRow] := aData.SigKimp.ToString;
+    Cells[4, iRow] := aData.TID.ToString;
+//    var a := FRqContent.New(aData.TID);
+//    a.CopyData(aData);
+
+  end;
+
+  if aData.SigType = 'buy' then
+    FSigTimeList.Add(aData.Time);
+end;
+
+
+procedure TFrmTVSignals.PutFillLog(aSignal: TTVSignal; aoType: TAutoOrderType);
+var
+  aSymbol: TSymbol;
+  aOrder : TOrder;
+  aItem  : TStgOrderItem;
+  I: integer;
+begin
+  InsertLine(sgFillLog, 1);
+
+  with sgFillLog do
+  begin
+    Cells[0, 1] := FormatDateTime('dd hh:nn:ss', now);
+    Cells[1, 1] := aSignal.Config.StgCode;
+
+    if aSignal.Results[aoType].Last <> nil then
+    begin
+      aItem :=  aSignal.Results[aoType].Last;
+
+      Cells[2, 1] := ifThenStr(aItem.AOType = aoEntry,'진입','청산');
+      Cells[3, 1] := Format('%.2f', [aSignal.Data[aItem.AOType].CalcKip[aItem.Method]]);
+      Cells[4, 1] := Format('%.2f', [aItem.Kip]);
+
+      Objects[EX_COL, 1]  := Pointer(IfThen(aItem.AOType = aoEntry, 100, 200));
+//      Objects[FS_COL, 1]  := Pointer(IfThen(aItem.Method = mtF, 100, 200));
+      if aItem.OrderList[MK].Count > 0 then
+      begin
+        if aItem.OrderList[TK].Count > 0 then
+          aSymbol := aItem.OrderList[TK].Last.Symbol
+        else
+          aSymbol := nil;
+
+        aOrder := aItem.OrderList[MK].Last;
+        if aOrder <> nil then
+        begin
+
+          ////
+          if aOrder.Side < 0 then begin
+            Cells[5,1]  := '+ '+ aOrder.Symbol.PriceToStr(aOrder.AvgPrice);
+            if aSymbol <> nil then
+              Cells[6,1]  := aSymbol.PriceToStr(aItem.AvgPrice);
+          end
+          else begin
+            if aSymbol <> nil then
+              Cells[5,1]  := aSymbol.PriceToStr(aItem.AvgPrice);
+            Cells[6,1]  := '+ '+ aOrder.Symbol.PriceToStr(aOrder.AvgPrice);
+          end;
+          ////
+        end;
+      end;
+
+      if aOrder <> nil then
+      begin
+        Cells[7, 1] := Format('%s', [doubleToStr(min(aOrder.FilledQty, aItem.FilledQty))]);
+        Cells[8, 1] := TExShortDesc[aItem.GetPutExKind];
+        Cells[9, 1] := aItem.GetLiqExKindToStr;
+        Cells[10,1] := Format('%.2f', [aOrder.ExRate]);
+        Cells[11,1] := DblToStrEx(aOrder.FilledQty - aItem.FilledQty, 3);
+      end;
+
+    end;
+
+    if (FixedRows <= 0) and (RowCount >= 2)  then
+      FixedRows := 1;
+  end;
+end;
+
+procedure TFrmTVSignals.WMAfterOrderNotify(var Msg: TMessage);
+var
+  aSignal: TTVSignal;
+  aOrder : TOrder;
+begin
+  if (Msg.WParam <= 0) or (Msg.LParam <= 0) then Exit;
+
+  aSignal := TTVSignal(Msg.WParam);
+  aOrder  := TOrder(msg.LParam);
+{
+  '시각','전략코드','상태','거래소',' ',
+  '방향','평균가', '체결량','환율');
+}
+  sgFillLog.BeginUpdate;
+  try
+    InsertLine(sgFillLog, 1);
+
+    with sgFillLog do
+    begin
+      Cells[0, 1] := FormatDateTime('dd hh:nn:ss', now);
+      Cells[1, 1] := aSignal.Config.StgCode;
+      Cells[2, 1] := TExchangeKindDesc[aOrder.Symbol.Spec.ExchangeType];
+      Cells[3, 1] := IfThen(aOrder.Entry, '진입','청산');
+
+      Objects[EX_COL, 1]  := Pointer(IfThen(aOrder.Entry, 100, 200));
+
+      case aOrder.Symbol.Spec.ExchangeType of
+        ekBinance: Cells[4, 1] := 'S' ;
+        else Cells[4, 1] := 'F';
+      end;
+
+      Cells[5, 1] := aOrder.SideToStr;
+      Cells[6, 1] := doubleToStr(aOrder.AvgPrice);
+      Cells[7, 1] := doubleToStr(aOrder.FilledQty);
+      Cells[8, 1] := aOrder.ExRate.ToString;
+
+      if (FixedRows <= 0) and (RowCount >= 2)  then
+        FixedRows := 1;
+    end;
+
+  finally
+    sgFillLog.EndUpdate;
+  end;
+
+
+
+end;
+
+procedure TFrmTVSignals.WMDataReceived(var Msg: TMessage);
+var
+  i: integer;
+  aSig: TTVSignal;
+  id: string;
+begin
+
+//  sgContent.BeginUpdate;
+  try
+    with  FNWContent do
+    for I := 0 to Count-1 do
+    begin
+      aSig := FTVSignals.Find(Contents[i].StgName);
+
+      id := Contents[i].TID.ToString;
+      var iRow := sgContent.Cols[4].IndexOf(id);
+      if iRow >= 0 then
+        continue;
+
+      if aSig <> nil then begin
+        InsertLine(sgContent, 1);
+        PutContent(Contents[i], 1);
+      end;
+
+      if (sgContent.RowCount > 1) and (sgContent.FixedRows < 1) then
+        sgContent.FixedRows := 1;
+
+    end;
+  finally
+//    sgContent.EndUpdate;
+  end;
+end;
+
+procedure TFrmTVSignals.WMLog(var Msg: TMessage);
+begin
+  stsLog.Panels[0].Text := Format('%d / %d', [FSigTimeList.Count, FCount]);
+end;
+
+procedure TFrmTVSignals.ChangeAllState(ival: integer);
+begin
+  sg.BeginUpdate;
+  try
+    for var I := 0 to sg.RowCount-1 do
+      ChangeState(i, ival);
+  finally
+    sg.EndUpdate;
+  end;
+end;
+
+procedure TFrmTVSignals.ChangeState(iRow, ival: Integer);
+begin
+  sg.Objects[STA_COL, iRow] := Pointer(ival);
+end;
+
+procedure TFrmTVSignals.ChangeStateColor(aSignal:TTVSignal; rtType:TSigResultType);
+var
+  iRow : integer;
+  bRefresh: boolean;
+begin
+  if aSignal = nil then Exit;
+
+  iRow := sg.Cols[OBJ_COL].IndexOfObject(aSignal);
+  if iRow < 1 then Exit;
+
+  bRefresh  := false;
+
+  case rtType of
+    srtERJT:   // 거부로 인해 suspend
+      begin
+        bRefresh := true;
+        ChangeState(iRow, STA_VAL + 10);
+      end;
+    srtERSM:   // Resume
+      begin
+        bRefresh := true;
+        ChangeState(iRow, STA_VAL + integer(aSignal.State) );
+      end;
+    srtXRJT:
+      begin
+        bRefresh := true;
+        ChangeState(iRow, STA_VAL + 20);
+      end;
+    srtXRSM:
+      begin
+        bRefresh := true;
+        ChangeState(iRow, STA_VAL + integer(aSignal.State) );
+      end;
+  end;
+
+  if bRefresh then
+    InvalidateRow(sg, iRow);
+
+end;
+
+procedure TFrmTVSignals.WMSignalResult(var Msg: TMessage);
+var
+  rtType : TSigResultType;
+  aSignal: TTVSignal;
+  bRefresh: boolean;
+  iRow: integer;
+begin
+  if Msg.WParam <= 0 then Exit;
+
+  aSignal := TTVSignal(Msg.WParam);
+  rtType  := TSigResultType(Msg.LParam);
+  bRefresh:= false;
+
+  stsLog.Panels[3].Text  :=  '';
+
+  case rtType of
+    srtEORD, srtXORD: bRefresh  := true;
+    srtEFILL: begin
+      PutFillLog(aSignal, aoEntry) ;
+      bRefresh  := true;
+    end;
+    srtEBAL: stsLog.Panels[3].Text  := '국내매수금액부족';
+    // 거부 Suspend <-> Resume
+    srtERJT, srtXRJT, srtERSM, srtXRSM: ChangeStateColor(aSignal, rtType);
+    //
+    srtERSK: stsLog.Panels[3].Text  := '진입리스크제한';
+    srtEDone, srtXDone: begin
+      iRow := sg.Cols[OBJ_COL].IndexOfObject(aSignal);
+      sg.Objects[ENT_COL, iRow] := pointer(CKON)  ;
+    end;
+
+    srtXFILL: begin
+      PutFillLog(aSignal, aoExit) ;
+      bRefresh := true;
+    end;
+    srtXBAL: stsLog.Panels[3].Text  := '국내매도잔고부족';
+    srtXRSK: stsLog.Panels[3].Text  := '청산리스크제한';
+    srtETRY, srtXTRY: begin
+      iRow := sg.Cols[OBJ_COL].IndexOfObject(aSignal);
+      sg.Objects[ENT_COL, iRow] := Pointer(0);
+    end;
+
+  end;
+
+  if bRefresh then
+    UpdateSingalData(aSignal);
+end;
+
+procedure TFrmTVSignals.WMSignalState(var Msg: TMessage);
+var
+  aSignal: TTVSignal;
+  aState : TSignalState;
+  iRow   : integer;
+begin
+  if Msg.WParam <= 0 then Exit;
+
+  aSignal := TTVSignal(Msg.WParam);
+
+  iRow  := sg.Cols[OBJ_COL].IndexOfObject(aSignal);
+  if iRow > 0 then begin
+    aState := TSignalState(Msg.LParam);
+
+    case aState of
+      ssEntry: begin
+        UpdateSiganlContent(aSignal, iRow, true) ;
+      end;
+      ssExit : begin
+        UpdateSiganlContent(aSignal, iRow, false);
+      end;
+//      ssEnd :  // 전략 회전율 걸렸을때
+//        if aSignal.Run then
+//        begin
+//          Stop(aSignal, iRow);
+//          stsLog.Panels[5].Text := Format('%s 회전율 제한으로 Stop', [aSignal.StgCode]);
+//        end;
+    end;
+
+    sg.Objects[ENT_COL, iRow] := Pointer(0);
+    sg.Objects[STA_COL, iRow] := Pointer(STA_VAL + Msg.LParam);
+    InvalidateRow(sg, iRow);
+  end;
+end;
+
+procedure TFrmTVSignals.WMStrategyStatus(var Msg: TMessage);
+var
+  aSignal: TTVSignal;
+  iRow   : integer;
+begin
+  if Msg.WParam <= 0 then Exit;
+  aSignal := TTVSignal(Msg.WParam);
+  iRow  := sg.Cols[OBJ_COL].IndexOfObject(aSignal);
+
+  case aSignal.StgStatus of
+    stgTO: begin Stop(aSignal, iRow); InvalidateRow(sg, iRow); end;
+    else Exit;
+  end;
+
+end;
+
+procedure TFrmTVSignals.AddSignal(aItem: TTVSignal; iRow: integer);
+begin
+
+  inc(FIndex);
+  with sg do begin
+    Objects[OBJ_COL, iRow]  := aItem;
+//    Cells[0, iRow]  := FIndex.ToString;
+    Cells[CFG_COL, iRow]  := '설정';
+//    Cells[EXE_COL, iRow]  := '▶';       // ■
+//     '+틱','CEX', 'LS', '진입 총수량','청산 총수량','설정',
+  end;
+
+  UpdateSignalConfig(aItem, iRow);
+end;
+
+procedure TFrmTVSignals.btnSymbolClick(Sender: TObject);
+begin
+  //
+  if not SetSymbols then Exit;
+
+  FPosition := App.Engine.TradeCore.FindPosition(FAccounts[ekBinance], FSymbols[ekBinance]);
+end;
+
+procedure TFrmTVSignals.Button1Click(Sender: TObject);
+begin
+  if sg.RowCount > 32 then
+  begin
+    ShowMessage('그만 만들어');
+    Exit;
+  end;
+
+  MakeSignal(2);
+
+  if sg.RowCount > 2 then
+    sg.FixedRows  := 2;
+end;
+
+procedure TFrmTVSignals.Button2Click(Sender: TObject);
+begin
+  if FSelectedRow > 1 then
+  begin
+
+    if sg.Objects[OBJ_COL, FSElectedRow] <> nil then begin
+      if (FSignal <> nil) and (FSignal = sg.Objects[OBJ_COL, FSElectedRow]) then
+        FSignal := nil;
+      FTVSignals.DeleteSignal(sg.Objects[OBJ_COL, FSElectedRow] as TTVSignal );
+    end;
+    DeleteLine(sg, FSelectedRow);
+  end;
+end;
+
+// suspend
+procedure TFrmTVSignals.Button3Click(Sender: TObject);
+begin
+  ClearStgData(0);
+end;
+
+procedure TFrmTVSignals.Button4Click(Sender: TObject);
+begin
+  InitGrid(sgFillLog, true, 1);
+end;
+
+procedure TFrmTVSignals.Button5Click(Sender: TObject);
+begin
+  InitGrid(sgContent, true, 1);
+end;
+
+
+procedure TFrmTVSignals.Button6Click(Sender: TObject);
+var
+  i: Integer;
+  aDust: TDust;
+begin
+  //
+  for I := 0 to FTVSignals.Dusts.Count-1 do
+  begin
+    aDust := FTVSignals.Dusts.Dust[i];
+    m.Lines.Add( Format('%02d:%s',[i, aDust.Represent]) );
+  end;
+
+end;
+
+procedure TFrmTVSignals.Button7Click(Sender: TObject);
+begin
+  m.Clear;
+end;
+
+procedure TFrmTVSignals.Button8Click(Sender: TObject);
+begin
+  TFrmAssetMonitor.Create(Self).Show;
+end;
+
+procedure TFrmTVSignals.cbIntervalClick(Sender: TObject);
+var
+  i: Integer;
+begin
+  //
+  if TryStrToInt(cbInterval.Items[cbInterval.ItemIndex], i) then
+    Timer1.Interval := i;
+end;
+
+procedure TFrmTVSignals.ckDataLockClick(Sender: TObject);
+begin
+//  DataLockTimer.Enabled := true;
+end;
+
+procedure TFrmTVSignals.CheckBox1Click(Sender: TObject);
+begin
+  if CheckBox1.Checked then begin
+    if not SetSymbols then
+    begin
+      CheckBox1.Checked := false;
+      Exit;
+    end;
+    StartSignal
+  end else
+  begin
+    StopSignal;
+//  시그널 로그를 다 지우고 싶지 않아..주석
+//    ChangeAllState(CKOFF);
+  end;
+end;
+
+function TFrmTVSignals.CheckProcTime: boolean;
+var
+  idx: integer;
+begin
+
+  idx := 0;
+  Result := false;
+  try
+    if not gAOConfig.CheckAutoConfig(idx) then
+      Exit;
+
+    if not gAOConfig.CheckQuoteDelay([ekBinance, ekUpbit, ekBithumb], idx) then
+      Exit;
+
+    Result := true;
+
+  finally
+    if not ((idx = 0) and (FPrevLogIdx = 0)) then
+    begin
+      stsLog.Tag  := idx;
+      stsLog.Panels[4].Text := AOWarnMsg[idx];
+    end;
+    FPrevLogIdx := idx;
+  end;
+end;
+
+procedure TFrmTVSignals.CheckSignalTurnover;
+var
+  iLimit, i, iCnt: integer;
+begin
+  stsLog.Panels[5].Text := '';
+
+  if not TryStrToInt(edtSigCntLimit.Text, iLimit) then Exit;
+
+  if FSigTimeList.Count < iLimit then Exit;
+
+  for I := 0 to FSigTimeList.Count-1 do
+  begin
+    if MinutesBetween(now, FSigTimeList[i]) > (24 * 60) then
+      break;
+  end;
+
+  if i > iLimit then
+  begin
+    var ss := Format('%s 시그널 횟수 제한으로 종료 %d > %s (%s)', [edtCode.Text, i, edtSigCntLimit.Text,
+      FormatDateTime('hh:nn:ss', now)
+      ]);
+    App.Log(llInfo, ss);
+    stsLog.Panels[5].Text := ss;
+
+    StopAll;
+    CheckBox1.Checked := false;
+  end;
+end;
+
+procedure TFrmTVSignals.CheckStgTurnover;
+begin
+  //
+end;
+
+procedure TFrmTVSignals.ClearStgData(aRow: integer);
+var
+  aoType: TAutoOrderType;
+begin
+
+  if FSignal = nil then
+  begin
+    ShowMessageAtCursor('초기화 할 전략을 선택하시오', mtConfirmation, [mbOK]);
+    Exit;
+  end;
+
+  if ShowMessageAtCursor(FSignal.StgCode + ' 데이터를 초기화 하시겠습니까?'+#13+#10+
+      '(설정 기준 오른쪽 데이터만)',
+       mtConfirmation, [mbYes, mbNo]) <> mrYes then
+    Exit;
+
+  try
+    case cbAoType.ItemIndex of
+      0 : begin FSignal.ClearData(aoEntry); FSignal.ClearData(aoExit); end;
+      1 : FSignal.ClearData(aoEntry);
+      2 : FSignal.ClearData(aoExit);
+    end;
+
+    UpdateSingalData(FSignal);
+
+    sg.Invalidate;
+
+    DisplayLog;
+  finally
+    FSignal.DoLog(Format('-------- 초기화 %d --------- ', [cbAoType.ItemIndex])  );
+  end;
+end;
+
+procedure TFrmTVSignals.ComboBox1Change(Sender: TObject);
+begin
+  case ComboBox1.ItemIndex of
+    0 : begin
+      Width := Width - Panel2.Width;
+      Splitter1.Cursor  := crVSplit;
+      Panel2.Align := alBottom;
+      Splitter1.Align := alBottom;
+
+
+    end;
+    1 : begin
+      Width := Width + Panel2.Width;
+      Splitter1.Cursor  := crHSplit;
+      Panel2.Align := alRight;
+      Splitter1.Align := alRight;
+
+    end;
+  end;
+end;
+
+procedure TFrmTVSignals.DataLockTimerTimer(Sender: TObject);
+begin
+//    FStartTime
+  if SecondsBetween(Now, FStartTime) > 3 then
+  begin
+    DataLockTimer.Enabled := false;
+    ckDataLock.Checked  := false;
+  end;
+end;
+
+procedure TFrmTVSignals.DisplayAllKip;
+var
+  dTmpKip, dTmpKip2, dQty, dEx: double;
+  dUpEnAvgKip, dUpExAvgKip, dBtEnAvgKip, dBtExAvgKip: double;
+  dPrice : double;
+begin
+
+  if not TryStrToFloat(edtTmpQty.Text, dQty) then Exit;
+
+  dEx :=  App.Engine.ApiManager.ExRate.Value;
+  if dEx < EPSILON then Exit;
+
+  //---------------------------------------------------------------------------------------------//
+  // 업비트 진입 F
+  dTmpKip := GetKip(FSymbols[ekUpbit].CalcEstPrice(1, dQty), FSymbols[ekBinance].CalcTicksPrice(FSymbols[ekBinance].Bids[0].Price, 1), dEx);
+  if dTmpKip = WRONG_VALUE then Exit;
+  //dTmpKip := dTmpKip + GetExFee(F, ekBinance, ekUpbit);
+
+  // 업비트 진입 S
+  dTmpKip2:= GetKip(FSymbols[ekUpbit].CalcTicksPrice(FSymbols[ekUpbit].Asks[0].Price, -1), FSymbols[ekBinance].CalcEstPrice(-1, dQty), dEx);
+  if dTmpKip2 = WRONG_VALUE then Exit;
+  //dTmpKip2 := dTmpKip2 + GetExFee(S, ekBinance, ekUpbit);
+
+  // 업비트 진입 평균
+  SetRKip(ekUpbit, aoEntry, F, dTmpKip);
+  SetRKip(ekUpbit, aoEntry, S, dTmpKip2);
+  dUpEnAvgKip := (dTmpKip + dTmpKip2) / 2;
+
+  // 빗썸 진입 F
+  dTmpKip := GetKip(FSymbols[ekBithumb].CalcEstPrice(1, dQty),  FSymbols[ekBinance].CalcTicksPrice(FSymbols[ekBinance].Bids[0].Price, 1), dEx);
+  if dTmpKip = WRONG_VALUE then Exit;
+  //dTmpKip := dTmpKip + GetExFee(F, ekBinance, ekBithumb);
+
+  // 빗썸 진입 S
+  dTmpKip2:= GetKip(FSymbols[ekBithumb].CalcTicksPrice(FSymbols[ekBithumb].Asks[0].Price, -1), FSymbols[ekBinance].CalcEstPrice(-1, dQty), dEx);
+  if dTmpKip2 = WRONG_VALUE then Exit;
+  //dTmpKip2 := dTmpKip2 + GetExFee(S, ekBinance, ekBithumb);
+
+  // 빗썸 진입 평균
+  SetRKip(ekBithumb, aoEntry, F, dTmpKip);
+  SetRKip(ekBithumb, aoEntry, S, dTmpKip2);
+
+  dBtEnAvgKip := (dTmpKip + dTmpKip2) / 2;
+
+  plUpEntryKip.Caption  := Format('%.3f', [dUpEnAvgKip]);
+  plBtEntryKip.Caption  := Format('%.3f', [dBtEnAvgKip]);
+  plEnDiff.Caption  := Format('%.3f', [dUpEnAvgKip - dBtEnAvgKip]);
+
+  if dUpEnAvgKip > dBtEnAvgKip then
+  begin
+    plBtEntryKip.Color  := clRed;
+    plBtEntryKip.Font.Color := clWhite;
+    plUpEntryKip.Color  := clBtnFace;
+    plUpEntryKip.Font.Color := clRed;
+  end else
+  begin
+    plBtEntryKip.Color  := clBtnFace;
+    plBtEntryKip.Font.Color := clRed;
+    plUpEntryKip.Color  := clRed;
+    plUpEntryKip.Font.Color := clWhite;
+  end;
+  //---------------------------------------------------------------------------------------------//
+
+  // 업비트 청산 F
+  dTmpKip := GetKip(FSymbols[ekUpbit].CalcEstPrice(-1, dQty),  FSymbols[ekBinance].CalcTicksPrice(FSymbols[ekBinance].Asks[0].Price, -1), dEx);
+  if dTmpKip = WRONG_VALUE then Exit;
+  //dTmpKip := dTmpKip - GetExFee(F, ekBinance, ekUpbit);
+  // 업비트 청산 S
+  dTmpKip2:= GetKip(FSymbols[ekUpbit].CalcTicksPrice(FSymbols[ekUpbit].Bids[0].Price, 1), FSymbols[ekBinance].CalcEstPrice(1, dQty), dEx);
+  if dTmpKip2 = WRONG_VALUE then Exit;
+  //dTmpKip2:= dTmpKip2 - GetExFee(S, ekBinance, ekUpbit);
+
+  // 업비트 청산 평균
+  SetRKip(ekUpbit, aoExit, F, dTmpKip);
+  SetRKip(ekUpbit, aoExit, S, dTmpKip2);
+  dUpExAvgKip := (dTmpKip + dTmpKip2) / 2;
+
+  // 빗썸 청산 F
+  dTmpKip := GetKip(FSymbols[ekBithumb].CalcEstPrice(-1, dQty),  FSymbols[ekBinance].CalcTicksPrice(FSymbols[ekBinance].Asks[0].Price, -1), dEx);
+  if dTmpKip = WRONG_VALUE then Exit;
+  //dTmpKip := dTmpKip - GetExFee(F, ekBinance, ekBithumb);
+
+  // 빗썸 청산 S
+  dTmpKip2:= GetKip(FSymbols[ekBithumb].CalcTicksPrice(FSymbols[ekBithumb].Bids[0].Price, 1), FSymbols[ekBinance].CalcEstPrice(1, dQty), dEx);
+  if dTmpKip2 = WRONG_VALUE then Exit;
+  //dTmpKip2:= dTmpKip2 - GetExFee(S, ekBinance, ekBithumb);
+
+  // 빗썸 청산 평균
+  SetRKip(ekBithumb, aoExit, F, dTmpKip);
+  SetRKip(ekBithumb, aoExit, S, dTmpKip2);
+  dBtExAvgKip := (dTmpKip + dTmpKip2) / 2;
+
+  plUpExitKip.Caption  := Format('%.3f', [dUpExAvgKip]);
+  plBtExitKip.Caption  := Format('%.3f', [dBtExAvgKip]);
+  plEXDiff.Caption  := Format('%.3f', [dUpExAvgKip - dBtExAvgKip]);
+
+  if dUpExAvgKip < dBtExAvgKip then
+  begin
+    plBtExitKip.Color  := clBlue;
+    plBtExitKip.Font.Color := clWhite;
+    plUpExitKip.Color  := clBtnFace;
+    plUpExitKip.Font.Color := clBlue;
+  end else
+  begin
+    plBtExitKip.Color  := clBtnFace;
+    plBtExitKip.Font.Color := clBlue;
+    plUpExitKip.Color  := clBlue;
+    plUpExitKip.Font.Color := clWhite;
+  end;
+
+end;
+
+procedure TFrmTVSignals.DisplayLog;
+var
+  i:Integer;
+  aSig : TTVSignal;
+begin
+  {
+  with sg do
+    for I := 2 to RowCount-1 do
+    begin
+      aSig  := TTVSignal(Objects[OBJ_COL, i]);
+      if aSig = nil then continue;
+
+      // 없어도 된다고 함 20260105
+      Cells[ECOL[0]+2,i] := Format('%.2f', [
+        (aSig.Data[aoEntry].CalcKip[F] + aSig.Data[aoEntry].CalcKip[S]) / 2]);
+
+      Cells[XCOL[0]+2,i] := Format('%.2f', [
+        (aSig.Data[aoExit].CalcKip[F] + aSig.Data[aoExit].CalcKip[S]) / 2]);
+    end;
+   }
+
+    with sgRLog do
+      if FSignal <> nil then
+      begin
+        Cells[0, 0]   := FSignal.StgCode;
+        Cells[TITLE_RLOG_CNT + 1, 0]  := Format('%.0f%%', [FSignal.TORate]);
+
+        var iRow := 1;
+        //Cells[1,iRow] := DoubleToStr(FSignal.GetAdjustKip(aoEntry, F), 3);
+        Cells[1,iRow] := DoubleToStr(FEntryValue[ekUpbit, F], 3);
+        Cells[2,iRow] := DoubleToStr(FEntryValue[ekBithumb, F], 3);
+
+        Cells[3,iRow] := DblToStrEx(FSignal.SigOrders[aoEntry].GetMTFilledQty(F), 3);
+        Cells[4,iRow] := DblToStrEx(FSignal.SigOrders[aoEntry].AfterOrdOrderQty[F], 3);
+
+        Cells[5,iRow] := Format('%.0f %%', [FSignal.SigOrders[aoEntry].GetFilledRate(F)]);
+        Cells[6,iRow] := Format('%.3f', [FSignal.GetAvgKip(aoEntry, F)]);
+        Cells[7,iRow] := Format('%.1f', [FSignal.GetAvgExRate(aoEntry, F)]);
+
+        Cells[8,iRow] := ifThenStr(FSignal.SigOrders[aoEntry].Done, 'Done', '~ing');
+        Cells[9,iRow] := ifThenStr(FSignal.SigOrders[aoEntry].ExOrders[ekBinance].Suspend,
+          'S', FSignal.MsgCode[aoEntry, ekBinance] );
+
+        inc(iRow);
+
+        //Cells[1,iRow] := DoubleToStr(FSignal.GetAdjustKip(aoEntry, S), 3);
+        Cells[1,iRow] := DoubleToStr(FEntryValue[ekUpbit, S], 3);
+        Cells[2,iRow] := DoubleToStr(FEntryValue[ekBithumb, S], 3);
+
+        Cells[3,iRow] := DblToStrEx(FSignal.SigOrders[aoEntry].GetMTFilledQty(S), 3);
+        Cells[4,iRow] := DblToStrEx(FSignal.SigOrders[aoEntry].AfterOrdOrderQty[S], 3);
+
+        Cells[5,iRow] := Format('%.0f %%', [FSignal.SigOrders[aoEntry].GetFilledRate(S)]);
+
+        Cells[6,iRow] := Format('%.3f', [FSignal.GetAvgKip(aoEntry, S)]);
+        Cells[7,iRow] := Format('%.1f', [FSignal.GetAvgExRate(aoEntry, S)]);
+
+        Cells[8,iRow] := ifThenStr(FSignal.Data[aoEntry].Switch, 'On', 'Off');
+        // order range
+        Cells[9,iRow] := ifThenStr(FSignal.SigOrders[aoEntry].ExOrders[ekUpbit].Suspend,
+          'S', FSignal.MsgCode[aoEntry, ekUpbit] );
+        Cells[10,iRow] := ifThenStr(FSignal.SigOrders[aoEntry].ExOrders[ekBithumb].Suspend,
+          'S', FSignal.MsgCode[aoEntry, ekBithumb] );
+
+        iRow := 1;
+
+        //Cells[11,iRow]  := DoubleToStr(FSignal.GetAdjustKip(aoExit, F), 3);
+        Cells[12,iRow] := DoubleToStr(FExitValue[ekUpbit, F], 3);
+        Cells[13,iRow] := DoubleToStr(FExitValue[ekBithumb, F], 3);
+
+        Cells[14,iRow] := DblToStrEx(FSignal.SigOrders[aoExit].GetMTFilledQty(F), 3);
+        Cells[15,iRow] := DblToStrEx(FSignal.SigOrders[aoExit].AfterOrdOrderQty[F], 3);
+
+        Cells[16,iRow] := Format('%.0f %%', [FSignal.SigOrders[aoExit].GetFilledRate(F)]);
+        Cells[17,iRow] := Format('%.3f', [FSignal.GetAvgKip(aoExit, F)]);
+        Cells[18,iRow] := Format('%.1f', [FSignal.GetAvgExRate(aoExit, F)]);
+
+        Cells[19,iRow] := ifThenStr(FSignal.SigOrders[aoExit].Done, 'Done', '~ing');
+
+        Cells[20,iRow] := ifThenStr(FSignal.SigOrders[aoExit].ExOrders[ekBinance].Suspend,
+          'S', FSignal.MsgCode[aoExit, ekBinance]);
+
+        inc(iRow);
+
+        //Cells[11,iRow]  := DoubleToStr(FSignal.GetAdjustKip(aoExit, S), 3);
+        Cells[12,iRow] := DoubleToStr(FExitValue[ekUpbit, S], 3);
+        Cells[13,iRow] := DoubleToStr(FExitValue[ekBithumb, S], 3);
+
+        Cells[14,iRow] := DblToStrEx(FSignal.SigOrders[aoExit].GetMTFilledQty(S), 3);
+        Cells[15,iRow] := DblToStrEx(FSignal.SigOrders[aoExit].AfterOrdOrderQty[S], 3);
+
+        Cells[16,iRow] := Format('%.0f %%', [FSignal.SigOrders[aoExit].GetFilledRate(S)]);
+        Cells[17,iRow] := Format('%.3f', [FSignal.GetAvgKip(aoExit, S)]);
+        Cells[18,iRow] := Format('%.1f', [FSignal.GetAvgExRate(aoExit, S)]);
+
+        Cells[19,iRow] := ifThenStr(FSignal.Data[aoExit].Switch, 'On', 'Off');
+
+        Cells[20,iRow] := ifThenStr(FSignal.SigOrders[aoExit].ExOrders[ekUpbit].Suspend,
+          'S', FSignal.MsgCode[aoExit, ekUpbit] );
+        Cells[21,iRow] := ifThenStr(FSignal.SigOrders[aoExit].ExOrders[ekBithumb].Suspend,
+          'S', FSignal.MsgCode[aoExit, ekBithumb] );
+
+      end;
+end;
+
+procedure TFrmTVSignals.DoCheckAllRunColl(bCheck: boolean);
+var
+  i, ival: integer;
+begin
+
+  if bCheck then
+    iVal := CKON
+  else
+    iVal := CKOFF;
+
+  with sg do
+    try
+      beginUpdate;
+
+      for I := 2 to RowCount-1 do
+        if (integer(Objects[EXE_COL, i]) = CKON) and (not bCheck) then
+          continue
+        else
+          Objects[RUN_COL, i] := Pointer(iVal);
+    finally
+      EndUpdate;
+    end;
+end;
+
+procedure TFrmTVSignals.DustTimerTimer(Sender: TObject);
+begin
+  //
+  if not CheckBox1.Checked then Exit;
+
+  //FTVSignals.CheckDust;
+
+  CheckSignalTurnover;
+
+  CheckStgTurnover;
+
+//  if MainThread <> nil then
+//    Caption := Format('Gold Lode (%s: %d) Time : %s ExRate : %.2n', [ifThenStr(MainThread.IsLive, 'Run', 'Stop'),
+//       MainThread.CmdQ.QueueSize, FormatDateTime('dd hh:nn:ss', now),
+//       App.Engine.ApiManager.ExRate.GetExRate
+//        ] );
+
+  Caption := Format('Gold Lode Time : %s ExRate : %.2n', [ FormatDateTime('dd hh:nn:ss', now),
+     App.Engine.ApiManager.ExRate.GetExRate
+      ] );
+end;
+
+procedure TFrmTVSignals.QuoteProc(Sender, Receiver: TObject;
+  DataID: Integer; DataObj: TObject; EventID: TDistributorID);
+begin
+
+  if (Receiver <> Self) or (DataObj = nil) then Exit;
+
+  if CheckProcTime then begin
+    FTVSignals.OnQuote((DataObj as TQuote).Symbol);
+  end  else
+    FTVSignals.OnPause;
+end;
+
+// resume
+procedure TFrmTVSignals.ResumeClick(Sender: TObject);
+
+  procedure DoResume(aoType: TAutoOrderType);
+  var
+    rtType : TSigResultType;
+  begin
+    for var e := ekBinance to High(TExchangeKind) do
+      FSignal.SigOrders[aoType].ExOrders[e].ManualResume;
+
+    case aoType of
+      aoEntry: rtType := srtERSM;
+      aoExit:  rtType := srtXRSM ;
+    end;
+
+    ChangeStateColor(FSignal, rtType);
+  end;
+begin
+  //
+  if FSignal = nil then Exit;
+
+  case cbAoType.ItemIndex of
+    0 : begin DoResume(aoEntry); DoResume(aoExit); end;
+    1 : DoResume(aoEntry);
+    2 : DoResume(aoExit);
+  end;
+end;
+
+procedure TFrmTVSignals.Run(iRow: integer; bDraw: boolean);
+var
+  aSignal: TTVSignal;
+  ival, iState : integer;
+begin
+
+  ival :=  integer(sg.Objects[RUN_COL, iRow]);
+  if ival <> CKON then
+  begin
+    ShowMessageAtCursor('체크박스 선택이 안되어 있음', mtConfirmation, [mbOK]);
+    Exit;
+  end;
+
+  if sg.Cells[1, iRow] = '' then
+  begin
+    ShowMessageAtCursor('전략명을 입력하세요', mtConfirmation, [mbOK]);
+    Exit;
+  end;
+
+  if btnSymbol.Enabled then
+    if not SetSymbols then Exit;
+
+  aSignal := TTVSignal(sg.Objects[OBJ_COL, iRow]);
+  if aSignal = nil then Exit;
+  aSignal.Start;
+
+//  iState  := integer(sg.Objects[STA_COL, iRow]);
+//  if TSignalState(iState) = ssEnd then
+//    sg.Objects[STA_COL, iRow] := Pointer(0);
+
+  sg.Objects[EXE_COL, iRow] := Pointer(CKON);
+//  sg.Cells[EXE_COL, iRow] := '■';
+
+  if bDraw then
+    InvalidateRow(sg, iRow);
+
+  if btnSymbol.Enabled then
+    SetControlEnables(true);
+end;
+
+procedure TFrmTVSignals.RunAll;
+var
+  i, iVal : integer;
+  aSig: TTVSignal;
+begin
+
+  if not SetSymbols then Exit;
+
+  with sg do
+    try
+      BeginUpdate;
+      for I := 2 to RowCount-1 do
+      begin
+        iVal  := Integer(Objects[RUN_COL, i]);
+        if iVal = CKON then Continue;
+        Run(i, false);
+      end;
+    finally
+      EndUpdate;
+    end;
+end;
+
+procedure TFrmTVSignals.OnLog(const S: string);
+begin
+  FMsg := FormatDateTime('hh:nn:ss.zzz', now) + ' ' + S;
+  PostMessage(Handle, WM_LOG, 0, 0);
+//  Caption :=
+end;
+
+procedure TFrmTVSignals.OnNotifyDust(Sender: TObject; aOrder: TOrder);
+var
+  uAss, tAss : TAsset;
+  s : TSideType;
+begin
+  //
+//  stsLog.Panels[4].Text := e.Message;
+
+  if aOrder.Side > 0 then
+    s := stLong
+  else
+    s := stShort;
+
+  FDustOrderQty[s, aOrder.Symbol.Spec.ExchangeType] :=
+    FDustOrderQty[s, aOrder.Symbol.Spec.ExchangeType] + aOrder.OrderQty;
+
+  uAss := FAccounts[ekUpbit].Assets.Find(edtCode.Text);
+//  tAss := FAccounts[ekBithumb].Assets.Find()
+  //if aAss <> nil then
+
+
+//  if FPosition <> nil then
+//    Format('B:%s U:%s T:%s', [DoubleToStr(FPosition.Volume),
+  stsLog.Panels[4].Text :=
+  Format('Dust B:(%s,%s) U:(%s,%s) T:(%s,%s)', [
+    DoubleToStr(FDustOrderQty[stShort, ekBinance]), DoubleToStr(FDustOrderQty[stLong, ekBinance]),
+    DoubleToStr(FDustOrderQty[stShort, ekUpbit]), DoubleToStr(FDustOrderQty[stLong, ekUpbit]),
+    DoubleToStr(FDustOrderQty[stShort, ekBithumb]), DoubleToStr(FDustOrderQty[stLong, ekBithumb])
+  ]);
+
+
+end;
+
+procedure TFrmTVSignals.OnPosition(aPos: TPosition);
+begin
+  if aPos = nil then Exit;
+  if FSymbols[ekBinance] <> aPos.Symbol then Exit;
+  FPosition := aPos;
+end;
+
+procedure TFrmTVSignals.OnTimer(Sender: TObject);
+var
+  sRes, sCode: string;
+  bRes: boolean;
+  i: integer;
+
+begin
+  if edtCode.Text = '' then Exit;
+
+  try
+    try
+      rq.Params.Clear;
+
+  //    rq.Resource := '/get-lastest.php?'+ edtCode.Text;
+      rq.Method := rmGET;
+
+      sCode := GetCode;
+
+      rq.AddParameter('coin', sCode, TRESTRequestParameterKind.pkGETorPOST);//pkREQUESTBODY);
+      rq.AddParameter('count', '20',TRESTRequestParameterKind.pkGETorPOST);//pkREQUESTBODY);
+
+      rq.Execute;
+
+      if rq.Response.StatusCode <> 200 then
+      begin
+        bRes := false;
+        sRes := Format('%d:%s,%s', [rq.Response.StatusCode, rq.Response.StatusText, rq.Response.Content]);
+
+        TThread.Queue(nil,
+        procedure
+        begin
+          stsLog.Panels[3].Text := sRes;
+        end);
+
+      end else
+      begin
+        bRes := true;
+        sRes := rq.Response.Content;
+      end;
+
+      if bRes then begin
+        FNwContent.Clear;
+        if ParseData(sRes, FNwContent) then
+          if FNwContent.Count > 0 then
+          begin
+
+            TThread.Synchronize(nil,
+              procedure begin
+                if ckSig.Checked then
+                  FTVSignals.OnSignals(FNwContent);
+              end
+            );
+            PostMessage(Handle, WM_DATA_RECEIVED, 0, 0);
+          end;
+      end;
+
+      PostMessage(Handle, WM_LOG, 0, 0);
+    except on e: exception do
+      begin
+        TThread.Queue(nil,
+        procedure
+        begin
+          stsLog.Panels[3].Text := e.Message;
+        end);
+      end;
+    end;
+
+  finally
+    inc(FCount);
+  end;
+
+end;
+
+function TFrmTVSignals.FindStgName(const s: string): boolean;
+var
+  I: Integer;
+begin
+  Result := false;
+  with sg do
+    for I := 0 to RowCount-1 do
+      if UpperCase(s) = UpperCase(Cells[STA_COL, i]) then
+      begin
+        Result := true;
+        Exit;
+      end;
+end;
+
+procedure TFrmTVSignals.FormClose(Sender: TObject; var Action: TCloseAction);
+begin
+//
+end;
+
+procedure TFrmTVSignals.FormCreate(Sender: TObject);
+var
+  i:TExchangeKind;
+begin
+  initControls;
+
+  FSelectedRow  := -1;
+  FSelectedCol  := -1;
+
+  FCount        := 0;
+  FIndex        := 0;
+
+  FDown         := false;
+
+  for I := ekBinance to High(TExchangeKind) do begin
+    FSymbols[i]   := nil;
+    if i = ekBinance then
+      FAccounts[i] := App.Engine.TradeCore.FindAccount(i, amFuture)
+    else
+      FAccounts[i]  := App.Engine.TradeCore.FindAccount(i);
+
+    FEntryValue[i, F] := 0;
+    FEntryValue[i, S] := 0;
+
+    FExitValue[i, F] := 0;
+    FExitValue[i, S] := 0;
+  end;
+
+  FSignal       := nil;
+  FPosition     := nil;
+
+  FTVSignals    := TTVSignals.Create(Self);
+
+  FLastKnownIDs := TDictionary<string, int64>.Create;
+
+  FNwContent:= TRqContents.Create;
+  FSigTimeList  := TList<TDateTime>.Create;
+  App.Engine.TradeBroker.Subscribe(Self, TradeProc);
+//  Button1Click(nil);
+  FThread := nil;
+
+  OrderTimer.Enabled := true;
+
+//  if FMainThread = nil then
+//  begin
+//    FMainThread := TMainThread.Create(Handle, FTVSignals);
+//    FMainThread.Interval  := 500;
+//    FMainThread.OnLog     := OnLog;
+//  end;
+end;
+
+procedure TFrmTVSignals.FormDestroy(Sender: TObject);
+begin
+
+  StopAll;
+
+  App.Engine.QuoteBroker.Cancel(Self);
+  App.Engine.TradeBroker.Unsubscribe(Self);
+
+  StopSignal;
+  StopMainThread;
+
+  FLastKnownIDs.Free;
+
+  FTVSignals.Free;
+  FNwContent.Free;
+  FSigTimeList.Free;
+end;
+
+function TFrmTVSignals.GetAccounts(ek: TExchangeKind): TAccount;
+begin
+  Result := FAccounts[ek];
+end;
+
+function TFrmTVSignals.GetCode: string;
+begin
+  Result := edtCode.Text  + ifThenStr(cbSettleType.ItemIndex = 0, 'USDT', 'USDC');
+end;
+
+function TFrmTVSignals.GetKipAvg(dFJa, dFMo, dSJa, dSMo, dEx: double): double;
+var
+  dF, dS: double;
+begin
+  if (dFMo <= EPSILON) or (dSMo <= EPSILON) then
+    Exit (WRONG_VALUE);
+
+  dF := ((dFJa / (dFMo * dEx)) -1) * 100;
+  dS := ((dSJa / (dSMo * dEx)) -1) * 100;
+
+  Result := (dF + dS)/2;
+end;
+
+function TFrmTVSignals.GetSymbols(ek: TExchangeKind): TSymbol;
+begin
+  Result := FSymbols[ek];
+end;
+
+procedure TFrmTVSignals.initControls;
+var
+  i: integer;
+  s:TSideType;
+  e:TExchangeKind;
+begin
+
+{$IFDEF DEBUG}
+// ckSig.Visible := true;
+{$ENDIF}
+
+  with sg do
+  begin
+    ColCount := TITLE_CNT;
+    RowCount := 2;
+
+    for I := 0 to TITLE_CNT-1 do
+    begin
+      Cells[i, 1] := TITLE[i];
+      ColWidths[i]:= WIDs[i];
+//      Cells[i, 2] := TMP_TEXT[i];
+    end;
+  end;
+
+  sgFillLog.ColCount  := TITLE2_CNT;
+  with sgFillLog do
+    for I := 0 to High(TITLE2) do
+      Cells[i, 0] := TITLE2[i];
+
+  with sgContent do
+    for I := 0 to High(TITLE3) do
+      Cells[i, 0] := TITLE3[i];
+
+  for s := stLong to stShort do
+    for e := ekBinance to High(TExchangeKind) do
+      FDustOrderQty[s,e] := 0;
+
+
+  with sgRLog do
+  begin
+    ColCount  :=  TITLE_RLOG_CNT * 2 + 2;
+    ColWidths[0] := 100;
+    for I := 1 to TITLE_RLOG_CNT do begin
+      Cells[i, 0]   := TITLE_RLOG[i-1];
+      Cells[i+TITLE_RLOG_CNT+1, 0] := TITLE_RLOG[i-1];
+
+      ColWidths[i]  := TITLE_RLOG_WID[i-1];
+      ColWidths[i+TITLE_RLOG_CNT+1]:= TITLE_RLOG_WID[i-1];
+    end;
+
+//    Cells[1, 0]  := 'CKip';
+//    Cells[2, 0]  := 'UP-Kip';
+//    Cells[3, 0]  := 'BT-Kip';
+//    Cells[4, 0]  := 'MK주문';
+//    Cells[5, 0]  := 'TK주문';
+//    Cells[6, 0]  := '상태';
+//
+//    Cells[8, 0]  := 'CKip';
+//    Cells[9, 0]  := 'UP-Kip';
+//    Cells[10, 0]  := 'BT-Kip';
+//    Cells[11, 0]  := 'MK주문';
+//    Cells[12, 0]  := 'TK주문';
+//    Cells[13, 0]  := '상태';
+
+    Cells[0, 1] := '진입 F';
+    Cells[0, 2] := '진입 S';
+    Cells[TITLE_RLOG_CNT+1, 1] := '청산 F';
+    Cells[TITLE_RLOG_CNT+1, 2] := '청산 S';
+  end;
+end;
+
+procedure TFrmTVSignals.SaveEnv(aStorage: TStorage);
+var
+  I: integer;
+  j: TMethodType;
+  a: TAutoOrderType;
+  e: TExchangeKind;
+  aSig : TTVSignal;
+begin
+  if aStorage = nil then Exit;
+  // main
+  with aStorage do
+  begin
+    FieldByName('Code').AsString  := edtCode.Text;
+    FieldByName('SCType').AsInteger := cbSettleType.ItemIndex;
+    FieldByName('OrdQty').AsString  := edtTmpQty.Text;
+//    FieldByName('RateF').AsString  := edtRateF.Text;
+//    FieldByName('RateS').AsString  := edtRateS.Text;
+    FieldByName('SigCntLimit').AsString  := edtSigCntLimit.Text;
+    FieldByName('SignalCount').AsInteger := FTVSignals.Count;
+
+    //for I := 0 to FTVSignals.Count-1 do
+    for var ii := 2 to sg.RowCount-1 do
+    begin
+      //aSig  := FTVSignals.TVSignal[i];
+      if sg.Objects[OBJ_COL, ii] = nil then continue;
+      aSig  := TTVSignal(sg.Objects[OBJ_COL, ii]);
+      i := ii -2;
+
+      FieldByName('StdCode_'+i.ToString).AsString   := aSig.Config.StgCode;
+
+      for j := F to High(TMethodType) do begin
+//        FieldByName(Format('Delay_%d_%d', [integer(j), i])).AsInteger  := aSig.Config.Input[j].Delay;
+        FieldByName(Format('OrdQty_%d_%d', [integer(j), i])).AsString  := aSig.Config.Input[j].OrderQty.ToString;
+        FieldByName(Format('VolRate_%d_%d', [integer(j), i])).AsString   := aSig.Config.Input[j].VolRate.ToString;
+      end;
+
+      FieldByName(Format('Method_%d', [i])).AsInteger  := aSig.Config.Method;
+      FieldByName(Format('KipAdjust_%d', [i])).AsString   := DoubleToStr(aSig.Config.KipAdjust, false);
+
+      FieldByName(Format('TradeTotQty_%d', [i])).AsString := aSig.Config.TradeTotQty.ToString;
+//      FieldByName(Format('DelayKipMin_%d', [i])).AsInteger := aSig.Config.DelayKipMin;
+//      FieldByName(Format('DelayKip_%d', [i])).AsString := aSig.Config.DelayKip.ToString;
+
+      FieldByName(Format('EntryOn_%d', [i])).AsBoolean := aSig.Data[aoEntry].Switch;
+      FieldByName(Format('ExitOn_%d', [i])).AsBoolean  := aSig.Data[aoExit].Switch;
+      FieldByName(Format('Row_%d', [i])).AsInteger     := sg.Cols[OBJ_COL].IndexOfObject(aSig);
+
+      //FieldByName(Format('EntryTotQty_%d', [i])).AsString := DoubleToStr(aSig.GetEntryQty, false);
+
+      // 상태값 저장
+      for a := aoEntry to High(TAutoOrderType) do
+      begin
+
+        FieldByName(Format('BaseKip_%d_%d', [i, integer(a)])).AsString := DoubleToStr(aSig.Data[a].BaseKip, false);
+        FieldByName(Format('AccFilledQty_%d_%d', [i, integer(a)])).AsString := DoubleToStr(aSig.SigOrders[a].AccFilledQty[MK], false);
+
+        for e := ekBinance to High(TExchangeKind) do
+        begin
+          FieldByName(Format('SumFilledQty_%d_%d_%d', [i, integer(a), integer(e)])).AsString := DoubleToStr(aSig.SigOrders[a].ExOrders[e].SumFilledQty, false);
+//          FieldByName(Format('SumRealKip_%d_%d_%d', [i, integer(a), integer(e)])).AsString   := DoubleToStr(aSig.SigOrders[a].ExOrders[e].SumRealKip, false);
+          FieldByName(Format('SumExRate_%d_%d_%d', [i, integer(a), integer(e)])).AsString    := DoubleToStr(aSig.SigOrders[a].ExOrders[e].SumExRate, false);
+          FieldByName(Format('MTFilledQty_MK_%d_%d_%d', [i, integer(a), integer(e)])).AsString  := DoubleToStr(aSig.SigOrders[a].ExOrders[e].MTFilledQty[MK], false);
+          FieldByName(Format('MTFilledQty_TK_%d_%d_%d', [i, integer(a), integer(e)])).AsString  := DoubleToStr(aSig.SigOrders[a].ExOrders[e].MTFilledQty[TK], false);
+
+          for var ls := stLong to High(TSideType) do
+          begin
+            FieldByName(Format('AvgPrice_%d_%d_%d_%d', [i, integer(a), integer(e), integer(ls)])).AsString  :=
+              DoubleToStr(aSig.SigOrders[a].ExOrders[e].KipData[ls].AvgPrice, false);
+            FieldByName(Format('FilledQty_%d_%d_%d_%d', [i, integer(a), integer(e), integer(ls)])).AsString  :=
+              DoubleToStr(aSig.SigOrders[a].ExOrders[e].KipData[ls].FilledQty, false);
+          end;
+        end;
+      end;
+
+      for e := ekBinance to High(TExchangeKind) do
+      begin
+        FieldByName(Format('FilledQty_%d_%d_%d', [i, integer(e), 0])).AsString:=
+          DoubleToStr(aSig.FilledQty[e,stLong], false);
+        FieldByName(Format('FilledQty_%d_%d_%d', [i, integer(e), 1])).AsString:=
+          DoubleToStr(aSig.FilledQty[e,stShort], false);
+      end;
+    end;
+
+    var s := '';
+    for I := 0 to sg.ColCount-1 do
+      if i = sg.ColCount-1 then
+        s := s + sg.ColWidths[i].ToString
+      else
+        s := s + sg.ColWidths[i].ToString + '|';
+
+    FieldByName('ColWidths').AsString := s;
+    FieldByName('p3H').AsInteger      := Panel3.Height;
+  end;
+
+end;
+
+procedure TFrmTVSignals.SetControlEnables(bEnable: Boolean);
+var
+  i: integer;
+begin
+  if bEnable then
+  begin
+    Panel1.Color  := clSkyBlue;
+    edtCode.Enabled       := false;
+    cbSettleType.Enabled  := false;
+    btnSymbol.Enabled     := false;
+    Button2.Enabled       := false;
+  end else
+  begin
+    Panel1.Color  := clBtnFace;
+    edtCode.Enabled       := true;
+    cbSettleType.Enabled  := true;
+    btnSymbol.Enabled     := true;
+    Button2.Enabled       := true;
+    //
+//    for I := 1 to sg.RowCount-1 do
+//    begin
+//      sg.Objects[ENT_COL, i] := Pointer(0);
+//      sg.Objects[STA_COL, i] := Pointer(0);
+//    end;
+//
+//    sg.Repaint;
+
+  end;
+end;
+
+procedure TFrmTVSignals.SetRKip(e: TExchangeKind; aoType: TAutoOrderType;
+  FS: TMethodType; const dValue: double);
+begin
+  case aoType of
+    aoEntry: FEntryValue[e, FS] := dValue;
+    aoExit: FExitValue[e, FS] := dValue;
+  end;
+end;
+
+function TFrmTVSignals.SetSymbols: boolean;
+var
+  aSymbol : array [TExchangeKind] of TSymbol;
+  i: TExchangeKind;
+  aSCType :TSettleCurType;
+begin
+  Result := false;
+
+  if edtCode.Text = '' then
+  begin
+    Exit;
+  end;
+
+  case cbSettleType.ItemIndex of
+    0 : aSCType := scUSDT;
+    1 : aSCType := scUSDC;
+  end;
+
+  for I := ekBinance to High(TExchangeKind) do begin
+
+    if i = ekBinance then
+      aSymbol[i]  := App.Engine.SymbolCore.BaseSymbols.FindSymbol(edtCode.Text, i, eaFutUsdt, aSCType)
+    else
+      aSymbol[i]  := App.Engine.SymbolCore.BaseSymbols.FindSymbol(edtCode.Text, i);
+
+    if aSymbol[i] = nil then
+    begin
+      ShowMessage('해당종목을 찾을수 없음');
+      Exit;
+    end;
+  end;
+
+  try
+    for I := ekBinance to High(TExchangeKind) do
+    begin
+      if FSymbols[i] <> nil then
+        App.Engine.QuoteBroker.Brokers[i].Cancel(Self, FSymbols[i]);
+
+      App.Engine.QuoteBroker.Brokers[i].Subscribe(Self, aSymbol[i], QuoteProc);
+      FSymbols[i] := aSymbol[i];
+    end;
+    // 포지션 조회
+    App.Engine.ApiManager.ExManagers[ekBinance].RequestPosition(FSymbols[ekBinance]);
+    Result := true;
+  except
+  end;
+end;
+
+procedure TFrmTVSignals.LoadEnv(aStorage: TStorage);
+var
+  I, iRow, iCnt: integer;
+  j : TMethodType;
+
+  a: TAutoOrderType;
+  e: TExchangeKind;
+
+  aSig : TTVSignal;
+  bEnt, bExit: boolean;
+begin
+  if aStorage = nil then Exit;
+  // main
+  with aStorage do
+  begin
+
+    Panel3.Height := FieldByName('p3H').AsIntegerDef(Panel3.Height);
+
+    edtCode.Text            := FieldByName('Code').AsString;
+    cbSettleType.ItemIndex  := FieldByName('SCType').AsInteger;
+    edtTmpQty.Text          := FieldByName('OrdQty').AsString;
+    edtSigCntLimit.Text     := FieldByName('SigCntLimit').AsStringDef('10');
+
+//    edtRateF.Text := FieldByName('RateF').AsStringDef('50');
+//    edtRateS.Text := FieldByName('RateS').AsStringDef('50');
+
+    iCnt  := FieldByName('SignalCount').AsInteger;
+
+    sg.RowCount := iCnt + 2;
+
+    if sg.RowCount > 2 then
+      sg.FixedRows  := 2;
+
+    var ss := FieldByName('ColWidths').AsString;
+
+    if not ss.IsEmpty then
+    begin
+      var sts := ss.Split(['|']);
+      for I := 0 to High(sts) do
+        if not sts[i].IsEmpty then
+          sg.ColWidths[i] := sts[i].ToInteger;
+    end;
+
+    for I := 0 to iCnt-1 do
+    begin
+      iRow := i+2;
+
+      aSig  := FTVSignals.New;
+
+      var cfg : TSignalConfig;
+      cfg.StgCode := FieldByName('StdCode_'+i.ToString).AsString;
+      aSig.StgCode  := cfg.StgCode;
+
+      for j := F to High(TMethodType) do begin
+//        cfg.Input[j].Delay    :=  FieldByName(Format('Delay_%d_%d', [integer(j), i])).AsInteger;
+        cfg.Input[j].OrderQty :=  StrToFloatDef(FieldByName(Format('OrdQty_%d_%d', [integer(j), i])).AsString, 0);
+        //cfg.Input[j].KipAdjust:=  StrToFloatDef(FieldByName(Format('KipAdjust_%d_%d', [integer(j), i])).AsString, 0);
+        cfg.Input[j].VolRate  :=  StrToInt(FieldByName(Format('VolRate_%d_%d', [integer(j), i])).AsStringDef('80'));
+      end;
+
+      cfg.Method      := FieldByName(Format('Method_%d', [i])).AsInteger;
+      cfg.KipAdjust   := StrToFloatDef(FieldByName(Format('KipAdjust_%d', [i])).AsString, 0);
+      cfg.TradeTotQty := StrToFloatDef(FieldByName(Format('TradeTotQty_%d', [i])).AsString, 0);
+
+//      cfg.DelayKipMin := FieldByName(Format('DelayKipMin_%d', [i])).AsInteger;
+//      cfg.DelayKip    := StrToFloatDef(FieldByName(Format('DelayKip_%d', [i])).AsString, 0);
+
+      //aSig.UpdateEntryQty(FieldByName(Format('EntryTotQty_%d', [i])).AsString);
+
+      aSig.Config.Assign(cfg);
+
+      AddSignal(aSig, iRow);
+
+      // 상태값 저장
+      for a := aoEntry to High(TAutoOrderType) do
+      begin
+        //aSig.Data[a].SetBaseKip(StrToFloatDef(FieldByName(Format('BaseKip_%d_%d', [i, integer(a)])).AsString, 0));
+        aSig.SetBaseKip(a, StrToFloatDef(FieldByName(Format('BaseKip_%d_%d', [i, integer(a)])).AsString, 0));
+        aSig.SigOrders[a].AccFilledQty[MK]  := StrToFloatDef(FieldByName(Format('AccFilledQty_%d_%d', [i, integer(a)])).AsString, 0);
+
+        for e := ekBinance to High(TExchangeKind) do
+        begin
+          aSig.SigOrders[a].ExOrders[e].SetSumFiiledQtyNRealKip(
+            StrToFloatDef(FieldByName(Format('SumFilledQty_%d_%d_%d', [i, integer(a), integer(e)])).AsString, 0),
+            0, //StrToFloatDef(FieldByName(Format('SumRealKip_%d_%d_%d', [i, integer(a), integer(e)])).AsString, 0),
+            StrToFloatDef(FieldByName(Format('SumExRate_%d_%d_%d', [i, integer(a), integer(e)])).AsString, 0)
+            );
+          aSig.SigOrders[a].ExOrders[e].MTFilledQty[MK]:= StrToFloatDef(FieldByName(Format('MTFilledQty_MK_%d_%d_%d', [i, integer(a), integer(e)])).AsString, 0);
+          aSig.SigOrders[a].ExOrders[e].MTFilledQty[TK]:= StrToFloatDef(FieldByName(Format('MTFilledQty_TK_%d_%d_%d', [i, integer(a), integer(e)])).AsString, 0);
+
+          for var ls := stLong to High(TSideType) do
+          begin
+            aSig.SigOrders[a].ExOrders[e].KipData[ls].SetValue(
+            StrToFloatDef( FieldByName(Format('AvgPrice_%d_%d_%d_%d', [i, integer(a), integer(e), integer(ls)])).AsString , 0),
+            StrToFloatDef( FieldByName(Format('FilledQty_%d_%d_%d_%d', [i, integer(a), integer(e), integer(ls)])).AsString, 0)) ;
+          end;
+        end;
+      end;
+
+      for e := ekBinance to High(TExchangeKind) do
+      begin
+        aSig.FilledQty[e,stLong] := StrToFloatDef(FieldByName(
+          Format('FilledQty_%d_%d_%d', [i, integer(e), integer(stLong)])).AsString, 0);
+        aSig.FilledQty[e,stShort]:= StrToFloatDef(FieldByName(
+          Format('FilledQty_%d_%d_%d', [i, integer(e), integer(stShort)])).AsString, 0);
+      end;
+
+      UpdateSingalData(aSig);
+
+      if FieldByName(Format('EntryOn_%d', [i])).AsBoolean then
+      begin
+        sg.Objects[ECOL[0], iRow] := Pointer(CKON);
+        aSig.OnOff(aoEntry, true);
+      end;
+
+      if FieldByName(Format('ExitOn_%d', [i])).AsBoolean then
+      begin
+        sg.Objects[XCOL[0], iRow] := Pointer(CKON);
+        aSig.OnOff(aoExit, true);
+      end;
+
+      if (FSignal = nil) and (aSig <> nil) then
+        FSignal := aSig;
+
+    end;
+  end;
+
+end;
+
+procedure TFrmTVSignals.MakeSignal(iRow: integer);
+begin
+
+  InsertLine(sg, 2);
+  AddSignal(FTVSignals.New, 2);
+
+//  OpenConfig(2);
+
+end;
+
+procedure TFrmTVSignals.OpenConfig(iRow:integer);
+var
+  aForm : TFrmSignalConfig;
+  aItem : TTVSignal;
+
+begin
+
+  if iRow < 2 then Exit;
+  if sg.Objects[OBJ_COL, iRow] = nil then Exit;
+  aItem := TTVSignal(sg.Objects[OBJ_COL, iRow]);
+
+  aForm := TFrmSignalConfig.Create(Self);
+  try
+    aItem.Config.SetBaseKip(aItem.Data[aoEntry].BaseKip, aItem.Data[aoExit].BaseKip);
+    if aForm.Open(aItem.Config) then
+    begin
+      // check and assign
+      aItem.CheckTotTradeQty(aForm.Config);
+      UpdateSignalConfig(aItem, iRow);
+
+      if aForm.ckManualInput.Checked then
+      begin
+        aItem.UpdateEntryQty(aForm.edtmanualinput.Text);
+      end;
+
+      if aForm.ckEntryBaseKip.Checked then begin
+        aItem.UpdateBaseKip(aoEntry, aForm.edtEntryBaseKip.Text);
+        UpdateSiganlContent(aItem, iRow, true);
+      end;
+
+      if aForm.ckExitBaseKip.Checked then
+      begin
+        aItem.UpdateBaseKip(aoExit, aForm.edtExitBaseKip.Text);
+        UpdateSiganlContent(aItem, iRow, false);
+      end;
+
+      if aForm.ckDiffClear.Checked then
+      begin
+        aItem.ClearDiffGap;
+        UpdateSingalData(aItem);
+      end;
+
+//      if aForm.ckForceStateTrans.Checked then
+//      begin
+//        with sgContent do
+//          for var I := 1 to RowCount-1 do
+//            if aItem.StgCode = Cells[1, i] then
+//              if Cells[2, i] = 'buy' then begin
+//                aItem.ForceUpdateSignal(aoEntry, aForm.rbState.Checked); break;
+//              end else if Cells[2, i] = 'sell' then begin
+//                aItem.ForceUpdateSignal(aoExit, aForm.rbState.Checked); break;
+//              end;
+//      end;
+    end;
+  finally
+    FreeAndNil(aForm)
+  end;
+end;
+
+procedure TFrmTVSignals.OrderTimerTimer(Sender: TObject);
+begin
+  //
+  if FTVSignals <> nil then
+    FTVSignals.OnOrderTimer;
+end;
+
+function TFrmTVSignals.ParseData(AData: string; aColl: TRqContents): boolean;
+var
+  aVal: TJSONValue;
+  aArr: TJsonArray;
+  aObj: TJsonObject;
+  bRes: boolean;
+  sTmp, sCode, stgName: string;
+  i: Integer;
+  id: int64;
+  bAdd: boolean;
+//  aData: TRqContent;
+  Signal: TSignalRecord;
+  Strategy: string;
+  CurrentLatest: TDictionary<string, TSignalRecord>;
+  CurrentID, LastID: Int64;
+begin
+  aVal  := TJsonObject.ParseJSONValue(AData);
+  id    := 0;
+
+  if aVal = nil then Exit;
+
+  CurrentLatest := TDictionary<string, TSignalRecord>.Create;
+
+  try
+    try
+      bRes := aVal.GetValue<boolean>('success');
+      if not bRes then Exit;
+
+      aArr := (aVal as TJsonObject).GetValue('data') as TJsonArray;
+
+      sCode:= GetCode;
+      // 기본 내림 차순이다.
+      for I := aArr.Count-1 downto 0 do
+      begin
+        aObj  := aArr.Items[i] as TJsonObject;
+
+        Signal.ID := aObj.GetValue<int64>('id');
+        Signal.StrategyName := aObj.GetValue<string>('strategy_name');
+        Signal.CoinSymbol := aObj.GetValue<string>('coin_symbol');
+        Signal.SignalTime := aObj.GetValue<string>('signal_time');
+        Signal.SignalType := aObj.GetValue<string>('signal_type');
+        Signal.Quantity := aObj.GetValue<string>('quantity');
+        Signal.Price := aObj.GetValue<string>('price');
+        Signal.PositionType := aObj.GetValue<string>('position_type');
+        Signal.Direction := aObj.GetValue<string>('direction');
+        Signal.ReceivedAt := aObj.GetValue<string>('received_at');
+
+        Strategy := Signal.StrategyName;
+
+        if not CurrentLatest.ContainsKey(Strategy) then
+          CurrentLatest.Add(Strategy, Signal)
+        else if CurrentLatest[Strategy].ID < Signal.ID then
+          CurrentLatest[Strategy] := Signal;
+      end;
+
+      // 새로운 신호 확인
+      for Signal in CurrentLatest.Values do
+      begin
+        Strategy  := Signal.StrategyName;
+        CurrentID := Signal.ID;
+
+        if not FLastKnownIDs.TryGetValue(Strategy, LastID) then
+          LastID := 0;
+
+        if CurrentID > LastID then
+        begin
+          FLastKnownIDs.AddOrSetValue(Strategy, CurrentID);
+
+          with aColl.New(CurrentID) do
+          begin
+            StgName := Strategy;
+            SigTime := GetStrToTime(Signal.SignalTime);
+            SigType := Signal.SignalType;
+            SigKimp := StrToFloatDef(Signal.Price, 1000000) / 1000000;
+          end;
+
+        end;
+      end;
+      bRes := true;
+    except
+    end;
+
+  finally
+    aVal.Free;
+    CurrentLatest.Free;
+  end;
+
+  Result := bRes;
+end;
+
+procedure TFrmTVSignals.sgClick(Sender: TObject);
+begin
+  if FSelectedRow <= 1 then Exit;
+
+  if sg.Objects[OBJ_COL, FSelectedRow] <> nil then
+    FSignal := TTVSignal(sg.Objects[OBJ_COL, FSelectedRow]);
+    if FSignal <> nil then
+      DisplayLog;
+end;
+
+procedure TFrmTVSignals.sgContentDrawCell(Sender: TObject; ACol, ARow: Integer;
+  Rect: TRect; State: TGridDrawState);
+  var
+    sTxt : string;
+    aRect: TRect;
+    clBack, clFont: TColor;
+    dFormat: DWord;
+begin
+  aRect := Rect;
+  clBack:= clWhite;
+  clFont:= clBlack;
+  dFormat := DT_VCENTER or DT_SINGLELINE;
+{
+{
+  '시각','전략코드','상태','거래소',' ',
+  '방향','평균가', '체결량','환율');
+}
+
+
+  with (Sender as TStringGrid) do
+  begin
+
+    sTxt := Cells[ACol, ARow];
+
+    if ARow = 0 then begin
+      clBack := clBtnFace;
+      dFormat:= dFormat or DT_CENTER;
+    end
+    else begin
+
+      case ACol of
+        0, 1, 2, 3, 4, 5 : dFormat:= dFormat or DT_CENTER;
+        else dFormat:= dFormat or DT_RIGHT;
+      end;
+
+      if ARow = FRow  then
+        clBack := SELECTED_COLOR;
+
+      if ACol = EX_COL then
+        case integer(Objects[ACol, ARow]) of
+          100 : clFont := clRed;
+          200 : clFont := clBlue;
+        end;
+    end;
+
+    Canvas.Brush.Color := clBack;
+    Canvas.Font.Color  := clFont;
+    Canvas.FillRect(aRect);
+
+    DrawText(Canvas.Handle, PChar(sTxt), Length(sTxt), aRect, dFormat );
+  end;
+end;
+
+procedure TFrmTVSignals.sgDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect;
+  State: TGridDrawState);
+  var
+    sTxt: string;
+    aRect: TRect;
+    cBack, cFont: TColor;
+    i, iSum, iCol: integer;
+    btnStyle, ckStyle : UINT;
+    dFormat : DWORD;
+    aSig: TTVSignal;
+    bSspnd : array [TAutoOrderType] of boolean;
+begin
+  aRect := Rect;
+  cBack := clWhite;
+  cFont := clBlack;
+
+  dFormat :=  DT_VCENTER or DT_SINGLELINE;
+
+  with sg do
+  begin
+    sTxt := Cells[ACol, ARow];
+    if ARow <= 1 then
+    begin
+      dFormat := dFormat or DT_CENTER;
+      cBack := clBtnFace;
+      if ACol in [0..1, 4..9, 20..23] then
+      begin
+        aRect.Top     := CellRect(ACol, 0).Top;
+        aRect.Bottom  := CellRect(ACol, 1).Bottom;
+        sTxt := Cells[ACol, 1];
+      end else
+      if ACol in [FCOL[0]..FCOL[1]] then
+      begin
+        if ARow = 0 then begin
+          aRect.Left := CellRect(FCOL[0], ARow).Left;
+          aRect.Right:= CellRect(FCOL[1], ARow).Right;
+          sTxt := 'F';
+        end;
+      end else
+      if ACol in [SCOL[0]..SCOL[1]] then
+      begin
+        if ARow = 0 then begin
+          aRect.Left := CellRect(SCOL[0], ARow).Left;
+          aRect.Right:= CellRect(SCOL[1], ARow).Right;
+          sTxt := 'S';
+        end;
+      end else
+      if ACol in [ECOL[0]..ECOL[1]] then
+      begin
+        if ARow = 0 then begin
+          aRect.Left := CellRect(ECOL[0], ARow).Left;
+          aRect.Right:= CellRect(ECOL[1], ARow).Right;
+          sTxt := '진입중';
+        end;
+      end else
+      if ACol in [XCOL[0]..XCOL[1]] then
+      begin
+        if ARow = 0 then begin
+          aRect.Left := CellRect(XCOL[0], ARow).Left;
+          aRect.Right:= CellRect(XCOL[1], ARow).Right;
+          sTxt := '청산중';
+        end;
+      end;
+    end else
+    begin
+
+      aSig  := TTVSignal(Objects[OBJ_COL, ARow]);
+
+      if ACol = EXE_COL then
+        if aSig <> nil then
+          sTxt := TStgStatusDesc[aSig.StgStatus];
+
+      if ACol in [1,5,CFG_COL,EXE_COL ] then
+        dFormat := dFormat or DT_CENTER
+      else
+        dFormat := dFormat or DT_RIGHT;
+
+      if ACol in [ECOL[0]..XCOL[1]] then
+        cBack := GRID_MOD_COLOR  ;
+//      else if ACol in [EDIT_COLs[0]..EDIT_COLs[E_CNT-1]] then
+//        cBack := EDIT_COL_COLOR;
+
+      if ARow =  FSelectedRow  then
+        cBack := SELECTED_COLOR;
+
+      if ACol in [CFG_COL, EXE_COL] then
+        cBack := clBtnFace
+      else if ACol = ENT_COL then
+      begin
+        aSig  := TTVSignal(Objects[OBJ_COL, ARow]);
+        if aSig <> nil then
+        begin
+          if aSig.SigOrders[aoEntry].Done or aSig.SigOrders[aoExit].Done then
+            cBack := clLime;
+        end;
+
+//        if integer(Objects[ACol, ARow]) = CKON then
+//          cBack := clLime;;
+      end;
+
+      var iState := integer(Objects[STA_COL, ARow]) - STA_VAL;
+      if aSig <> nil then
+      begin
+        for var a := aoEntry to High(TAutoOrderType) do
+        begin
+          bSspnd[a] :=
+            aSig.SigOrders[a].ExOrders[ekBinance].Suspend or
+            aSig.SigOrders[a].ExOrders[ekUpbit].Suspend or
+            aSig.SigOrders[a].ExOrders[ekBithumb].Suspend;
+
+          if bSspnd[a] then
+          begin
+            if ((a = aoEntry) and (ACol in [ECOL[0]..ECOL[1]])) or
+               ((a = aoExit)  and (ACol in [XCOL[0]..XCOL[1]])) then
+               begin cBack := clBlack; cFont := clWhite; end;
+          end else
+          begin
+
+            if ((a = aoEntry) and (ACol = ECOL[0] + 1)) or
+              ((a = aoExit) and (ACol = XCOL[0] + 1)) then
+            begin
+              if a = aoEntry then
+                cFont := clRed
+              else
+                cFont := clBlue;
+              Canvas.Font.Style := Canvas.Font.Style + [fsBold];
+            end;
+
+            if a = aoEntry then begin
+              case aSig.State of
+                ssEntry:if ACol in [ECOL[0]..ECOL[1]] then cBack := clYellow;
+//                ssEnd: if ACol in [ECOL[0]..ECOL[1]] then cBack := clGreen;//GRID_MOD_COLOR;
+              end;
+            end else
+            if a = aoExit then begin
+              case aSig.State of
+                ssExit:if ACol in [XCOL[0]..XCOL[1]] then cBack := clYellow;
+//                ssEnd: if ACol in [XCOL[0]..XCOL[1]] then cBAck := clGreen;//GRID_MOD_COLOR;
+              end;
+            end;
+          end;
+        end;
+      end;
+
+//      if iState >= 0 then
+//        case TSignalState(iState) of
+//          ssEntry : begin
+//            if ACol in [ECOL[0]..ECOL[1]] then cBack := clYellow;
+//            if ACol = ECOL[0]+1 then begin
+//              cFont := clRed;
+//              Canvas.Font.Style := Canvas.Font.Style + [fsBold];
+//            end;
+//          end;
+//
+//          ssExit  : begin
+//            if ACol in [XCOL[0]..XCOL[1]] then cBack := clYellow;
+//            if ACol = XCOL[0]+1 then begin
+//              cFont := clBlue;
+//              Canvas.Font.Style := Canvas.Font.Style + [fsBold];
+//            end;
+//          end;
+//          ssEnd   : if ACol in [ECOL[0]..XCOL[1]] then cBack := GRID_MOD_COLOR;
+//          else begin
+//            case iState of
+//              10 : if ACol in [ECOL[0]..ECOL[1]] then begin cBack := clBlack; cFont := clWhite; end;
+//              20 : if ACol in [XCOL[0]..XCOL[1]] then begin cBack := clBlack; cFont := clWhite; end;
+//            end;
+//          end;
+//        end;
+    end;
+
+    Canvas.Font.Color := cFont;
+    Canvas.Brush.Color:= cBack;
+    Canvas.FillRect(aRect);
+    var iVal :integer;
+    // draw controls
+    if ARow > 1 then
+    begin
+      iCol := ifThen(ACol= 0, RUN_COL, ACol);
+
+      iVal := integer(Objects[iCol, ARow]);
+      if ACol in [CFG_COL, EXE_COL] then begin
+        if iVal = CKON then
+          btnStyle := DFCS_BUTTONPUSH or DFCS_PUSHED
+        else
+          btnStyle := DFCS_BUTTONPUSH;
+        DrawFrameControl(Canvas.Handle, Rect, DFC_BUTTON, btnStyle);
+      end else
+      if ACol in [0, ECOL[0], XCOL[0]] then  begin
+        if iVal = CKON then
+          ckStyle := DFCS_BUTTONCHECK or DFCS_CHECKED
+        else
+          ckStyle := DFCS_BUTTONCHECK;
+        DrawFrameControl(Canvas.Handle, Rect, DFC_BUTTON, ckStyle);
+      end;
+    end else
+    if (ARow <= 1) and (ACol = 0) then
+    begin
+
+      var r1  : TRect;
+      var iH: integer;
+      r1 :=  CellRect(ACol, 0);
+      iH :=  CellRect(ACol, 0).Bottom div 2;
+
+      aRect.Top     := r1.Top + iH;
+      aRect.Bottom  := r1.Bottom + iH;
+//      aRect.Left    := r1.Left;
+//      aRect.Right   := r1.Right;
+
+      iVal := integer(Objects[RUN_COL, 1]);
+      if iVal = CKON then
+        ckStyle := DFCS_BUTTONCHECK or DFCS_CHECKED
+      else
+        ckStyle := DFCS_BUTTONCHECK;
+      DrawFrameControl(Canvas.Handle, aRect, DFC_BUTTON, ckStyle);
+    end;
+
+    DrawText(Canvas.Handle, PChar(sTxt), Length(sTxt), aRect, dFormat);
+  end;
+end;
+
+procedure TFrmTVSignals.sgFillLogMouseDown(Sender: TObject;
+  Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+  var
+    aCol, aRow: integer;
+begin
+  //
+  aRow := FRow;
+  sgFillLog.MouseToCell(X, Y, aCol, FRow);
+
+  InvalidateRow(sgFillLog, FRow);
+  InvalidateRow(sgFillLog, aRow);
+end;
+
+procedure TFrmTVSignals.sgMouseDown(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: Integer);
+  var
+    aVal, aCol, aRow: integer;
+    aoType : TAutoOrderType;
+begin
+//
+//  with sg do
+//    if  goEditing in Options then
+//      Options := Options - [goEditing];
+
+  aRow := FSelectedRow;
+  sg.MouseToCell(X, Y, aCol, FSelectedRow) ;
+
+  if FSelectedRow >= 2 then
+  begin
+//    if ACol in [0.. then
+    if aCol = CFG_COL then begin
+      FDown := true;
+      aVal := integer(sg.Objects[aCol, FSelectedRow]);
+      if (aVal = CKOFF) or (aVal = 0) then
+        sg.Objects[aCol, FSelectedRow] := Pointer(CKON);
+    end else
+    if aCol in [ECOL[0], XCOL[0]] then begin
+
+      if aCol = ECOL[0] then
+        aoType := aoEntry
+      else
+        aoType := aoExit;
+
+      aVal := integer(sg.Objects[aCol, FSelectedRow]);
+      if aVal = CKON then begin
+        if sg.Objects[OBJ_COL, FSelectedRow] <> nil then begin
+          sg.Objects[aCol, FSelectedRow] := Pointer(CKOFF);
+          TTVSignal(sg.Objects[OBJ_COL, FSelectedRow]).OnOff(aoType, false);
+        end;
+      end
+      else if (aVal = CKOFF) or (aVal = 0) then begin
+        if sg.Objects[OBJ_COL, FSelectedRow] <> nil then begin
+//          if sg.Cells[1, FSelectedRow] = '' then
+//          begin
+//            ShowMessage('전략명이 없음');
+//            Exit;
+//          end;
+          sg.Objects[aCol, FSelectedRow] := Pointer(CKON);
+          TTVSignal(sg.Objects[OBJ_COL, FSelectedRow]).OnOff(aoType, true);
+        end;
+      end;
+    end else
+    // 실행 버튼
+    if aCol = EXE_COL then
+    begin
+      aVal := integer(sg.Objects[EXE_COL, FSelectedRow]);
+      if aVal = CKON then
+      begin
+        // Stop 처리
+        Stop(TTVSignal(sg.Objects[OBJ_COL, FSelectedRow]), FSelectedRow);
+      end else
+      if (aVal = CKOFF) or (aVal = 0) then
+      begin
+        // Run 처리
+        Run(FSelectedRow);
+      end;
+    end else
+    // 실행 체크 박스
+    if aCol = 0 then
+    begin
+      aVal := integer(sg.Objects[RUN_COL, FSelectedRow]);
+      if aVal = CKON then
+      begin
+        if integer(sg.Objects[EXE_COL, FSElectedRow]) <> CKON then
+          sg.Objects[RUN_COL, FSelectedRow] := Pointer(CKOFF);
+      end else
+      if (aVal = CKOFF) or (aVal = 0) then
+      begin
+        sg.Objects[RUN_COL, FSelectedRow] := Pointer(CKON);
+      end;
+    end;
+
+    FSelectedCol := aCol;
+  end else
+  if (FSelectedRow <= 1) and (aCol = 0) then
+  begin
+    aVal := integer(sg.Objects[RUN_COL, 1]);
+    if aVal = CKON then
+    begin
+      sg.Objects[RUN_COL, 1] := Pointer(CKOFF);
+      DoCheckAllRunColl(false);
+    end else
+    if (aVal = CKOFF) or (aVal = 0) then
+    begin
+      // All Run 처리
+      sg.Objects[RUN_COL, 1] := Pointer(CKON);
+      DoCheckAllRunColl(true);
+    end;
+  end;
+
+  InvalidateRowEx(sg, aRow);
+  InvalidateRowEx(sg, FSelectedRow);
+
+end;
+
+procedure TFrmTVSignals.sgMouseMove(Sender: TObject; Shift: TShiftState; X,
+  Y: Integer);
+  var iVal, aCol, aRow: integer;
+begin
+  if FDown then
+  begin
+    sg.MouseToCell(X, Y, aCol, aRow) ;
+    if (FSelectedCol <> aCol) or (FSelectedRow <> aRow) then
+    begin
+      FDown := false;
+      iVal  := integer(sg.Objects[FSelectedCol, FSelectedRow]);
+      if iVal = CKON then
+      begin
+        sg.Objects[FSelectedCol, FSelectedRow] := Pointer(CKOFF);
+        InvalidateCell(sg, FSelectedCol, FSelectedRow);
+      end;
+    end;
+  end;
+end;
+
+procedure TFrmTVSignals.sgMouseUp(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: Integer);
+  var
+    iVal, aCol, aRow: integer;
+begin
+  sg.MouseToCell(X, Y, aCol, aRow) ;
+  if (aCol = CFG_COL) and FDown then
+  begin
+    iVal := integer(sg.Objects[aCol, aRow]);
+    if iVal = CKON then
+    begin
+      sg.Objects[aCol, aRow] := Pointer(CKOFF);
+      InvalidateCell(sg, aCol, aRow);
+      //
+      case aCol of
+        CFG_COL : OpenConfig(aRow);
+//        EXE_COL : ExecuteStg(aRow);
+      end;
+    end;
+  end ;
+
+  FDown := false;
+end;
+
+procedure TFrmTVSignals.sgRLogDrawCell(Sender: TObject; ACol, ARow: Integer;
+  Rect: TRect; State: TGridDrawState);
+  var
+    sTxt : string;
+    aRect: TRect;
+    clBack, clFont: TColor;
+    dFormat: DWord;
+begin
+  aRect := Rect;
+  clBack:= clWhite;
+  clFont:= clBlack;
+  dFormat := DT_VCENTER or DT_SINGLELINE;
+{
+('C-Kip','UP-Kip','BT-Kip','누적수량','체결율','A-Kip','상태');
+
+    Cells[0, 1] := '진입 F';
+    Cells[0, 2] := '진입 S';
+    Cells[7, 1] := '청산 F';
+    Cells[7, 2] := '청산 S';
+}
+
+
+  with (Sender as TStringGrid) do
+  begin
+
+    sTxt := Cells[ACol, ARow];
+
+    if ARow = 0 then begin
+      clBack := clBtnFace;
+      dFormat:= dFormat or DT_CENTER;
+    end
+    else begin
+      if ACol in [0, TITLE_RLOG_CNT+1] then
+      begin
+        clBack := clBtnFace;
+        dFormat:= dFormat or DT_CENTER;
+      end else
+      begin
+        if ACol in [TITLE_RLOG_CNT, 19] then
+          dFormat:= dFormat or DT_CENTER
+        else
+          dFormat:= dFormat or DT_RIGHT
+      end;
+
+      if ACol in [1..2] then
+      begin
+        clFont := clRed;
+//        Canvas.Font.Style := Canvas.Font.Style + [fsBold];
+      end else if ACol in  [12..13] then
+      begin
+        clFont := clBlue;
+//        Canvas.Font.Style := Canvas.Font.Style + [fsBold];
+      end;
+    end;
+
+    Canvas.Brush.Color := clBack;
+    Canvas.Font.Color  := clFont;
+    Canvas.FillRect(aRect);
+
+    DrawText(Canvas.Handle, PChar(sTxt), Length(sTxt), aRect, dFormat );
+  end;
+end;
+
+procedure TFrmTVSignals.SpeedButtonPrefsClick(Sender: TObject);
+var
+  aPoint : TPoint;
+begin
+  //
+  if gAOConfig <> nil then
+  begin
+    gAOConfig.PageControl1.ActivePageIndex := 1;
+    gAOConfig.ShowAOConfig(Self, aPoint);
+  end;
+end;
+
+procedure TFrmTVSignals.StartDataLockTimer;
+begin
+  if DataLockTimer.Enabled then Exit;
+  FStartTime := now;
+  DataLockTimer.Enabled := true;
+end;
+
+procedure TFrmTVSignals.StartSignal;
+var
+  aProc: TProc;
+begin
+
+  aProc := procedure begin OnTimer(Self); end;
+
+  if FThread = nil then
+  begin
+    FThread       := TTimerThread.Create;
+    FThread.Interval  := 2000;
+    FThread.OnLog   := OnLog;
+    FThread.OnTimer := aProc;
+  end;
+end;
+
+procedure TFrmTVSignals.StopSignal;
+begin
+  if FThread <> nil then
+  begin
+    FThread.Terminate;
+    FThread.WaitFor;
+    FThread.Free;
+  end;
+
+  FThread := nil;
+end;
+
+procedure TFrmTVSignals.StopMainThread;
+begin
+
+//  if FMainThread <> nil then
+//  begin
+//    FMainThread.Terminate;
+//    FMainThread.WaitFor;
+//    FMainThread.Free;
+//  end;
+
+//  FMainThread := nil;
+  // 스레드 대신 타이머
+  OrderTimer.Enabled := false;
+  FLastKnownIDs.Clear;
+end;
+
+procedure TFrmTVSignals.Stop(aSignal: TTVSignal);
+var
+  i:Integer;
+  bAllStop: boolean;
+begin
+  aSignal.Stop;
+
+  bAllStop := true;
+  for I := 0 to FTVSignals.Count-1 do
+    if FTVSignals.TVSignal[i].StgStatus = stgRun then
+    begin
+      bAllStop := false;
+      Break;
+    end;
+
+  if bAllStop then
+    SetControlEnables(false);
+end;
+
+procedure TFrmTVSignals.Stop(aSignal: TTVSignal; iRow: integer);
+begin
+
+  sg.Objects[EXE_COL, iRow] := Pointer(CKOFF);
+  Stop(aSignal);
+end;
+
+procedure TFrmTVSignals.StopAll;
+var
+  i, iVal : integer;
+  aSig: TTVSignal;
+begin
+  with sg do
+    try
+      BeginUpdate;
+      for I := 2 to RowCount-1 do
+      begin
+        iVal  := Integer(Objects[RUN_COL, i]);
+        if iVal = CKOFF then Continue;
+
+        aSig  := TTVSignal(Objects[OBJ_COL, i]);
+//        Objects[RUN_COL, i] := Pointer(CKOFF);
+        Stop(aSig, i);
+      end;
+    finally
+      EndUpdate;
+    end;
+end;
+
+procedure TFrmTVSignals.stsLogDrawPanel(StatusBar: TStatusBar;
+  Panel: TStatusPanel; const Rect: TRect);
+  var
+    clFont, clBack: TColor;
+    sTxt  : string;
+    rRect : TRect;
+begin
+  // 0 : 정상  1 : 환이격 2:  시세  3: 환  4: 타임
+//  if StatusBar.Tag = 0 then begin
+//    StatusBar.Canvas.Brush.Color := clBtnFace;
+//    StatusBar.Canvas.Font.Color := clBlack;
+//  end
+
+  clFont:= clBlack;
+  case StatusBar.Tag of
+    0: clBack := clBtnFace;
+    5: begin clBack := clGray; clFont:= clWhite; end;   // 같은 값 지속
+    else clBack := clYellow;
+  end;
+
+  with StatusBar do
+  begin
+    sTxt :=  StatusBar.Panels[4].Text;
+    Canvas.Brush.Color := clBack;
+    Canvas.Font.Color  := clFont;
+    rRect := Rect;
+    Canvas.FillRect(rRect);
+    DrawText(Canvas.Handle, PChar( sTxt), Length( sTxt ), rRect, DT_VCENTER or DT_CENTER );
+  end;
+  //
+end;
+
+procedure TFrmTVSignals.Timer1Timer(Sender: TObject);
+var
+  i : TExchangeKind;
+  bDsp: boolean;
+begin
+  //
+  bDsp := true;
+  for I := ekBinance to High(TExchangeKind) do begin
+    if FSymbols[i] = nil then
+      bDsp := false;
+
+    if FSymbols[i] <> nil then
+      if (FSymbols[i].Asks[0].Price < EPSILON) or (FSymbols[i].Bids[0].Price < EPSILON) then
+        bDsp := false;
+  end;
+
+  if bDsp then
+  begin
+    DisplayAllKip;
+    DisplayLog;
+
+//    Label3.Caption  := FTVSignals.OrdQtyResult[ekUpbit];
+//    Label4.Caption  := FTVSignals.OrdQtyResult[ekBithumb];
+//
+//    Label5.Caption  := FTVSignals.AvlAmtResult[ekUpbit];
+//    Label6.Caption  := FTVSignals.AvlAmtResult[ekBithumb];
+  end;
+
+end;
+
+procedure TFrmTVSignals.TradeProc(Sender, Receiver: TObject; DataID: Integer;
+  DataObj: TObject; EventID: TDistributorID);
+  var i: integer;
+begin
+  if ( Receiver <> Self ) or ( DataObj = nil ) then Exit;
+
+  case Integer(EventID) of
+    ORDER_ACCEPTED,
+    ORDER_REJECTED,
+    ORDER_CANCELED,
+    ORDER_CHANGED: FTVSignals.OnOrder(DataObj as TOrder, Integer(EventID));
+    ORDER_FILLED: FTVSignals.OnFill((DataObj as TOrder).Fills.LastFill);
+    POSITION_UPDATE : OnPosition( DataObj as TPosition);
+  end;
+end;
+
+end.

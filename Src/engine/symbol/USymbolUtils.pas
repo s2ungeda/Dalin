@@ -1,0 +1,503 @@
+unit USymbolUtils;
+
+interface
+
+uses
+  USymbols
+  ;
+
+  // asending
+function CompareDailyAmount(Data1, Data2: Pointer): Integer;
+function CompareDayUpDown(Data1, Data2: Pointer): Integer;
+function CompareLast(Data1, Data2: Pointer): Integer;
+function CompareBidPrice(Data1, Data2: Pointer): Integer;
+function CompareAskPrice(Data1, Data2: Pointer): Integer;
+function CompareKimpPrice(Data1, Data2: Pointer): Integer;
+function CompareWDCPrice(Data1, Data2: Pointer): Integer;
+function CompareSPrice(Data1, Data2: Pointer): Integer;
+function CompareExSPrice(Data1, Data2: Pointer): Integer;
+function CompareBasis(Data1, Data2: Pointer): Integer;
+function CompareDayHigh(Data1,Data2: Pointer) : integer;
+function CompareDayLow(Data1,Data2: Pointer) : integer;
+
+
+// desending
+
+function CompareDailyAmount2(Data1, Data2: Pointer): Integer;
+function CompareDayUpDown2(Data1, Data2: Pointer): Integer;
+function CompareLast2(Data1, Data2: Pointer): Integer;
+function CompareBidPrice2(Data1, Data2: Pointer): Integer;
+function CompareAskPrice2(Data1, Data2: Pointer): Integer;
+function CompareKimpPrice2(Data1, Data2: Pointer): Integer;
+function CompareWDCPrice2(Data1, Data2: Pointer): Integer;
+function CompareSPrice2(Data1, Data2: Pointer): Integer;
+function CompareExSPrice2(Data1, Data2: Pointer): Integer;
+function CompareBasis2(Data1,Data2: Pointer) : integer;
+function CompareDayHigh2(Data1,Data2: Pointer) : integer;
+function CompareDayLow2(Data1,Data2: Pointer) : integer;
+
+implementation
+
+uses
+  GApp
+  , UApiTypes
+  ;
+{ Symbol Sort }
+
+function CompareDailyAmount(Data1, Data2: Pointer): Integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+begin
+  if Symbol1.DayAmount < Symbol2.DayAmount then
+    Result := 1
+  else if Symbol1.DayAmount > Symbol2.DayAmount  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+function CompareDayUpDown(Data1, Data2: Pointer): Integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+  dUpDown1, dUpDown2, dTmp1, dTmp2 : double;
+begin
+//  if Symbol1.DayUpDown < Symbol2.DayUpDown then
+//    Result := 1
+//  else if Symbol1.DayUpDown > Symbol2.DayUpDown  then
+//    Result := -1
+//  else
+//    Result := 0;
+
+
+ if Symbol1.PrevClose <= 0 then dTmp1 := 1
+  else dTmp1 := Symbol1.PrevClose;
+
+  if Symbol2.PrevClose <= 0 then dTmp2 := 1
+  else dTmp2 := Symbol2.PrevClose;
+
+
+  dUpDown1 := ( Symbol1.Last - Symbol1.PrevClose ) / dTmp1 * 100;
+  dUpDown2 := ( Symbol2.Last - Symbol2.PrevClose ) / dTmp2 * 100;
+
+  if dUpDown1 < dUpDown2 then
+    Result := 1
+  else if dUpDown1 > dUpDown2  then
+    Result := -1
+  else
+    Result := 0;
+
+end;
+
+function CompareLast(Data1, Data2: Pointer): Integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+begin
+  if Symbol1.Last < Symbol2.Last then
+    Result := 1
+  else if Symbol1.Last > Symbol2.Last  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+function CompareBidPrice(Data1, Data2: Pointer): Integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+begin
+  if Symbol1.Bids[0].Price < Symbol2.Bids[0].Price then
+    Result := 1
+  else if Symbol1.Bids[0].Price > Symbol2.Bids[0].Price  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+
+function CompareAskPrice(Data1, Data2: Pointer): Integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+begin
+  if Symbol1.Asks[0].Price < Symbol2.Asks[0].Price then
+    Result := 1
+  else if Symbol1.Asks[0].Price > Symbol2.Asks[0].Price  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+
+function CompareKimpPrice(Data1, Data2: Pointer): Integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+begin
+  if Symbol1.KimpPrice < Symbol2.KimpPrice then
+    Result := 1
+  else if Symbol1.KimpPrice > Symbol2.KimpPrice  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+function CompareWDCPrice(Data1, Data2: Pointer): Integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+begin
+  if Symbol1.WDCPrice < Symbol2.WDCPrice then
+    Result := 1
+  else if Symbol1.WDCPrice > Symbol2.WDCPrice  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+
+function CompareSPrice(Data1, Data2: Pointer): Integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+begin
+
+  if Symbol1.SPValue[0] < Symbol2.SPValue[0] then
+    Result := 1
+  else if Symbol1.SPValue[0] > Symbol2.SPValue[0]  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+
+function CompareExSPrice(Data1, Data2: Pointer): Integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+begin
+
+  if Symbol1.SPValue[1] < Symbol2.SPValue[1] then
+    Result := 1
+  else if Symbol1.SPValue[1] > Symbol2.SPValue[1]  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+
+
+function CompareBasis(Data1, Data2: Pointer): Integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+
+  pSymbo11, pSymbol2 : TSymbol;
+  dBasis1, dBasis2 : double;
+begin
+
+  pSymbo11 := App.Engine.SymbolCore.BaseSymbols.FindSymbol( Symbol1.Spec.BaseCode, ekBinance, eaFutUsdt );
+  if pSymbo11 <> nil then
+    dBasis1 := pSymbo11.Basis
+  else
+    dBasis1 := 0.0;
+
+  pSymbol2 := App.Engine.SymbolCore.BaseSymbols.FindSymbol( Symbol2.Spec.BaseCode, ekBinance, eaFutUsdt );
+  if pSymbol2 <> nil then
+    dBasis2 := pSymbol2.Basis
+  else
+    dBasis2 := 0.0;
+
+
+  if dBasis1 < dBasis2 then
+    Result := 1
+  else if dBasis1 > dBasis2  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+
+function CompareDayHigh(Data1,Data2: Pointer) : integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+
+  dHigh1, dHigh2, dTmp1, dTmp2 : double;
+begin
+
+  if Symbol1.PrevClose <= 0 then dTmp1 := 1
+  else dTmp1 := Symbol1.PrevClose;
+
+  if Symbol2.PrevClose <= 0 then dTmp2 := 1
+  else dTmp2 := Symbol2.PrevClose;
+
+  dHigh1  := (Symbol1.DayHigh - Symbol1.PrevClose) / dTmp1 * 100;
+  dHigh2  := (Symbol2.DayHigh - Symbol2.PrevClose) / dTmp2 * 100;
+
+
+  if dHigh1 < dHigh2 then
+    Result := 1
+  else if dHigh1 > dHigh2  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+
+function CompareDayLow(Data1,Data2: Pointer) : integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+
+ dLow1, dLow2, dTmp1, dTmp2 : double;
+
+begin
+
+  if Symbol1.PrevClose <= 0 then dTmp1 := 1
+  else dTmp1 := Symbol1.PrevClose;
+
+  if Symbol2.PrevClose <= 0 then dTmp2 := 1
+  else dTmp2 := Symbol2.PrevClose;
+
+  dLow1  := (Symbol1.DayLow - Symbol1.PrevClose) / dTmp1 * 100;
+  dLow2  := (Symbol2.DayLow - Symbol2.PrevClose) / dTmp2 * 100;
+
+  if dLow1 < dLow2 then
+    Result := 1
+  else if dLow1 > dLow2  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+
+//------------------------------------------------------------------------------
+
+function CompareDailyAmount2(Data1, Data2: Pointer): Integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+begin
+  if Symbol1.DayAmount > Symbol2.DayAmount then
+    Result := 1
+  else if Symbol1.DayAmount < Symbol2.DayAmount  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+function CompareDayUpDown2(Data1, Data2: Pointer): Integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+  dUpDown1, dUpDown2, dTmp1, dTmp2 : double;
+begin
+//  if Symbol1.DayUpDown > Symbol2.DayUpDown then
+//    Result := 1
+//  else if Symbol1.DayUpDown < Symbol2.DayUpDown  then
+//    Result := -1
+//  else
+//    Result := 0;
+
+  if Symbol1.PrevClose <= 0 then dTmp1 := 1
+  else dTmp1 := Symbol1.PrevClose;
+
+  if Symbol2.PrevClose <= 0 then dTmp2 := 1
+  else dTmp2 := Symbol2.PrevClose;
+
+
+  dUpDown1 := ( Symbol1.Last - Symbol1.PrevClose ) / dTmp1 * 100;
+  dUpDown2 := ( Symbol2.Last - Symbol2.PrevClose ) / dTmp2 * 100;
+
+
+  if dUpDown1 > dUpDown2 then
+    Result := 1
+  else if dUpDown1 < dUpDown2  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+function CompareLast2(Data1, Data2: Pointer): Integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+begin
+  if Symbol1.Last > Symbol2.Last then
+    Result := 1
+  else if Symbol1.Last < Symbol2.Last  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+function CompareBidPrice2(Data1, Data2: Pointer): Integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+begin
+  if Symbol1.Bids[0].Price > Symbol2.Bids[0].Price then
+    Result := 1
+  else if Symbol1.Bids[0].Price < Symbol2.Bids[0].Price  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+
+function CompareAskPrice2(Data1, Data2: Pointer): Integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+begin
+  if Symbol1.Asks[0].Price > Symbol2.Asks[0].Price then
+    Result := 1
+  else if Symbol1.Asks[0].Price < Symbol2.Asks[0].Price  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+function CompareWDCPrice2(Data1, Data2: Pointer): Integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+begin
+  if Symbol1.WDCPrice > Symbol2.WDCPrice then
+    Result := 1
+  else if Symbol1.WDCPrice < Symbol2.WDCPrice  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+
+function CompareKimpPrice2(Data1, Data2: Pointer): Integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+begin
+  if Symbol1.KimpPrice > Symbol2.KimpPrice then
+    Result := 1
+  else if Symbol1.KimpPrice < Symbol2.KimpPrice  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+
+function CompareSPrice2(Data1, Data2: Pointer): Integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+begin
+  if Symbol1.SPValue[0] > Symbol2.SPValue[0] then
+    Result := 1
+  else if Symbol1.SPValue[0] < Symbol2.SPValue[0]  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+
+function CompareExSPrice2(Data1, Data2: Pointer): Integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+begin
+  if Symbol1.SPValue[1] > Symbol2.SPValue[1] then
+    Result := 1
+  else if Symbol1.SPValue[1] < Symbol2.SPValue[1]  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+function CompareBasis2(Data1,Data2: Pointer) : integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+  pSymbo11, pSymbol2 : TSymbol;
+  dBasis1, dBasis2 : double;
+begin
+
+  pSymbo11 := App.Engine.SymbolCore.BaseSymbols.FindSymbol( Symbol1.Spec.BaseCode, ekBinance, eaFutUsdt );
+  if pSymbo11 <> nil then
+    dBasis1 := pSymbo11.Basis
+  else
+    dBasis1 := 0.0;
+
+  pSymbol2 := App.Engine.SymbolCore.BaseSymbols.FindSymbol( Symbol2.Spec.BaseCode, ekBinance, eaFutUsdt );
+  if pSymbol2 <> nil then
+    dBasis2 := pSymbol2.Basis
+  else
+    dBasis2 := 0.0;
+
+  if dBasis1 > dBasis2 then
+    Result := 1
+  else if dBasis1 < dBasis2  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+
+function CompareDayHigh2(Data1,Data2: Pointer) : integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+
+  dHigh1, dHigh2, dTmp1, dTmp2 : double;
+begin
+
+  if Symbol1.PrevClose <= 0 then dTmp1 := 1
+  else dTmp1 := Symbol1.PrevClose;
+
+  if Symbol2.PrevClose <= 0 then dTmp2 := 1
+  else dTmp2 := Symbol2.PrevClose;
+
+  dHigh1  := (Symbol1.DayHigh - Symbol1.PrevClose) / dTmp1 * 100;
+  dHigh2  := (Symbol2.DayHigh - Symbol2.PrevClose) / dTmp2 * 100;
+
+  if dHigh1 > dHigh2 then
+    Result := 1
+  else if dHigh1 < dHigh2  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+function CompareDayLow2(Data1,Data2: Pointer) : integer;
+var
+  Symbol1: TSymbol absolute Data1;
+  Symbol2: TSymbol absolute Data2;
+
+  dLow1, dLow2, dTmp1, dTmp2 : double;
+
+begin
+
+  if Symbol1.PrevClose <= 0 then dTmp1 := 1
+  else dTmp1 := Symbol1.PrevClose;
+
+  if Symbol2.PrevClose <= 0 then dTmp2 := 1
+  else dTmp2 := Symbol2.PrevClose;
+
+  dLow1  := (Symbol1.DayLow - Symbol1.PrevClose) / dTmp1 * 100;
+  dLow2  := (Symbol2.DayLow - Symbol2.PrevClose) / dTmp2 * 100;
+
+  if dLow1 > dLow2 then
+    Result := 1
+  else if dLow1 < dLow2  then
+    Result := -1
+  else
+    Result := 0;
+end;
+
+
+
+//-----------------------------------------------------------------------------
+
+end.

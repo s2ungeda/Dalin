@@ -1,0 +1,161 @@
+unit UBithActiveOrderThread;
+
+interface
+
+uses
+  System.Classes, System.SysUtils, System.SyncObjs, System.DateUtils,
+
+  Windows,
+
+  UOrders, URestItems,
+
+  UApiTypes, UApiConsts
+  ;
+
+type
+
+  TResData = record
+    OutJson : string;
+    Order   : TOrder;
+    Name    : string;
+    procedure Clear;
+  end;
+
+  TGetActOrdThread = class(TThread)
+  private
+    FEvent  : TEvent;
+    FExKind: TExchangeKind;
+    FCount, FIndex: integer;
+    FData : TResData;
+    FRest : TReqeustItem;
+    FLastBalTime: TDateTime;
+    { Private declarations }
+  protected
+    procedure Execute; override;
+    procedure SyncProc;
+  public
+    constructor Create;
+    destructor Destroy; override;
+
+    procedure DoResume;
+
+    property ExKind : TExchangeKind read FExKind write FExKind;
+    property LastBalTime : TDateTime read FLastBalTime write FLastBalTime;
+
+  end;
+
+implementation
+
+uses
+  GApp, GLibs, UTypes
+  , Rest.Types
+  , UEncrypts
+  , IdCoderMIME, IdGlobal
+  , UBithManager , UUpbitManager, UBinanceManager
+  , UUpbitSpot
+
+  ;
+
+constructor TGetActOrdThread.Create;
+begin
+  inherited Create(true);
+  FreeOnTerminate := false;
+  Priority  := tpNormal;
+
+  FIndex  := 0;
+  FCount  := 0;
+
+  FLastBalTime  := 0;
+end;
+
+destructor TGetActOrdThread.Destroy;
+begin
+  FEvent.Free;
+  FRest.Free;
+  inherited;
+end;
+
+procedure TGetActOrdThread.DoResume;
+begin
+  if Suspended then
+    Resume;
+end;
+
+procedure TGetActOrdThread.Execute;
+var
+  idx, i, iGap : integer;
+  aOrder, aTmp : TOrder;
+  sTime, sVal, sParam1, sSig, sBody : string;
+begin
+  { Place thread code here }
+  FRest.Req.init(App.Engine.ApiConfig.GetBaseUrl(ekBithumb, eaSpot ) );
+  FRest.AResource :=  '/info/orders';
+
+  for I := 0 to App.Engine.SymbolCore.Symbols[ekBithumb].Count-1 do
+  begin
+
+    sParam1	:= App.Engine.SymbolCore.Symbols[ekBithumb].Symbols[i].Code;
+
+    sTime := GetTimestamp;
+    sVal  := EncodePath( FRest.AResource, Format('endPoint=%s&order_currency=%s', [ FRest.AResource, sParam1] ), sTime );
+    FRest.SetBithumbSig( sVal, sTime );
+
+    with FRest.Req do
+    begin
+      SetParam('endPoint', FRest.AResource, TRESTRequestParameterKind.pkREQUESTBODY);
+      SetParam('order_currency', sParam1,  TRESTRequestParameterKind.pkREQUESTBODY);
+
+      if not Request( rmPOST, FRest.AResource, '', FRest.JsonData, FRest.OutData) then
+      begin
+         App.Log( llError, '', 'Failed %s ParseBalance-Thread (%s, %s)',
+            [ TExchangeKindDesc[FExKind], FRest.JsonData, FRest.OutData] );
+         FData.Clear;
+         Continue;
+      end;
+
+      FData.OutJson := FRest.JsonData;
+      Synchronize( SyncProc );
+      FData.Clear;
+    end;
+  end;
+
+  App.Log(llInfo, '%s', 'TGetActOrdThread thread terminated');
+end;
+
+
+procedure TGetActOrdThread.SyncProc;
+begin
+  if FData.OutJson <> '' then
+    TBithManager(App.Engine.ApiManager.ExManagers[ekBithumb]).Parse.ParseOrders(FData.OutJson);
+//  if FData.Order <> nil then
+//  try
+//    case FExKind of
+//      ekBinance:
+//        if FData.Name = BALANCE then
+//          TBinanceManager(App.Engine.ApiManager.ExManagers[FExKind]).Parse.ParseFutBalance(FData.OutJson) ;
+//      ekUpbit:
+//        if FData.Name = BALANCE then
+//          TUpbitManager(App.Engine.ApiManager.ExManagers[FExKind]).Parse.ParseAccounts(FData.OutJson)
+//        else if (FData.Name = ORD_DETAIL) and (FData.Order <> nil) then
+//          TUpbitManager(App.Engine.ApiManager.ExManagers[FExKind]).Parse.ParseSpotOrderDetail(FData.OutJson, FData.Order.OrderNo) ;
+//      ekBithumb:
+//        if (FData.Order <> nil ) and (FData.Name = ORD_DETAIL) then
+//          TBithManager(App.Engine.ApiManager.ExManagers[FExKind]).Parse.ParseSpotOrderDetail(FData.OutJson, FData.Order.OrderNo)
+//        else if FData.Name = BALANCE then
+//          TBithManager(App.Engine.ApiManager.ExManagers[FExKind]).Parse.ParseBalance(FData.OutJson);
+//    end;
+//  except
+//    on e : exception do
+//      App.Log(llError,'%s Exchange thread error : %s', [ ExKindToStr(FExKind), e.Message] );
+//  end;
+end;
+
+{ TResData }
+
+procedure TResData.Clear;
+begin
+  OutJson := '';
+  Order   := nil;
+end;
+
+end.

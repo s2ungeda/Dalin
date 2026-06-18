@@ -1,0 +1,87 @@
+unit USimpleShareMemory;
+
+interface
+
+uses
+  Windows, Sysutils
+  ;
+
+type
+  TSimpleShareMemory = class
+    const
+      BUF_SIZE = 256;
+    public
+      class function Read(sName: string): string;
+      class function Write(sName: string; sMsg: AnsiString): boolean;
+  end;
+
+
+implementation
+
+{ TSimpleShareMemory }
+
+class function TSimpleShareMemory.Read(sName: string): string;
+var
+  hMapFile : THandle;
+  pBuf : PAnsiChar;
+begin
+  Result := '';
+  if Length(Trim(sName)) = 0 then Exit;
+
+  hMapFile := OpenFileMapping(FILE_MAP_ALL_ACCESS, false, PChar(sName));
+  if hMapFile = 0 then
+  begin
+    raise Exception.Create('SM('+sName+') mapping error !!' + intToStr(GetLastError));
+    Exit;
+  end;
+
+  pBuf := MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, BUF_SIZE);
+  if pBuf = nil then
+  begin
+    raise Exception.Create('SM('+sName+') View error !!' + intToStr(GetLastError));
+    CloseHandle(hMapFile);
+    Exit;
+  end;
+
+  Result := pBuf;
+  UnmapViewOfFile(pBuf);
+  CloseHandle(hMapFile);
+
+end;
+
+class function TSimpleShareMemory.Write(sName: string;
+  sMsg: AnsiString): boolean;
+var
+  hMapFile : THandle;
+  pBuf : PAnsiChar;
+begin
+  Result := false;
+  if Length(Trim(sName)) = 0 then Exit;
+
+  hMapFile := OpenFileMapping(FILE_MAP_ALL_ACCESS, false, PChar(sName));
+  if hMapFile = 0 then
+  begin
+    hMapFile := CreateFileMapping(INVALID_HANDLE_VALUE, nil, PAGE_READWRITE,
+      0, BUF_SIZE, PChar(sName));
+    if hMapFile = 0 then
+    begin
+      raise Exception.Create('SM('+sName+') mapping error !!' + intToStr(GetLastError));
+      Exit;
+    end;
+  end;
+
+  pBuf := MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, BUF_SIZE);
+  if pBuf = nil then
+  begin
+    raise Exception.Create('SM('+sName+') View error !!' + intToStr(GetLastError));
+    CloseHandle(hMapFile);
+    Exit;
+  end;
+
+  ZeroMemory(pBuf, BUF_SIZE);
+  CopyMemory(pBuf, PAnsiChar(sMsg), Length(sMsg));
+  Result := true;
+  UnmapViewOfFile(pBuf);
+end;
+
+end.

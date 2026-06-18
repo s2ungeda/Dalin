@@ -1,0 +1,215 @@
+object FrmWithdrawAddress: TFrmWithdrawAddress
+  Left = 0
+  Top = 0
+  Caption = #52636#44552' '#54728#50857' '#51452#49548
+  ClientHeight = 840
+  ClientWidth = 1136
+  Color = clWhite
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -18
+  Font.Name = 'Segoe UI'
+  Font.Style = []
+  Position = poScreenCenter
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  PixelsPerInch = 144
+  TextHeight = 25
+  object PnlTabs: TPanel
+    Left = 0
+    Top = 0
+    Width = 1136
+    Height = 60
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Align = alTop
+    BevelOuter = bvNone
+    Color = clWhite
+    Padding.Left = 24
+    Padding.Top = 6
+    Padding.Bottom = 6
+    TabOrder = 0
+    ExplicitWidth = 1126
+    object SbtnAll: TSpeedButton
+      Left = 24
+      Top = 6
+      Width = 117
+      Height = 42
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      GroupIndex = 1
+      Down = True
+      Caption = #51204#52404
+      Flat = True
+      Font.Charset = DEFAULT_CHARSET
+      Font.Color = clWindowText
+      Font.Height = -18
+      Font.Name = 'Segoe UI'
+      Font.Style = []
+      ParentFont = False
+      OnClick = TabClick
+    end
+    object SbtnBinance: TSpeedButton
+      Tag = 1
+      Left = 147
+      Top = 6
+      Width = 117
+      Height = 42
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      GroupIndex = 1
+      Caption = 'Binance'
+      Flat = True
+      Font.Charset = DEFAULT_CHARSET
+      Font.Color = clWindowText
+      Font.Height = -18
+      Font.Name = 'Segoe UI'
+      Font.Style = []
+      ParentFont = False
+      OnClick = TabClick
+    end
+    object SbtnUpbit: TSpeedButton
+      Tag = 2
+      Left = 270
+      Top = 6
+      Width = 117
+      Height = 42
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      GroupIndex = 1
+      Caption = 'Upbit'
+      Flat = True
+      Font.Charset = DEFAULT_CHARSET
+      Font.Color = clWindowText
+      Font.Height = -18
+      Font.Name = 'Segoe UI'
+      Font.Style = []
+      ParentFont = False
+      OnClick = TabClick
+    end
+    object SbtnBithumb: TSpeedButton
+      Tag = 3
+      Left = 393
+      Top = 6
+      Width = 117
+      Height = 42
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      GroupIndex = 1
+      Caption = 'Bithumb'
+      Flat = True
+      Font.Charset = DEFAULT_CHARSET
+      Font.Color = clWindowText
+      Font.Height = -18
+      Font.Name = 'Segoe UI'
+      Font.Style = []
+      ParentFont = False
+      OnClick = TabClick
+    end
+    object SbtnMEXC: TSpeedButton
+      Tag = 4
+      Left = 516
+      Top = 6
+      Width = 117
+      Height = 42
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      GroupIndex = 1
+      Caption = 'MEXC'
+      Flat = True
+      Font.Charset = DEFAULT_CHARSET
+      Font.Color = clWindowText
+      Font.Height = -18
+      Font.Name = 'Segoe UI'
+      Font.Style = []
+      ParentFont = False
+      Visible = False
+      OnClick = TabClick
+    end
+    object BtnAdd: TButton
+      Left = 1044
+      Top = 6
+      Width = 92
+      Height = 48
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Align = alRight
+      Caption = #51312' '#54924
+      TabOrder = 0
+      OnClick = BtnAddClick
+      ExplicitLeft = 1034
+    end
+  end
+  object Grid: TDrawGrid
+    Left = 0
+    Top = 60
+    Width = 1136
+    Height = 752
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Align = alClient
+    BorderStyle = bsNone
+    ColCount = 6
+    DefaultColWidth = 96
+    DefaultRowHeight = 66
+    DefaultDrawing = False
+    FixedCols = 0
+    GridLineWidth = 0
+    Options = [goRowSelect, goThumbTracking]
+    TabOrder = 1
+    OnDrawCell = GridDrawCell
+    OnMouseDown = GridMouseDown
+    OnMouseMove = GridMouseMove
+    OnSelectCell = GridSelectCell
+    ExplicitWidth = 1126
+    ExplicitHeight = 750
+    ColWidths = (
+      120
+      100
+      120
+      550
+      180
+      50)
+  end
+  object stBar: TStatusBar
+    Left = 0
+    Top = 812
+    Width = 1136
+    Height = 28
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Panels = <
+      item
+        Width = 50
+      end
+      item
+        Width = 200
+      end>
+    ExplicitTop = 810
+    ExplicitWidth = 1126
+  end
+  object Timer1: TTimer
+    Enabled = False
+    OnTimer = Timer1Timer
+    Left = 496
+    Top = 312
+  end
+end

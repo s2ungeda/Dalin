@@ -1,0 +1,169 @@
+object FrmDalinMain: TFrmDalinMain
+  Left = 0
+  Top = 0
+  Caption = 'Dalin'
+  ClientHeight = 326
+  ClientWidth = 488
+  Color = clBtnFace
+  DefaultMonitor = dmMainForm
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -17
+  Font.Name = 'Tahoma'
+  Font.Style = []
+  Menu = DataModule1.MainMenu1
+  Position = poDesigned
+  OnActivate = FormActivate
+  OnClose = FormClose
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  OnDeactivate = FormDeactivate
+  PixelsPerInch = 144
+  TextHeight = 21
+  object Panel1: TPanel
+    Left = 72
+    Top = 792
+    Width = 267
+    Height = 243
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    TabOrder = 0
+    Visible = False
+    object edtExInterval: TLabeledEdit
+      Left = 84
+      Top = 12
+      Width = 63
+      Height = 29
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      EditLabel.Width = 48
+      EditLabel.Height = 29
+      EditLabel.Margins.Left = 318864
+      EditLabel.Margins.Top = 318864
+      EditLabel.Margins.Right = 318864
+      EditLabel.Margins.Bottom = 318864
+      EditLabel.Caption = #54872#50984#51452#44592
+      LabelPosition = lpLeft
+      NumbersOnly = True
+      TabOrder = 0
+      Text = '5'
+    end
+    object Button1: TButton
+      Left = 167
+      Top = 12
+      Width = 76
+      Height = 35
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #51201#50857
+      TabOrder = 1
+      OnClick = Button1Click
+    end
+    object Edit1: TEdit
+      Left = 131
+      Top = 54
+      Width = 112
+      Height = 29
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      TabOrder = 2
+    end
+    object cbManual: TCheckBox
+      Left = 24
+      Top = 60
+      Width = 99
+      Height = 27
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #49688#46041#54872#50984
+      TabOrder = 3
+    end
+    object Button2: TButton
+      Left = 35
+      Top = 191
+      Width = 112
+      Height = 37
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = 'Button2'
+      TabOrder = 4
+    end
+    object CheckBox1: TCheckBox
+      Left = 24
+      Top = 156
+      Width = 123
+      Height = 27
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = 'detail '#51312#54924
+      TabOrder = 5
+    end
+  end
+  object sg: TStringGrid
+    Left = 0
+    Top = 11
+    Width = 477
+    Height = 255
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    ColCount = 6
+    DefaultColWidth = 96
+    DefaultRowHeight = 29
+    RowCount = 8
+    FixedRows = 0
+    TabOrder = 2
+    ColWidths = (
+      96
+      57
+      101
+      69
+      69
+      69)
+  end
+  object stsBar: TStatusBar
+    Left = 0
+    Top = 299
+    Width = 488
+    Height = 27
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Panels = <
+      item
+        Width = 120
+      end
+      item
+        Width = 201
+      end
+      item
+        Style = psOwnerDraw
+        Width = 77
+      end>
+    OnDrawPanel = stsBarDrawPanel
+    ExplicitTop = 297
+    ExplicitWidth = 478
+  end
+  object QryTimer: TTimer
+    Enabled = False
+    OnTimer = QryTimerTimer
+    Left = 544
+    Top = 72
+  end
+end

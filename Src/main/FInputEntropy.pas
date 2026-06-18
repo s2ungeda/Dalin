@@ -1,0 +1,54 @@
+unit FInputEntropy;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
+  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.Mask, Vcl.ExtCtrls;
+
+type
+  TForm2 = class(TForm)
+    edtInput: TLabeledEdit;
+    Label1: TLabel;
+    Button1: TButton;
+    procedure Button1Click(Sender: TObject);
+    procedure FormKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
+  private
+    { Private declarations }
+  public
+    { Public declarations }
+    function Open : boolean;
+  end;
+
+var
+  Form2: TForm2;
+
+implementation
+
+{$R *.dfm}
+
+procedure TForm2.Button1Click(Sender: TObject);
+begin
+  if edtInput.Text = '' then
+  begin
+    ShowMessage('Entropy 값을 입력하세요');
+    ModalResult := mrNone;
+    Exit;
+  end;
+
+  ModalResult := mrOK;
+end;
+
+procedure TForm2.FormKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
+begin
+  if Key = VK_RETURN then begin
+    Button1Click(edtInput);
+  end;
+end;
+
+function TForm2.Open: boolean;
+begin
+  Result := ShowModal = mrOK;
+end;
+
+end.

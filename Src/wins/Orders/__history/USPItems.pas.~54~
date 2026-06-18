@@ -1,0 +1,529 @@
+unit USPItems;
+
+interface
+
+uses
+  System.SysUtils, System.Classes
+  , UApiTypes, UTypes
+  , UPositions, UOrders, USymbols, UQuoteMerge
+  ;
+
+
+const
+  BU = 1;   // basehoga up
+  BD = 2;   // basehoga down
+  BVD = 3;  // basehoga volume decrease
+  QS  = 4;  // 시세멈춤 3초 이상
+
+  MIN_ORD_AMT = 5000;  // 만원..
+
+type
+
+  TSPType = ( spMajor, spSub );
+
+  TModOrderNotify = procedure( Sender : TObject; DataObj: TObject ) of Object;
+
+  TSPParam = record
+    Code  : string;
+    MajorEx : TExchangeKind;
+    SubEx   : TExchangeKind;
+
+    UseEntry  : boolean;
+    EntryRate : double;
+//    EntryCount: integer;
+//    EntryTick : integer;
+    EntryQty  : double;
+
+    UseLiquid  : boolean;
+    LiquidRate : double;
+//    LiquidCount: integer;
+//    LiquidTick : integer;
+    LiquidQty  : double;
+
+    BasePrice  : integer;
+    BaseTick   : integer;
+    MinVolume  : double;
+
+    LimitEntryPos : double;
+    LimitLiquidPos: double;
+    LimitTradeAmt : double;
+    LimitPL   : double;
+
+    UseHogaMerge  : boolean;
+    HogaMergeUnit : integer;
+
+//    AutoModifyInterval : integer;
+    AutoModifyCount: integer;
+//    AutoModifyTick : integer;
+    AutoModifyLastTick : integer;
+
+    UseMdodifyDelay : boolean;
+    ModifyDelaySec  : double;
+
+    UseVolumeRate : boolean;
+    VolumeRate    : double;
+    AccVolGap     : double;
+    procedure Clear;
+  end;
+
+  TSPWithdrawParam = record
+    addr1 : string;
+    addr2 : string;
+    qty   : string;
+    netType : string;
+    minTerm : integer;
+    spValue : double;
+
+    use  : boolean;
+
+    procedure Assign( const aSrc : TSPWithdrawParam );
+    function  BasicCheck : boolean;
+  end;
+
+  TSPPosition = class( TPosition )
+  public
+    OrgVolume : Double;
+    OrgSide   : Double;
+  end;
+
+  TSpOrderUnit = class
+  public
+    BasePrice : double;
+    BasePriceStr : string;    // 비교를 위해
+
+    OrderPrice : double;
+    OrderPriceStr : string;
+
+    TargetPrice : double;
+    TargetPriceStr : string;    // 비교를 위해
+
+    OrderList : array [TSPType] of TOrderList;
+
+    IsEntry   : boolean;
+
+    OnLog : TTextNotifyEvent;
+
+    Constructor Create;
+    Destructor  Destroy; override;
+
+    procedure Init( aNotify : TTextNotifyEvent; bEntry : boolean );
+    procedure DoCancelOrder( iDiv : integer; sReason : string );
+    procedure CheckOrderList( aType : TSPType);
+
+  end;
+
+
+  TAutoModifyOrder = class
+  private
+    FParam: TSPParam;
+    FCount: integer;
+    FOrder: TOrder;
+
+    FOnModNotify: TModOrderNotify;
+    FOnLog: TTextNotifyEvent;
+    FDone: boolean;
+//    FOrderList: TOrderList;
+
+//    procedure OnTimer( Sender : TObject );
+    procedure WatchOrder(aParam: TSPParam; aMgQuote : TMergedQuote);
+
+  public
+    Constructor Create( aParam : TSPParam; aNotify : TTextNotifyEvent ) ; overload;
+    Destructor  Destroy; override;
+
+    procedure SetOrder( aOrder : TOrder; bDoOrder : boolean );
+
+    property  Order : TOrder read FOrder;
+    property  Count : integer read FCount;
+    property  Param : TSPParam read FParam;
+//    property  Timer : TTimer read FTimer;
+    property  Done  : boolean read FDone;
+    property  OnModNotify : TModOrderNotify read FOnModNotify;
+    property  OnLog : TTextNotifyEvent read FOnLog;
+  end;
+
+
+  TModifyOrderList = class( TList )
+  private
+    FParent: TObject;
+  public
+    constructor Create( aParent : TObject ); overload;
+    destructor Destroy; override;
+    procedure CheckOrder;
+    procedure WatchOrder( aParam : TSPParam ; aMgQuote : TMergedQuote);
+    function New( aParam : TSPParam; aNotify : TTextNotifyEvent ) : TAutoModifyOrder;
+    function Find( aOrder : TOrder ) : TAutoModifyOrder;
+
+    property Parent : TObject read FParent;
+  end;
+
+implementation
+
+uses
+  GApp , GLibs
+  , System.Math
+  , System.Types
+  , USPOrders
+  ;
+
+{ TSPParam }
+
+procedure TSPParam.Clear;
+begin
+  Code := '';
+end;
+
+
+
+{ TSpOrderUnit }
+
+procedure TSpOrderUnit.CheckOrderList(aType: TSPType);
+var
+  i : integer;
+begin
+  i := 0;
+  while i <= OrderList[aType].Count - 1 do
+  begin
+    if not (OrderList[aType].Orders[i].State  in [osReady, osSent, osSrvAcpt, osActive]) then
+      OrderList[aType].Delete(i)
+    else
+      inc(i);
+  end;
+end;
+
+constructor TSpOrderUnit.Create;
+begin
+  OrderList[spMajor] := TOrderList.Create;
+  OrderList[spSub] := TOrderList.Create;
+
+  BasePrice := 0;
+  OrderPrice:= 0;
+
+  BasePriceStr := '';
+  OrderPriceStr:= '';
+end;
+
+destructor TSpOrderUnit.Destroy;
+begin
+  OrderList[spMajor].Free;
+  OrderList[spSub].Free;
+  inherited;
+end;
+
+procedure TSpOrderUnit.DoCancelOrder( iDiv : integer; sReason : string );
+var
+  aOrder : TOrder;
+  i : integer;
+  sTmp : string;
+begin
+//  for aOrder in OrderList[spSub] do
+//    if aOrder <> nil then
+//      if (aOrder.State = osActive) and (not aOrder.Modify) and (aOrder.OrderType = otNormal) then
+//      begin
+//        App.Engine.TradeCore.Orders[aOrder.Symbol.Spec.ExchangeType].NewCancelOrder(
+//          aOrder, aOrder.ActiveQty
+//        ) ;
+//        App.Engine.TradeBroker.Send( aOrder );
+//
+//        if Assigned(OnLog) then
+//          OnLog(Self, Format('%s 주문 취소 : %s', [
+//            ifthenStr( IsEntry, '진입', '청산'), aOrder.Represent ] ));
+//      end;
+
+  for I := 0 to OrderList[spSub].Count-1 do
+  begin
+    aOrder  := OrderList[spSub].Orders[i];
+    if aOrder <> nil then
+      if (aOrder.OrderType = otNormal) and (aOrder.State = osActive) and (not aOrder.Modify) then
+      begin
+        App.Engine.TradeCore.Orders[aOrder.Symbol.Spec.ExchangeType].NewCancelOrder(
+          aOrder, aOrder.ActiveQty
+        ) ;
+        App.Engine.TradeBroker.Send( aOrder );
+
+        if Assigned(OnLog) then begin
+          sTmp := '';
+          case iDiv of
+            BU : sTmp := '호가 상승';
+            BD : sTmp := '호가 하락';
+            BVD : sTmp := '잔량 감소';
+            QS  : sTmp := '시세 멈춤';
+          end;
+
+          OnLog(Self, Format('%s 주문 취소 -> %s (%s %s)', [
+            ifthenStr( IsEntry, '진입', '청산'), aOrder.Represent, sTmp, sReason ] ));
+        end;
+      end;
+  end;
+end;
+
+procedure TSpOrderUnit.Init( aNotify : TTextNotifyEvent; bEntry : boolean );
+begin
+  OrderList[spMajor].Clear;
+  OrderList[spSub].Clear;
+  OnLog := aNotify;
+  IsEntry := bEntry;
+end;
+
+{ TAutoModifyOrder }
+
+constructor TAutoModifyOrder.Create( aParam: TSPParam; aNotify : TTextNotifyEvent);
+begin
+  FParam := aParam;
+
+  FCount := 0;
+
+//  FTimer := TTimer.Create( nil );
+//  FTimer.Interval := aParam.AutoModifyInterval * 1000;
+//  FTimer.Enabled  := false;
+//  FTimer.OnTimer  := OnTimer;
+
+  FDone := false;
+//  FOrderList  := TOrderList.Create;
+
+  FOnLog := aNotify;
+end;
+
+destructor TAutoModifyOrder.Destroy;
+begin
+//  FTimer.Free;
+//  FOrderList.Free;
+  inherited;
+end;
+
+//procedure TAutoModifyOrder.OnTimer(Sender: TObject);
+//begin
+//  try
+//    if FOrder = nil then Exit;
+//
+//    if FOrder.State = osActive then
+//    begin
+//      if (not FOrder.Modify)  and (FCount < FParam.AutoModifyCount) then
+//      begin
+//        // 일단 무조건 취소..
+//        App.Engine.TradeCore.Orders[ FOrder.Account.ExchangeKind].NewCancelOrder( FOrder, FOrder.ActiveQty);
+//        App.Engine.TradeBroker.Send( FOrder );
+//        inc(FCount);
+//        if Assigned(FOnLog) then
+//          FOnLog(Self, Format('%s %s 주문 %d.th 취소 : %s, %s', [ ExKindToStr( FOrder.Account.ExchangeKind ),
+//           FOrder.SideToStr, FCount,
+//           FOrder.Symbol.PriceToStr( FOrder.Price ), FOrder.Symbol.QtyToStr( FOrder.ActiveQty)
+//           ] ));
+//      end;
+//    end else
+//    if FOrder.State = osFilled then
+//    begin
+//      FDone := true;
+//      Exit;
+//    end;
+////    if Assigned( FOnModNotify ) then begin
+////      FOnModNotify( Self, FOrder );
+////    end;
+//  finally
+//    FTimer.Enabled  := false;
+//    if FCount = FParam.AutoModifyCount then FDone := true;
+//  end;
+//end;
+
+procedure TAutoModifyOrder.SetOrder(aOrder: TOrder; bDoOrder: boolean);
+begin
+  FOrder  := aOrder;
+//  FTimer.Enabled  := true;
+end;
+
+procedure TAutoModifyOrder.WatchOrder(aParam: TSPParam; aMgQuote : TMergedQuote);
+var
+  res  : TValueRelationship;
+  bCnl : boolean;
+  sReason : string;
+
+  askPrice, bidPrice : double;
+  askVolume, bidVolume : double;
+begin
+
+  try
+
+    if FOrder = nil then Exit;
+
+    bCnl := false;
+
+    if FOrder.State = osActive then
+    begin
+      if (not FOrder.Modify) and (FCount < aParam.AutoModifyCount) then
+      begin
+        if FOrder.Side > 0 then
+        begin
+
+          if aParam.UseHogaMerge then begin
+            bidPrice  := aMgQuote.Bids[0].Price;
+            askVolume := aMgQuote.Asks[0].Volume;
+          end else
+          begin
+            bidPrice  := FOrder.Symbol.Bids[0].Price;
+            askVolume := FOrder.Symbol.Asks[0].Volume;
+          end;
+
+          //res := CompareValue( FOrder.Price, FOrder.Symbol.Bids[0].Price );
+          res := CompareValue( FOrder.Price, bidPrice );
+          // 매수 호가와 같을때
+          if res = 0 then
+          begin
+            if (aParam.MinVolume*3 > askVolume) then begin
+              sReason := Format('매도호가 잔량 감소 %.4f > %.4f', [aParam.MinVolume*3, askVolume]) ;
+              bCnl := true;
+            end;
+          end else
+          if res < 0 then begin
+          // 매수 호가보다 작을때
+            sReason := Format('가격 밀림 %s', [ FOrder.Symbol.PriceToStr(bidPrice) ]);
+            bCnl := true;
+          end;
+
+        end else
+        begin
+
+          if aParam.UseHogaMerge then begin
+            askPrice  := aMgQuote.Asks[0].Price;
+            bidVolume := aMgQuote.Bids[0].Volume;
+          end else
+          begin
+            askPrice  := FOrder.Symbol.Asks[0].Price;
+            bidVolume := FOrder.Symbol.Bids[0].Volume;
+          end;
+
+          res := CompareValue( FOrder.Price, askPrice );
+          // 매도 호가와 같을때
+          if res = 0 then
+          begin
+            if (aParam.MinVolume*3 > bidVolume) then begin
+              sReason := Format('매수호가 잔량 감소 %.4f > %.4f', [aParam.MinVolume*2, bidVolume]) ;
+              bCnl := true;
+            end;
+          end else
+          if res > 0 then begin
+          // 매도 호가보다 클때
+            sReason := Format('가격 밀림 %s', [ FOrder.Symbol.PriceToStr(askPrice) ]);
+            bCnl := true;
+          end;
+
+        end;
+
+        if bCnl then
+        begin
+
+          App.Engine.TradeCore.Orders[ FOrder.Account.ExchangeKind].NewCancelOrder( FOrder, FOrder.ActiveQty);
+          App.Engine.TradeBroker.Send( FOrder );
+
+          inc(FCount);
+
+          if Assigned(FOnLog) then
+            FOnLog(Self, Format('%s %s 정정을 위한 주문 %d.th 취소 : %s, %s, %s (%s)', [ ExKindToStr( FOrder.Account.ExchangeKind ),
+             FOrder.SideToStr, FCount,
+             FOrder.Symbol.PriceToStr( FOrder.Price ), FOrder.Symbol.QtyToStr( FOrder.ActiveQty),
+             FOrder.OrderNo, sReason
+             ] ));
+        end;
+
+      end;
+    end else
+    if FOrder.State = osFilled then
+    begin
+      FDone := true;
+      Exit;
+    end;
+
+  finally
+    if FCount = FParam.AutoModifyCount then FDone := true;
+  end;
+
+end;
+
+{ TModifyOrderList }
+
+procedure TModifyOrderList.CheckOrder;
+var
+  i : integer;
+  aOrder : TOrder;
+begin
+
+  for I := Count-1 downto 0 do begin
+    aOrder := TAutoModifyOrder(Items[i]).Order;
+    if aOrder <> nil then
+      if not (aOrder.State in [osReady, osSent, osSrvAcpt, osActive]) then
+      begin
+        TAutoModifyOrder(Items[i]).Free;
+        Delete(i);
+      end;
+  end;
+
+end;
+
+constructor TModifyOrderList.Create(aParent: TObject);
+begin
+  FParent := aParent;
+end;
+
+destructor TModifyOrderList.Destroy;
+var
+  I: Integer;
+begin
+  for I := Count-1 downto 0 do
+    TAutoModifyOrder(Items[i]).Free;
+  inherited;
+end;
+
+function TModifyOrderList.Find(aOrder: TOrder): TAutoModifyOrder;
+var
+  i : integer;
+begin
+  Result := nil;
+
+  for I := Count-1 downto 0 do
+    if TAutoModifyOrder(Items[i]).Order = aOrder then
+    begin
+      Result := TAutoModifyOrder(Items[i]);
+      break;
+    end;
+end;
+
+function TModifyOrderList.New(aParam: TSPParam; aNotify: TTextNotifyEvent): TAutoModifyOrder;
+begin
+  Result := TAutoModifyOrder.Create( aParam, aNotify);
+  Add( Result );
+end;
+
+procedure TModifyOrderList.WatchOrder(aParam: TSPParam; aMgQuote : TMergedQuote );
+var
+  i : integer;
+begin
+
+  for I := Count-1 downto 0 do
+    TAutoModifyOrder(Items[i]).WatchOrder(aParam, aMgQuote);
+
+end;
+
+{ TSPWithdrawParam }
+
+procedure TSPWithdrawParam.Assign(const aSrc: TSPWithdrawParam);
+begin
+  addr1 := aSrc.addr1;
+  addr2 := aSrc.addr2;
+  qty   := aSrc.qty;
+  netType := aSrc.netType;
+  minTerm := aSrc.minTerm;
+  spValue := aSrc.spValue;
+  use     := aSrc.use;
+end;
+
+function TSPWithdrawParam.BasicCheck: boolean;
+begin
+  Result := false;
+  if addr1 = '' then Exit;
+  if qty = '' then Exit;
+  if netType = '' then Exit;
+  if minTerm <= 0 then Exit;
+  if CheckZero(spValue)  then Exit;
+  Result := true;
+end;
+
+end.

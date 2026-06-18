@@ -1,0 +1,63 @@
+unit UNS1Items;
+
+interface
+
+uses
+  System.SysUtils, System.Classes,
+
+  UDecimalHelper
+  ;
+
+type
+
+  TNS1Param = record
+
+    orderQty : double;
+    orderQty_s : string;
+    startHoga: integer;
+    tick     : integer;
+    count    : integer;
+
+    procedure Init;
+    procedure SetParm( const sQty : string; const iHoga, iTick, iCnt : integer);
+    procedure Assign( const aParam : TNS1Param);
+  end;
+
+
+implementation
+
+{ TSPParam }
+
+procedure TNS1Param.Assign(const aParam: TNS1Param);
+begin
+  orderQty := aParam.orderQty;
+  startHoga:= aParam.startHoga;
+  tick     := aParam.tick;
+  count    := aParam.count;
+
+  orderQty_s := aParam.orderQty_s;
+end;
+
+procedure TNS1Param.Init;
+begin
+  orderQty := 0;
+  startHoga:= 3;
+  tick     := 1;
+  count    := 2;
+
+  orderQty_s := '';
+end;
+
+procedure TNS1Param.SetParm(const sQty : string; const iHoga, iTick, iCnt : integer);
+var
+  bInt : TDecimalhelper;
+begin
+  orderQty_s  := sQty;
+  orderQty    := bInt.StrToDouble(sQty);
+
+  startHoga := iHoga;
+  tick      := iTick;
+  count     := iCnt;
+end;
+
+end.

@@ -1,0 +1,34 @@
+unit UNS1Items;
+
+interface
+
+uses
+  System.SysUtils, System.Classes
+  ;
+
+type
+
+  TNS1Param = record
+
+    orderQty : double;
+    startHoga: integer;
+    tick     : integer;
+    count    : integer;
+
+    procedure Init;
+  end;
+
+
+implementation
+
+{ TSPParam }
+
+procedure TNS1Param.Init;
+begin
+  orderQty := 0;
+  startHoga:= 3;
+  tick     := 1;
+  count    := 2;
+end;
+
+end.

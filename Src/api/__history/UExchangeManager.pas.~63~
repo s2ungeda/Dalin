@@ -1,0 +1,486 @@
+unit UExchangeManager;
+interface
+uses
+  system.Classes, system.SysUtils,
+  UExchange     , UWebSockets,   USymbols,   UQuoteTimers,
+  UOrders, UExchangeThread, UApiWithdraw,
+  UApiTypes
+
+  ;
+type
+
+  TExApiArray = array [ TExchangeApiType ] of TExchange;
+  TExchangeThreadArray = array [TExchangeKind] of TExchangeThread;
+
+  TExchangeManager = class
+  private
+
+    FExchangeKind: TExchangeKind;
+//    FExchangeIdx: integer;
+    FCodes: TStrings;
+    FTimer: TQuoteTimer;
+    FDone: boolean;
+    FRcvCnt: int64;
+    FSndCnt: int64;
+    FExchangeThread: TExchangeThreadArray;
+    FWithdraw: TApiWithdraw;
+    FExchanges: TExApiArray;
+
+    function CreateMarket( aMarket : TExchangeApiType ) :  TExchange;
+    function GetSndRcvCnt: string;
+  public
+
+    QuoteSock : array of TWebSocket;
+    TradeSock : array of TWebSocket;  //[TMarketType] of TWebSocket;
+    TopAmtSymbols : array [0..1] of TSymbol;
+
+    Constructor Create( aExType : TExchangeKind ); overload;
+    Destructor  Destroy; override;
+
+    // 공통으로 같이 처리할수 있는것은 상속 처리 하지 않음..
+    // 1. preparemaster
+    // 2. requestmaster
+    // 3. all websocket connect;
+    // 4. all websocket close;
+    function PrepareMaster : boolean; //virtual; abstract;
+    function RequestMaster : boolean;
+    function ConnectAll : boolean;
+    function DissConnectAll : boolean;
+    procedure init ;
+    procedure StartRequest;
+    procedure CheckQuoteState;
+
+{$REGION 'to shared memory define' }
+    function SendOrder( aOrder : TOrder ): boolean;
+    procedure RequestTradeAmt( aSymbol : TSymbol ) ;
+
+    // 빗썸은 개별, 업비트는 전체 조회가능  그래서 2개 함수 생성
+    procedure RequestOrderList( aSymbol : TSymbol ) ; overload;
+    procedure RequestOrderList( aExApiType : TExchangeApiType ) ; overload;
+    // 빗썸은 개별, 업비트는 전체 조회가능  그래서 2개 함수 생성
+    procedure RequestOrdeDetail( aOrder : TOrder ) ; overload;
+    procedure RequestOrdeDetail( aExApiType : TExchangeApiType ) ; overload;
+
+    procedure RequestPosition( aSymbol : TSymbol  ) ;
+		//procedure RequestBalance( aSymbol : TSymbol ) ; overload;
+    // only binance spot;
+    procedure RequestOrderBook( aSymbol : TSymbol );
+{$ENDREGION}
+    // 상속 받아서 각 거래소 매니저에서 처리
+    function InitMarketWebSockets : boolean ; virtual; abstract;
+    function SubscribeAll : boolean; virtual; abstract;
+    function MakeCloseData : boolean; virtual; abstract;
+    function RequestCandle(aSymbol: TSymbol; iCount: integer): boolean; virtual; abstract;
+    procedure OrderDetailRequest( bStart : boolean ); virtual; abstract;
+
+    // 병렬처리
+    function ASyncRequestTradeAmt( aSymbol : TSymbol ) : boolean; virtual; abstract;
+    function ASyncRequest5MinAgo( aSymbol : TSymbol ) : boolean; virtual; abstract;
+    function ASyncRequestAvailable( aSymbol : TSymbol ) : boolean; virtual; abstract;
+        // thread 를 이용한 주문 상세조회
+    function SyncRequestOrderDetail( aOrder : TOrder ) : string;
+
+    function RequestBalance : boolean; overload; virtual; abstract;
+    function RequestPositons : boolean; virtual; abstract;
+    function RequestOrders: boolean; virtual; abstract;
+
+    procedure UnSubscribeAll ; virtual; abstract;
+
+    function Subscrib( aSymbol : TSymbol ) : boolean; virtual; abstract;
+    function UnSubscrib( aSymbol : TSymbol ) : boolean; virtual; abstract;
+
+    procedure RequestDNWState; virtual; abstract;
+    // from shared memory
+    procedure ReceivedData( aExApiType : TExchangeApiType; aReqType : TRequestType; aData, aRef  : string );
+
+    function GetSndRcvCount : string;
+
+    property ExchangeKind: TExchangeKind read FExchangeKind;
+    property ExchangeThread :  TExchangeThreadArray read FExchangeThread;
+    property WithDraw : TApiWithdraw read FWithdraw;
+
+//    property ExchangeIdx : integer read FExchangeIdx;
+    // 교집합 코드를 담을 리스트..
+    property Codes       : TStrings read FCodes;
+    property Timer       : TQuoteTimer read FTimer write FTimer;
+    property Done        : boolean read FDone write FDone;
+
+    // 로그용  snd, rcv count
+    property SndCnt : int64 read FSndCnt ;
+    property RcvCnt : int64 read FRcvCnt ;
+    property SndRcvCnt : string read GetSndRcvCnt;
+
+    property Exchanges : TExApiArray read FExchanges write FExchanges;
+
+  end;
+
+implementation
+uses
+  Windows, GApp,  UApiConsts, GLibs
+  , UTypes
+  , UBinanceSpotNMargin, UBinanceFutures, UBinanceFuturesCM
+  , UBithSpot, UUpbitSpot
+  , URestRequests
+  , USymbolCore
+  ;
+
+{ TExchangeManaager }
+
+
+constructor TExchangeManager.Create(aExType: TExchangeKind);
+var
+  i : TExchangeApiType;
+begin
+  FExchangeKind := aExType;
+
+  for I := eaSpot to High(TExchangeApiType) do
+  begin
+    FExchanges[i] :=  CreateMarket( i);
+  end;
+
+  FCodes:= TStringList.Create;
+
+  QuoteSock := nil;
+  TradeSock := nil;
+
+  TopAmtSymbols[0] := nil;
+  TopAmtSymbols[1] := nil;
+
+  FExchangeThread[aExType]  := TExchangeThread.Create(aExType);
+
+  FWithdraw := TApiWithdraw.Create;
+
+  FDone := false;
+end;
+
+function TExchangeManager.CreateMarket(aMarket: TExchangeApiType): TExchange;
+begin
+  Result := nil;  
+  case FExchangeKind of
+    ekBinance:
+      begin
+        case aMarket of
+          eaSpot   : Result := TBinanceSpotNMargin.Create( self, aMarket) ;
+          eaFutUsdt: Result := TBinanceFutures.Create( self, aMarket) ;
+          eaFutCoin: Result := TBinanceFuturesCM.Create( self, aMarket) ;
+        end;
+      end;
+    ekUpbit:
+      begin
+        case aMarket of
+          eaSpot  : Result := TUpbitSpot.Create( self, aMarket) ;
+        end;
+
+      end;
+    ekBithumb:
+      begin
+        case aMarket of
+          eaSpot  : Result := TBithSpot.Create( self, aMarket) ;
+        end;     
+      end;                       
+  end;
+end;
+
+destructor TExchangeManager.Destroy;
+var
+  j : integer;
+  i : TExchangeApiType;
+begin
+
+  if FTimer <> nil then
+    FTimer.Enabled := false;
+
+  FWithdraw.Free;
+
+  FExchangeThread[FExchangeKind].Terminate;
+  FExchangeThread[FExchangeKind].WaitFor;
+  FreeAndNil(FExchangeThread[FExchangeKind]);
+
+  if QuoteSock <> nil then
+    for j := 0 to High(QuoteSock) do
+    begin
+//      QuoteSock[j].Terminate;
+//      QuoteSock[j].WaitFor;
+      if QuoteSock[j] <> nil then
+        QuoteSock[j].Free;
+    end;
+
+  if TradeSock <> nil then
+    for j := 0 to High(TradeSock) do
+    begin
+
+      if TradeSock[j] <> nil then
+      begin
+  //      TradeSock[i].Terminate;
+  //      TradeSock[i].WaitFor;
+        TradeSock[j].Free ;
+      end;
+    end;
+
+  for i := eaSpot to High(TExchangeApiType) do
+    if FExchanges[i] <> nil then
+      FExchanges[i].Free;
+
+  FCodes.Free;
+
+  inherited;
+end;
+
+
+procedure TExchangeManager.CheckQuoteState;
+var
+  iGap, I: Integer;
+
+begin
+
+  if App.Stop then Exit;
+
+  for I := 0 to High(QuoteSock) do
+  begin
+
+    iGap  :=  GetTimeGapHour(  QuoteSock[i].ConnectTime );
+    if iGap >= App.Config.ReConnInterval then
+    begin
+      App.Log( llInfo, '%d %s hours later reconnect', [ App.Config.ReConnInterval, TExchangeKindDesc[FExchangeKind]] )   ;
+      QuoteSock[i].DoReConnect12 ;
+    end else
+    begin
+      if QuoteSock[i].IsReConnect then
+      begin
+
+        QuoteSock[i].SocketCreate;
+        QuoteSock[i].DoConnect;
+        App.Log( llInfo, '','%s QuoteSock reconnect', [TExchangeKindDesc[FExchangeKind]] )   ;
+      end
+    end;
+  end;
+end;
+
+function TExchangeManager.ConnectAll: boolean;
+var
+  i : integer;
+begin
+  try
+    if QuoteSock <> nil then
+      for i := 0 to High(QuoteSock) do
+        if QuoteSock[i] <> nil then
+          QuoteSock[i].DoConnect;
+
+    if TradeSock <> nil then
+      for i := 0 to High(TradeSock) do
+        if TradeSock[i] <> nil then
+          TradeSock[i].DoConnect;
+
+  except
+    on E : Exception do
+    begin
+      App.Log(llError, '%s %d.th connect error (%s)', [ TExchangeKindDesc[FExchangeKind], i, E.Message ]  );
+      exit (false);
+    end;
+  end;
+
+
+  FTimer.Enabled  := true;
+  Result := true;
+end;
+
+function TExchangeManager.DissConnectAll: boolean;
+var
+  i : integer;
+begin
+
+  App.DebugLog('%s %d disconnect all ', [ TExchangeKindDesc[FExchangeKind],  High(QuoteSock) ] );
+
+  if FTimer <> nil then
+    FTimer.Enabled  := false;
+  FDone := true;
+
+  Result := true;
+
+  if QuoteSock <> nil then
+    for i := 0 to High(QuoteSock) do
+      QuoteSock[i].DoDisConnect;
+
+  if TradeSock <> nil then
+    for I := 0 to High(TradeSock) do
+      if TradeSock[i] <> nil then
+        TradeSock[i].DoDisConnect;
+
+  Result := true;
+end;
+
+
+function TExchangeManager.GetSndRcvCnt: string;
+begin
+  Result := GetSndRcvCount;
+//  Result := Format('%d, %d (%d)', [ FSndCnt, FRcvCnt, FSndCnt-FRcvCnt] );
+end;
+
+function TExchangeManager.GetSndRcvCount : string;
+var
+  aExApiType : TExchangeApiType;
+  i : integer;
+  a : TRequest;
+begin
+  aExApiType := eaSpot;
+  if FExchangeKind = ekBinance then
+    aExApiType := eaFutUsdt;
+
+  for i:=0 to Exchanges[aExApiType].ReqItems.Count-1 do
+  begin
+    a := TRequest( Exchanges[aExApiType].ReqItems.Items[i] );
+    FSndCnt := FSndCnt + a.SndCnt;
+    FRcvCnt := FRcvCnt + a.RcvCnt;
+    Result := REsult + Format(' %s:%d,%d(%d)', [a.Name[1], a.SndCnt, a.RcvCnt, a.SndCnt - a.RcvCnt]);
+  end;
+end;
+
+procedure TExchangeManager.init;
+begin
+  FTimer  := App.Engine.QuoteBroker.Timers.New;
+  FTimer.Interval := 1000;
+  FTimer.OnTimer  := nil;
+  FTimer.Enabled  := false;
+end;
+
+function TExchangeManager.PrepareMaster: boolean;
+var
+  I: Integer;
+  sTmp : string;
+begin
+  Result := Exchanges[eaSpot].PrepareMaster;
+
+  if Result and ( FExchangeKind = ekBinance ) then
+    Result := Exchanges[eaFutUsdt].PrepareMaster
+      and Exchanges[eaFutCoin].PrepareMaster    ;
+
+  App.Log(llDebug, '', ' ---------- %s codes count %d -----------',
+    [ TExchangeKindDesc[FExchangeKind], Exchanges[eaSpot].Codes.Count ] );
+
+end;
+
+procedure TExchangeManager.ReceivedData(aExApiType : TExchangeApiType;
+  aReqType: TRequestType; aData, aRef: string);
+begin
+	Exchanges[aExApiType].ReceivedData(aReqType, aData, aRef );
+end;
+
+
+
+function TExchangeManager.RequestMaster: boolean;
+var
+  I: TExchangeApiType;
+begin
+  for I := eaSpot to High(TExchangeApiType) do
+  begin
+    if Exchanges[i] = nil then continue;
+    if not Exchanges[i].RequestMaster then
+      Exit (false);
+  end;
+
+  Result := true;
+
+end;
+
+{$REGION 'to shared memory imple' }
+// 개별 주문..
+procedure TExchangeManager.RequestOrdeDetail(aOrder: TOrder);
+begin
+  if aOrder = nil then Exit;
+  Exchanges[aOrder.Symbol.Spec.ExApiType].RequestOrderDetail( aOrder );
+end;
+
+// 배열로 주문.
+procedure TExchangeManager.RequestOrdeDetail(aExApiType : TExchangeApiType);
+begin
+  Exchanges[aExApiType].RequestOrderDetail( nil );
+end;
+
+procedure TExchangeManager.RequestOrderList(aExApiType : TExchangeApiType);
+begin
+  Exchanges[aExApiType].RequestOrderList( nil );
+end;
+
+procedure TExchangeManager.RequestOrderList(aSymbol: TSymbol);
+begin
+  Exchanges[aSymbol.Spec.ExApiType].RequestOrderList( aSymbol );
+end;
+
+procedure TExchangeManager.RequestOrderBook(aSymbol: TSymbol);
+begin
+  Exchanges[aSymbol.Spec.ExApiType].RequestOrderBook( aSymbol );
+end;
+
+procedure TExchangeManager.RequestPosition(aSymbol: TSymbol);
+begin
+  Exchanges[aSymbol.Spec.ExApiType].RequestPosition( aSymbol );
+end;
+
+procedure TExchangeManager.RequestTradeAmt(aSymbol: TSymbol);
+begin
+  Exchanges[aSymbol.Spec.ExApiType].RequestTradeAmt( aSymbol );
+end;
+
+//procedure TExchangeManager.RequestBalance(aSymbol: TSymbol);
+//begin
+//  Exchanges[aSymbol.Spec.ExApiType].RequestBalance( aSymbol );
+//end;
+
+function TExchangeManager.SendOrder(aOrder: TOrder): boolean;
+
+begin
+  if aOrder = nil then Exit ( false );
+
+  aOrder.SentTime := now;
+
+  if aOrder.OrderType = otNormal then
+  begin
+    aOrder.State    := osSent;
+    aOrder.NewTime  := GetTickCount64;
+
+    aOrder.Account.Assets.ReserveOrder(aORder.Side, aOrder.Symbol.Spec.BaseCode,
+        aOrder.LocalNo, aOrder.Price, aOrder.OrderQty);
+
+  end else
+  if aOrder.OrderType = otChange then
+  begin
+    aOrder.ChgTime  := GetTickCount64;
+  end else
+  begin
+    aOrder.CnlTime  := GetTickCount64;
+  end;
+
+  App.Log(llInfo, 'Order Start : %s', [aOrder.Represent]);
+
+  result := Exchanges[aOrder.Symbol.Spec.ExApiType].SenderOrder( aOrder );
+
+  if not Result  then
+  begin
+    aOrder.Account.Assets.ProcessCancel(aORder.LocalNo);
+    App.Engine.TradeBroker.Failed(aOrder, '1234');
+    App.Log(llInfo, 'Order Failed : %s', [aOrder.SimpleRepresent]);
+  end;
+end;
+
+{$ENDREGION}
+
+procedure TExchangeManager.StartRequest;
+var
+  I: TExchangeApiType;
+begin
+  for I := eaSpot to High(TExchangeApiType) do
+    if ( Exchanges[i] <> nil ) and ( Exchanges[i].CyclicThreads <> nil )  then 
+    	Exchanges[i].CyclicThreads.Resume;
+end;
+
+
+
+
+
+function TExchangeManager.SyncRequestOrderDetail(aOrder: TOrder): string;
+begin
+  if aOrder = nil then Exit ('');
+  Result := Exchanges[aOrder.Symbol.Spec.ExApiType].SyncRequestOrderDetail( aOrder );
+end;
+
+end.

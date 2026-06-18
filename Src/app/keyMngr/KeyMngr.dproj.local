@@ -1,0 +1,38 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BorlandProject>
+	<Transactions>
+    <Transaction>1899-12-30 00:00:00.000.011,C:\project\Dalin\engine\common\UEncrypts.pas=</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.217,=C:\project\Dalin\engine\common\UEncrypts.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.462,=C:\project\Dalin\engine\common\UEncrypts.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.289,C:\project\Dalin\ex_api_addr\Unit2.pas=C:\project\Dalin\ex_api_addr\UEncrypts.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.820,=C:\project\Dalin\ex_api_addr\Unit2.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.746,=C:\project\Dalin_2026\Src\engine\common\UEncrypts.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.388,C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit1.dfm=C:\Users\USER\Documents\Embarcadero\Studio\Projects\ex_api_addr\Unit1.dfm</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.413,=C:\project\Dalin_2026\Src\engine\utils\USecureString.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.793,C:\project\Dalin\ex_api_addr\Project1.dproj=C:\project\Dalin\ex_api_addr\Addr.dproj</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.266,C:\project\Dalin\ex_api_addr\FApiKeyMngr.dfm=C:\project\Dalin\ex_api_addr\Unit1.dfm</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.667,C:\project\Dalin\ex_api_addr\UEncrypts.pas=</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.266,C:\project\Dalin\ex_api_addr\FApiKeyMngr.pas=C:\project\Dalin\ex_api_addr\Unit1.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.146,C:\Users\USER\Documents\Embarcadero\Studio\Projects\Project1.dproj=C:\Users\USER\Documents\Embarcadero\Studio\Projects\ex_api_addr\Project1.dproj</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.839,=C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit1.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.782,=C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit1.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.388,C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit1.pas=C:\Users\USER\Documents\Embarcadero\Studio\Projects\ex_api_addr\Unit1.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.495,=C:\project\Dalin\ex_api_addr\FInputEntropy.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.114,=C:\project\Dalin\engine\utils\USecureString.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.883,C:\project\Dalin\ex_api_addr\KeyMngr.dproj=C:\project\Dalin\ex_api_addr\Addr.dproj</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.331,C:\project\Dalin_2026\Src\app\keyMngr\UEncrypts.pas=</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.780,=C:\project\Dalin_2026\Src\app\keyMngr\UEncrypts.pas</Transaction>
+  </Transactions>
+	<ProjectSortOrder AutoSort="0" SortType="0">
+    <File Path="..\..\..\Src"/>
+    <File Path="..\..\engine"/>
+    <File Path="..\..\engine\common"/>
+    <File Path="..\..\engine\common\UEncrypts.pas"/>
+    <File Path="..\..\engine\utils"/>
+    <File Path="..\..\engine\utils\USecureString.pas"/>
+    <File Path="FApiKeyMngr.pas"/>
+    <File Path="FApiKeyMngr.dfm"/>
+    <File Path="FInputEntropy.pas"/>
+    <File Path="FInputEntropy.dfm"/>
+  </ProjectSortOrder>
+</BorlandProject>

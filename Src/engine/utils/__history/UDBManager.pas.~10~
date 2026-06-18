@@ -1,0 +1,307 @@
+unit UDBManager;
+
+interface
+
+uses
+  System.Classes, System.SysUtils,
+
+  Data.FMTBcd, Data.DbxSqlite,  Data.DB, Data.SqlExpr,
+
+  UApiTypes, UApiConsts, UOrderParams, UDBTypes,
+
+  FireDAC.Comp.Client, FireDAC.Comp.DataSet,
+  FireDAC.Stan.Intf, FireDAC.Stan.Param, FireDAC.Stan.Option, FireDAC.Stan.Error,
+  FireDAC.Stan.Async, FireDAC.DApt, FireDAC.DApt.Intf, FireDAC.DatS,
+  FireDAC.Phys.Intf, FireDAC.Phys.SQLite, FireDAC.Phys.SQLiteDef
+
+  ;
+
+const
+  DB_NAME = 'Data\daline.db';
+
+type
+
+  TDBManager = class
+  private
+    FConn      : TFDConnection;
+    FQuery    : TFDQuery;
+
+    procedure  CreateDataBase;
+    procedure  RecreateTestTable;
+    procedure UpsertOrdersBatch(const AOrders: TArray<TSignalResult>);
+  public
+    Constructor Create;
+    Destructor  Destroy; override;
+
+    procedure Init;
+    procedure InsertKipData(kipData :TKipTradeAmt; sCode : string;
+      MajorEx , SubEx : TExchangeKind );
+    function  SelectKipData(var kipData :TKipTradeAmt; sCode : string;
+      MajorEx , SubEx : TExchangeKind ) : boolean;
+
+    procedure InsertBatch(const A: TArray<TSignalResult>);
+
+  end;
+
+implementation
+
+uses
+  DalinMain
+  , GApp, GLibs
+  , UTypes
+  ;
+
+{ TDBManager }
+
+constructor TDBManager.Create;
+begin
+  FQuery := TFDQuery.Create(FrmDalinMain);
+  FConn  := TFDConnection.Create(FrmDalinMain);
+
+  FConn.DriverName := 'SQLite';
+  FConn.Params.Database := DB_NAME;
+  FConn.Params.Add('OpenMode=CreateUTF8');
+  FConn.Params.Add('LockingMode=Normal');
+  FConn.LoginPrompt := False;
+  FConn.Connected := True;
+
+  FConn.ExecSQL('PRAGMA journal_mode=WAL');
+  FConn.ExecSQL('PRAGMA synchronous=NORMAL');
+  FConn.ExecSQL('PRAGMA temp_store=MEMORY');
+
+  CreateDataBase;
+
+  FQuery.Connection  := FConn;
+
+end;
+
+procedure TDBManager.CreateDataBase;
+var
+  fStream : TFileStream;
+begin
+  try
+    if not FileExists(DB_NAME) then
+    begin
+      fStream := TFileStream.Create(DB_NAME, fmCreate);
+      fStream.Free;
+
+      App.Log(llInfo, 'Dalin DateaBase 생성' );
+    end;
+
+    FConn.Connected := True;
+    RecreateTestTable;
+
+  except
+    on E: Exception do
+      App.Log(llError, 'Failed DBCreate -> %s ', [E.Message ]);
+  end;
+end;
+
+destructor TDBManager.Destroy;
+begin
+  FConn.Connected := false;
+
+  inherited;
+end;
+
+procedure TDBManager.Init;
+begin
+  // database 만든다.
+  CreateDataBase;
+  // table 만든다.
+  RecreateTestTable;
+end;
+
+
+procedure TDBManager.UpsertOrdersBatch(
+  const AOrders: TArray<TSignalResult>  );
+var
+
+  Total, Pos, ThisBatch, i, a: Integer;
+begin
+  Total := Length(AOrders);
+  if Total = 0 then Exit;
+
+  try
+    // 표준 UPSERT (SQLite 3.24+)
+    FQuery.SQL.Text :=
+      'INSERT INTO SignalOrder (Code, StgCode, E_F_Qty, E_S_Qty, X_F_Qty, '+
+      'X_S_Qty, E_B_S_Qty,E_B_L_Qty,E_U_S_Qty,E_U_L_Qty,E_T_S_Qty,E_T_L_Qty, ' +
+      'X_B_S_Qty,X_B_L_Qty,X_U_S_Qty,X_U_L_Qty,X_T_S_Qty,X_T_L_Qty )' +
+      'VALUES (:Code, :StgCode, :E_F_Qty, :E_S_Qty, :X_F_Qty,' +
+      ':X_S_Qty, :E_B_S_Qty, :E_B_L_Qty, :E_U_S_Qty, :E_U_L_Qty, :E_T_S_Qty, :E_T_L_Qty, ' +
+      ':X_B_S_Qty, :X_B_L_Qty, :X_U_S_Qty, :X_U_L_Qty, :X_T_S_Qty, :X_T_L_Qty )' +
+      'ON CONFLICT(Code, StgCode) DO UPDATE SET ' +
+      '  E_F_Qty    = excluded.E_F_Qty, ' +
+      '  E_S_Qty    = excluded.E_S_Qty, ' +
+      '  X_F_Qty    = excluded.X_F_Qty, ' +
+      '  X_S_Qty    = excluded.X_S_Qty, ' +
+
+      '  E_B_S_Qty  = excluded.E_B_S_Qty, ' +
+      '  E_B_L_Qty  = excluded.E_B_L_Qty, ' +
+      '  E_U_S_Qty  = excluded.E_U_S_Qty, ' +
+      '  E_U_L_Qty  = excluded.E_U_L_Qty, ' +
+      '  E_T_S_Qty  = excluded.E_T_S_Qty, ' +
+      '  E_T_L_Qty  = excluded.E_T_L_Qty, ' +
+
+      '  X_B_S_Qty  = excluded.X_B_S_Qty, ' +
+      '  X_B_L_Qty  = excluded.X_B_L_Qty, ' +
+      '  X_U_S_Qty  = excluded.X_U_S_Qty, ' +
+      '  X_U_L_Qty  = excluded.X_U_L_Qty, ' +
+      '  X_T_S_Qty  = excluded.X_T_S_Qty, ' +
+      '  X_T_L_Qty  = excluded.X_T_L_Qty; ';
+
+    FQuery.Prepare;
+
+      // 배열 파라미터 채우기
+      for i := 0 to ThisBatch - 1 do
+      begin
+        a := Pos + i; // AOrders의 실제 인덱스
+
+        FQuery.ParamByName('Code').AsStrings[i]     := AOrders[a].Code;
+        FQuery.ParamByName('StgCode').AsStrings[i]  := AOrders[a].StgCode;
+        FQuery.ParamByName('E_F_Qty').AsFloats[i]   := AOrders[a].E_F_Qty;
+        FQuery.ParamByName('E_S_Qty').AsFloats[i]   := AOrders[a].E_S_Qty;
+        FQuery.ParamByName('X_F_Qty').AsFloats[i]   := AOrders[a].X_F_Qty;
+        FQuery.ParamByName('X_S_Qty').AsFloats[i]   := AOrders[a].X_S_Qty;
+
+        FQuery.ParamByName('E_B_S_Qty').AsFloats[i]  := AOrders[a].E_B_S_Qty;
+        FQuery.ParamByName('E_B_L_Qty').AsFloats[i]  := AOrders[a].E_B_L_Qty;
+        FQuery.ParamByName('E_U_S_Qty').AsFloats[i]  := AOrders[a].E_U_S_Qty;
+        FQuery.ParamByName('E_U_L_Qty').AsFloats[i]  := AOrders[a].E_U_L_Qty;
+        FQuery.ParamByName('E_T_S_Qty').AsFloats[i]  := AOrders[a].E_T_S_Qty;
+        FQuery.ParamByName('E_T_L_Qty').AsFloats[i]  := AOrders[a].E_T_L_Qty;
+
+        FQuery.ParamByName('X_B_S_Qty').AsFloats[i]  := AOrders[a].X_B_S_Qty;
+        FQuery.ParamByName('X_B_L_Qty').AsFloats[i]  := AOrders[a].X_B_L_Qty;
+        FQuery.ParamByName('X_U_S_Qty').AsFloats[i]  := AOrders[a].X_U_S_Qty;
+        FQuery.ParamByName('X_U_L_Qty').AsFloats[i]  := AOrders[a].X_U_L_Qty;
+        FQuery.ParamByName('X_T_S_Qty').AsFloats[i]  := AOrders[a].X_T_S_Qty;
+        FQuery.ParamByName('X_T_L_Qty').AsFloats[i]  := AOrders[a].X_T_L_Qty;
+
+      end;
+
+      // 트랜잭션으로 묶어서 한번에 커밋
+      FConn.StartTransaction;
+      try
+        FQuery.Execute(ThisBatch, 0);
+        FConn.Commit;
+      except
+        FConn.Rollback;
+        raise;
+      end;
+
+  finally
+  end;
+end;
+
+
+procedure TDBManager.InsertBatch(const A: TArray<TSignalResult>);
+var
+  N, I: Integer;
+begin
+  N := Length(A);
+  if N = 0 then Exit;
+
+  // Array DML
+  FQuery.Params.ArraySize := N;
+
+  with FQuery do
+    for I := 0 to N - 1 do
+    begin
+      Params[0].AsStrings[I]   := A[I].Code;
+      Params[1].AsStrings[I]   := A[I].StgCode;
+      Params[2].AsFloats[I]    := A[I].E_F_Qty;
+      Params[3].AsFloats[I]    := A[I].E_S_Qty;
+      Params[4].AsFloats[I]    := A[I].X_F_Qty;
+      Params[5].AsFloats[I]    := A[I].X_S_Qty;
+
+      Params[6].AsFloats[I]   := A[I].E_B_S_Qty;
+      Params[7].AsFloats[I]   := A[I].E_B_L_Qty;
+      Params[8].AsFloats[I]   := A[I].E_U_S_Qty;
+      Params[9].AsFloats[I]   := A[I].E_U_L_Qty;
+      Params[10].AsFloats[I]   := A[I].E_T_S_Qty;
+      Params[11].AsFloats[I]   := A[I].E_T_L_Qty;
+    end;
+
+  FConn.StartTransaction;
+  try
+    FQuery.Execute(N, 0);
+    FConn.Commit;
+  except
+    FConn.Rollback;
+    raise;
+  end;
+
+end;
+
+procedure TDBManager.InsertKipData(kipData :TKipTradeAmt; sCode : string;
+      MajorEx , SubEx : TExchangeKind );
+begin
+  // SQLite 는 없으면 Insert, 있으면 update 가 안된다.
+  // 비슷한게 있지만, 안하
+
+end;
+
+procedure TDBManager.RecreateTestTable;
+var
+  iRes : integer;
+begin
+  // Kip Table 생성
+  FQuery.ExecSQL(
+    'CREATE TABLE IF NOT EXISTS KipOrder (' +
+   //   'id INTEGER PRIMARY KEY,' +
+      'Code TEXT , '+
+      'MajorEx INTEGER , '+
+      'SubEx INTEGER , '+
+
+      'AccFilledQty_1 TEXT, '+
+      'TradeAmt_1 TEXT, '+
+      'KipFill_1 TEXT, '+
+      'FilledQty_1 TEXT, '+
+
+      'AccFilledQty_2 TEXT, '+
+      'TradeAmt_2 TEXT, '+
+      'KipFill_2 TEXT, '+
+      'FilledQty_2 TEXT, '+
+      'PRIMARY KEY(Code,MajorEx,SubEx)'+
+      ')'
+      );
+
+  FQuery.ExecSQL(
+    'CREATE TABLE IF NOT EXISTS SignalOrder (' +
+   //   'id INTEGER PRIMARY KEY,' +
+      'Code TEXT , '+
+      'StgCode TEXT , '+
+
+      'E_F_Qty REAL , '+
+      'E_S_Qty REAL , '+
+      'X_F_Qty REAL , '+
+      'X_S_Qty REAL , '+
+
+      'E_B_S_Qty REAL , '+
+      'E_B_L_Qty REAL , '+
+      'E_U_S_Qty REAL , '+
+      'E_U_L_Qty REAL , '+
+      'E_T_S_Qty REAL , '+
+      'E_T_L_Qty REAL , '+
+
+      'X_B_S_Qty REAL , '+
+      'X_B_L_Qty REAL , '+
+      'X_U_S_Qty REAL , '+
+      'X_U_L_Qty REAL , '+
+      'X_T_S_Qty REAL , '+
+      'X_T_L_Qty REAL , '+
+
+      'PRIMARY KEY(Code,StgCode)'+
+      ')'
+      );
+end;
+
+function TDBManager.SelectKipData(var kipData: TKipTradeAmt; sCode: string;
+  MajorEx, SubEx: TExchangeKind): boolean;
+begin
+
+end;
+
+end.

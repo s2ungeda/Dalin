@@ -1,0 +1,426 @@
+unit ULogWriter;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, System.SyncObjs, System.IOUtils,
+  System.Generics.Collections, System.DateUtils,
+
+  UTypes
+  ;
+
+type
+
+  TLogItem = class
+  public
+    Prefix : string;     // 파일 구분 키 (예: 'core','net','order')
+    Line   : string;     // 메시지
+    Level  : TLogLevel;
+    TimeUTC: TDateTime;  // UTC 권장
+    constructor Create(const APrefix, ALine: string; ALevel: TLogLevel);
+  end;
+
+  TPerFileSink = class
+  private
+    FFileName  : string;
+    FCurDate   : string;       // YYYYMMDD
+    FWriter    : TStreamWriter;
+    FLinesSinceFlush: Integer;
+
+    FFlushEveryN    : Integer;
+    FDirty          : boolean;
+
+    FBufferSize     : Integer;
+    procedure OpenOrRoll(const NewDate, NewFile: string);
+  public
+    constructor Create(const InitialFile, InitialDate: string;
+                       BufferSize: Integer; FlushEveryN: Integer);
+    destructor Destroy; override;
+    procedure WriteLine(const S: string);
+    procedure MaybeFlush;
+    procedure RollOverIfNeeded(const NewDate, NewFile: string);
+    procedure Close;
+    procedure FlushDirty; inline;
+  end;
+
+  TLogWriterThread = class(TThread)
+  private
+    FQueue      : TThreadedQueue<TLogItem>;
+    FLogDir     : string;
+    FSinks      : TDictionary<string, TPerFileSink>; // key = Prefix
+    FBufferSize : Integer;
+    FFlushEveryN: Integer;
+    FMinFlushIntervalMs: Cardinal;
+
+    function  DateYYYYMMDD(const AUTC: TDateTime): string;
+    function  LevelTag(ALevel: TLogLevel): string;
+    function  MakeFileName(const Prefix, DateStr: string): string;
+    procedure ProcessItem(Item: TLogItem);
+    procedure FlushAllAndClose;
+    procedure FlushAllDirty; inline;
+    procedure SetLogDir(const Value: string);
+  protected
+    procedure Execute; override;
+  public
+    constructor Create(const ALogDir: string; AQueue: TThreadedQueue<TLogItem>;
+                       BufferSize: Integer; FlushEveryN: Integer; MinFlushIntervalMs: Cardinal;
+                       CreateSuspended: Boolean = False);
+    destructor Destroy; override;
+
+    property LogDir: string read FLogDir write SetLogDir;
+  end;
+
+  TLogger = class
+  private
+    FQueue   : TThreadedQueue<TLogItem>;
+    FWriterTh: TLogWriterThread;
+    FLogDir  : string;
+    procedure SetLogDir(const Value: string);
+  public
+    // Capacity: 큐 용량, PushTimeout/PopTimeout: Create에서만 지정
+    constructor Create(const LogDir: string;
+                       Capacity: Integer = 65536;
+                       PushTimeout: Cardinal = INFINITE;
+                       PopTimeout : Cardinal = 100;         // 비어있을 때 최대 대기 (ms)
+                       FlushEveryN: Integer = 800;          // N줄/Flush
+                       MinFlushIntervalMs: Cardinal = 100;  // 최소 Flush 간격
+                       WriterBufferBytes: Integer = 256*1024);
+    destructor Destroy; override;
+
+    procedure Log(ALevel: TLogLevel; const Prefix, Msg: string);
+    procedure Debug(const Prefix, Msg: string);
+    procedure Info (const Prefix, Msg: string);
+    procedure Warn (const Prefix, Msg: string);
+    procedure Error(const Prefix, Msg: string);
+
+    property LogDir: string read FLogDir write SetLogDir;
+  end;
+
+implementation
+
+{ TLogItem }
+
+constructor TLogItem.Create(const APrefix, ALine: string; ALevel: TLogLevel);
+begin
+
+  if APrefix = '' then
+    Prefix := 'Log'
+  else
+    Prefix := PreFix;
+
+  Line    := ALine;
+  Level   := ALevel;
+  TimeUTC := TTimeZone.Local.ToUniversalTime(Now);
+end;
+
+{ TPerFileSink }
+
+constructor TPerFileSink.Create(const InitialFile, InitialDate: string;
+  BufferSize: Integer; FlushEveryN: Integer) ;
+begin
+  FFileName := InitialFile;
+  FCurDate  := InitialDate;
+  FBufferSize := BufferSize;
+  FFlushEveryN := FlushEveryN;
+  FDirty  := false;
+  FLinesSinceFlush := 0;
+
+  FWriter := nil;
+  OpenOrRoll(FCurDate, FFileName);
+end;
+
+destructor TPerFileSink.Destroy;
+begin
+  Close;
+  inherited;
+end;
+
+procedure TPerFileSink.FlushDirty;
+begin
+  if FDirty then
+  begin
+    try
+      FWriter.Flush;
+    except
+      // swallow
+    end;
+    FLinesSinceFlush := 0;
+    FDirty := False;
+  end;
+end;
+
+procedure TPerFileSink.OpenOrRoll(const NewDate, NewFile: string);
+var
+  FS: TFileStream;
+begin
+  if not TFile.Exists(NewFile) then
+    FS := TFileStream.Create(NewFile, fmCreate or fmShareDenyNone)
+  else
+    FS := TFileStream.Create(NewFile, fmOpenReadWrite or fmShareDenyNone);
+
+  try
+    FS.Seek(0, soEnd);
+    FWriter := TStreamWriter.Create(FS, TEncoding.UTF8, FBufferSize);
+    FWriter.AutoFlush := False;
+  except
+    FS.Free;
+    raise;
+  end;
+end;
+
+procedure TPerFileSink.Close;
+begin
+  if Assigned(FWriter) then
+  begin
+    FlushDirty;
+    FreeAndNil(FWriter);
+  end;
+end;
+
+procedure TPerFileSink.WriteLine(const S: string);
+begin
+  FWriter.WriteLine(S);
+  Inc(FLinesSinceFlush);
+  FDirty := true;
+end;
+
+procedure TPerFileSink.MaybeFlush;
+begin
+  if (FFlushEveryN > 0) and (FLinesSinceFlush >= FFlushEveryN) then
+  begin
+    FWriter.Flush;
+    FLinesSinceFlush := 0;
+    FDirty := false;
+  end;
+end;
+
+procedure TPerFileSink.RollOverIfNeeded(const NewDate, NewFile: string);
+begin
+  if (NewDate = FCurDate) and (NewFile = FFileName) then Exit;
+
+  FlushDirty;
+
+  Close;
+
+  FCurDate  := NewDate;
+  FFileName := NewFile;
+  OpenOrRoll(FCurDate, FFileName);
+end;
+
+{ TLogWriterThread }
+
+constructor TLogWriterThread.Create(const ALogDir: string; AQueue: TThreadedQueue<TLogItem>;
+  BufferSize: Integer; FlushEveryN: Integer; MinFlushIntervalMs: Cardinal;
+  CreateSuspended: Boolean);
+begin
+  inherited Create(CreateSuspended);
+  FreeOnTerminate := False;
+
+  FQueue  := AQueue;
+  FLogDir := IncludeTrailingPathDelimiter(ALogDir);
+  ForceDirectories(FLogDir);
+
+  FSinks := TDictionary<string, TPerFileSink>.Create;
+  FBufferSize := BufferSize;
+  FFlushEveryN := FlushEveryN;
+  FMinFlushIntervalMs := MinFlushIntervalMs;
+
+end;
+
+destructor TLogWriterThread.Destroy;
+begin
+
+  FlushAllAndClose;
+  FSinks.Free;
+  inherited;
+end;
+
+function TLogWriterThread.DateYYYYMMDD(const AUTC: TDateTime): string;
+begin
+  Result := FormatDateTime('YYYYMMDD', AUTC);
+end;
+
+function TLogWriterThread.LevelTag(ALevel: TLogLevel): string;
+const
+  MAP: array[TLogLevel] of string = ('ERROR','WARNG','INFOM', 'DEBUG');
+begin
+  Result := MAP[ALevel];
+end;
+
+function TLogWriterThread.MakeFileName(const Prefix, DateStr: string): string;
+begin
+  Result := FLogDir + Prefix + '_' + DateStr + '.log';
+end;
+
+procedure TLogWriterThread.ProcessItem(Item: TLogItem);
+var
+  Sink     : TPerFileSink;
+  Key      : string;
+  DateStr  : string;
+  FileName : string;
+  Line     : string;
+begin
+  Key := Item.Prefix;
+  DateStr := DateYYYYMMDD(Item.TimeUTC);
+
+  if not FSinks.TryGetValue(Key, Sink) then
+  begin
+    FileName := MakeFileName(Key, DateStr);
+    Sink := TPerFileSink.Create(FileName, DateStr, FBufferSize, FFlushEveryN);
+    FSinks.Add(Key, Sink);
+  end
+  else
+  begin
+    Sink.RollOverIfNeeded(DateStr, MakeFileName(Key, DateStr));
+  end;
+
+  Line := FormatDateTime('[hh:nn:ss.zzz]', Item.TimeUTC) +
+          '[' + LevelTag(Item.Level) + ']:' + Item.Line;
+
+  Sink.WriteLine(Line);
+  Sink.MaybeFlush;
+end;
+
+procedure TLogWriterThread.SetLogDir(const Value: string);
+begin
+  FLogDir := IncludeTrailingPathDelimiter(Value);
+  ForceDirectories(FLogDir);
+end;
+
+procedure TLogWriterThread.FlushAllAndClose;
+var
+  Pair: TPair<string, TPerFileSink>;
+begin
+  for Pair in FSinks do
+  begin
+    if Assigned(Pair.Value) then
+    begin
+      try Pair.Value.MaybeFlush; except end;
+      Pair.Value.Close;
+    end;
+  end;
+end;
+
+procedure TLogWriterThread.FlushAllDirty;
+var
+  Pair: TPair<string, TPerFileSink>;
+begin
+  for Pair in FSinks do
+    Pair.Value.FlushDirty;
+end;
+
+procedure TLogWriterThread.Execute;
+var
+  Item: TLogItem;
+  WR  : TWaitResult;
+begin
+  // PopTimeout은 큐 생성 시 지정됨 (루프에서는 인자 없이 호출)
+  while not Terminated do
+  begin
+    WR := FQueue.PopItem(Item);   // 큐가 비어있으면 PopTimeout(ms)까지 대기
+    case WR of
+      wrSignaled:
+        begin
+          try
+            ProcessItem(Item);
+          finally
+            Item.Free;
+          end;
+        end;
+      wrTimeout: FlushAllDirty ; // 주기적으로 깨어나 Terminated 체크
+      wrAbandoned:
+        Break;
+    end;
+  end;
+
+  // 종료 시 남은 아이템 드레인
+  while FQueue.PopItem(Item) = wrSignaled do
+  begin
+    try
+      ProcessItem(Item);
+    finally
+      Item.Free;
+    end;
+  end;
+
+  FlushAllAndClose;
+end;
+
+{ TLogger }
+
+constructor TLogger.Create(const LogDir: string;
+  Capacity: Integer; PushTimeout, PopTimeout: Cardinal;
+  FlushEveryN: Integer; MinFlushIntervalMs: Cardinal; WriterBufferBytes: Integer);
+begin
+  inherited Create;  // 이제 정상
+  FLogDir := IncludeTrailingPathDelimiter(LogDir);
+  ForceDirectories(FLogDir);
+
+  FQueue := TThreadedQueue<TLogItem>.Create(Capacity, PushTimeout, PopTimeout);
+
+  FWriterTh := TLogWriterThread.Create(FLogDir, FQueue,
+                                       WriterBufferBytes, FlushEveryN, MinFlushIntervalMs,
+                                       True{create suspended});
+  FWriterTh.Start;
+end;
+
+destructor TLogger.Destroy;
+var
+  Item: TLogItem;
+begin
+  FWriterTh.Terminate;
+  FWriterTh.WaitFor;
+  FWriterTh.Free;
+
+  while FQueue.PopItem(Item) = wrSignaled do
+    Item.Free;
+
+  FQueue.Free;
+  inherited;
+end;
+
+procedure TLogger.Log(ALevel: TLogLevel; const Prefix, Msg: string);
+var
+  Item: TLogItem;
+  WR  : TWaitResult;
+begin
+  Item := TLogItem.Create(Prefix, Msg, ALevel);
+  WR := FQueue.PushItem(Item); // 큐 가득 차면 PushTimeout 동안 대기
+  if WR <> wrSignaled then
+  begin
+    Item.Free; // 드물게 실패 시 정리
+    // 필요 시: 비상 스풀(즉시 파일 append) 추가 가능
+  end;
+end;
+
+procedure TLogger.SetLogDir(const Value: string);
+begin
+  FLogDir := Value;
+  if FWriterTh <> nil then
+    FWriterTh.LogDir := Value;
+end;
+
+procedure TLogger.Debug(const Prefix, Msg: string);
+begin
+  Log(llDebug, Prefix, Msg);
+end;
+
+procedure TLogger.Error(const Prefix, Msg: string);
+begin
+  Log(llError, Prefix, Msg);
+end;
+
+procedure TLogger.Info(const Prefix, Msg: string);
+begin
+  Log(llInfo, Prefix, Msg);
+end;
+
+procedure TLogger.Warn(const Prefix, Msg: string);
+begin
+  Log(llWarning, Prefix, Msg);
+end;
+
+
+
+end.
+

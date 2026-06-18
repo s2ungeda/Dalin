@@ -1,0 +1,227 @@
+program Dalin;
+uses
+  {$IFDEF DEBUG}
+  {$ENDIF }
+  windows,
+  Vcl.Forms,
+  Vcl.Dialogs,
+  ShellApi,
+  System.SysUtils,
+  GApp in 'Src\main\GApp.pas',
+  UDalinEngine in 'Src\engine\UDalinEngine.pas',
+  GLibs in 'Src\engine\common\GLibs.pas',
+  UConfig in 'Src\engine\common\UConfig.pas',
+  UTypes in 'Src\engine\common\UTypes.pas',
+  UParsers in 'Src\engine\utils\UParsers.pas',
+  UStorage in 'Src\engine\utils\UStorage.pas',
+  UFormBroker in 'Src\engine\utils\UFormBroker.pas',
+  GAppForms in 'Src\main\GAppForms.pas',
+  FPriceTable in 'Src\wins\FPriceTable.pas' {FrmPriceTable},
+  UTableConsts in 'Src\wins\_common\UTableConsts.pas',
+  DalinMain in 'Src\main\DalinMain.pas' {FrmDalinMain},
+  NMainMenu in 'Src\main\NMainMenu.pas' {DataModule1: TDataModule},
+  UDalinStatusEvent in 'Src\main\UDalinStatusEvent.pas',
+  UFQN in 'Src\engine\symbol\UFQN.pas',
+  USymbols in 'Src\engine\symbol\USymbols.pas',
+  UMarketSpecs in 'Src\engine\symbol\UMarketSpecs.pas',
+  UCollections in 'Src\engine\utils\UCollections.pas',
+  USymbolParser in 'Src\engine\symbol\USymbolParser.pas',
+  UMarkets in 'Src\engine\symbol\UMarkets.pas',
+  UConsts in 'Src\engine\common\UConsts.pas',
+  UApiConsts in 'Src\api\UApiConsts.pas',
+  UApiConfigManager in 'Src\api\UApiConfigManager.pas',
+  USymbolCore in 'Src\engine\symbol\USymbolCore.pas',
+  UExchange in 'Src\api\UExchange.pas',
+  UApiTypes in 'Src\api\UApiTypes.pas',
+  UApiManager in 'Src\api\UApiManager.pas',
+  UExchangeManager in 'Src\api\UExchangeManager.pas',
+  UBinanceManager in 'Src\api\binance\UBinanceManager.pas',
+  UUpbitManager in 'Src\api\upbit\UUpbitManager.pas',
+  UBithManager in 'Src\api\bithumb\UBithManager.pas',
+  UBinanceSpotNMargin in 'Src\api\binance\UBinanceSpotNMargin.pas',
+  UBinanceFutures in 'Src\api\binance\UBinanceFutures.pas',
+  UUpbitSpot in 'Src\api\upbit\UUpbitSpot.pas',
+  UBithSpot in 'Src\api\bithumb\UBithSpot.pas',
+  UEncrypts in 'Src\engine\common\UEncrypts.pas',
+  UBinanceParse in 'Src\api\Binance\UBinanceParse.pas',
+  UTicks in 'Src\engine\symbol\UTicks.pas',
+  UCircularQueue in 'Src\engine\utils\UCircularQueue.pas',
+  UQuoteTimers in 'Src\engine\utils\UQuoteTimers.pas',
+  UBithParse in 'Src\api\bithumb\UBithParse.pas',
+  UUpbitParse in 'Src\api\upbit\UUpbitParse.pas',
+  UQuoteBroker in 'Src\engine\symbol\UQuoteBroker.pas',
+  UDistributor in 'Src\engine\utils\UDistributor.pas',
+  UWebSockets in 'Src\api\UWebSockets.pas',
+  UBinanceWebSockets in 'Src\api\Binance\UBinanceWebSockets.pas',
+  UBithWebSockets in 'Src\api\bithumb\UBithWebSockets.pas',
+  UUpbitWebSockets in 'Src\api\upbit\UUpbitWebSockets.pas',
+  FDnwStates in 'Src\wins\FDnwStates.pas' {FrmDnwStates},
+  USymbolBroker in 'Src\engine\symbol\USymbolBroker.pas',
+  FServerMessage in 'Src\wins\FServerMessage.pas' {FrmServerMessage},
+  FQuoteMonitors in 'Src\wins\FQuoteMonitors.pas' {FrmQuoteMonitors},
+  USymbolUtils in 'Src\engine\symbol\USymbolUtils.pas',
+  URestRequests in 'Src\api\URestRequests.pas',
+  UOtherData in 'Src\engine\symbol\UOtherData.pas',
+  UDataLogs in 'Src\engine\common\UDataLogs.pas',
+  UAccounts in 'Src\engine\trade\UAccounts.pas',
+  UPositions in 'Src\engine\trade\UPositions.pas',
+  UFills in 'Src\engine\trade\UFills.pas',
+  UOrders in 'Src\engine\trade\UOrders.pas',
+  UTradeCore in 'Src\engine\trade\UTradeCore.pas',
+  URestThread in 'Src\api\URestThread.pas',
+  URestItems in 'Src\api\URestItems.pas',
+  UCyclicThreads in 'Src\api\UCyclicThreads.pas',
+  UCyclicItems in 'Src\api\UCyclicItems.pas',
+  FOrderList in 'Src\wins\FOrderList.pas' {FrmOrderList},
+  UTradeBroker in 'Src\engine\trade\UTradeBroker.pas',
+  UNormalOrder in 'Src\wins\UNormalOrder.pas' {FrmNormalOrder},
+  USharedManager in 'Src\api\USharedManager.pas',
+  UDecimalHelper in 'Src\engine\utils\UDecimalHelper.pas',
+  USharedConsts in 'Src\Rest\USharedConsts.pas',
+  USharedData in 'Src\Rest\USharedData.pas',
+  USharedThread in 'Src\Rest\USharedThread.pas',
+  UExchangeRate in 'Src\api\exrate\UExchangeRate.pas',
+  FOrderLimit in 'Src\wins\FOrderLimit.pas' {FrmOrderLimit},
+  UOrderWinConst in 'Src\wins\_common\UOrderWinConst.pas',
+  FAutoKipOrder in 'Src\wins\Orders\FAutoKipOrder.pas' {FrmKipAutoOrder},
+  UOrderParams in 'Src\wins\Orders\UOrderParams.pas',
+  UAutoKipOrders in 'Src\wins\Orders\UAutoKipOrders.pas',
+  FKipOrderConfig in 'Src\wins\Orders\FKipOrderConfig.pas' {FrmKipOrderConfig},
+  FMarginType in 'Src\wins\FMarginType.pas' {FrmPosConfig},
+  USPItems in 'Src\wins\Orders\USPItems.pas',
+  USPOrders in 'Src\wins\Orders\USPOrders.pas',
+  UQuoteMerge in 'Src\engine\symbol\UQuoteMerge.pas',
+  UExchangeData in 'Src\api\UExchangeData.pas',
+  FTotalBalance in 'Src\wins\FTotalBalance.pas' {FrmTotalBalance},
+  UExchangeThread in 'Src\api\UExchangeThread.pas',
+  FCoinWithdrawl in 'Src\wins\FCoinWithdrawl.pas' {FrmCoinWithdrawl},
+  UApiWithdraw in 'Src\api\UApiWithdraw.pas',
+  UBitWithdraw in 'Src\api\bithumb\UBitWithdraw.pas',
+  UUpbitWithdraw in 'Src\api\upbit\UUpbitWithdraw.pas',
+  FWithdrawConfig in 'Src\wins\Orders\FWithdrawConfig.pas' {FrmWithdrawConfig},
+  COBTypes in 'Src\wins\OrderBoard\COBTypes.pas',
+  COrderBoard in 'Src\wins\OrderBoard\COrderBoard.pas',
+  COrderTablet in 'Src\wins\OrderBoard\COrderTablet.pas',
+  CTickPainter in 'Src\wins\OrderBoard\CTickPainter.pas',
+  DBoardParams in 'Src\wins\OrderBoard\DBoardParams.pas' {BoardParamDialog},
+  DBoardPrefs in 'Src\wins\OrderBoard\DBoardPrefs.pas' {BoardPrefDialog},
+  DVolume in 'Src\wins\OrderBoard\DVolume.pas' {FrmVolume},
+  FOrderBoard in 'Src\wins\OrderBoard\FOrderBoard.pas' {OrderBoardForm},
+  UStrategyManager in 'Src\engine\trade\UStrategyManager.pas',
+  UStrategyItem in 'Src\engine\trade\UStrategyItem.pas',
+  FDepositList in 'Src\wins\FDepositList.pas' {FrmDepositList},
+  UBinanceFuturesCM in 'Src\api\binance\UBinanceFuturesCM.pas',
+  UNewStg1 in 'Src\wins\Orders\UNewStg1.pas',
+  UNS1Items in 'Src\wins\Orders\UNS1Items.pas',
+  UDBManager in 'Src\engine\utils\UDBManager.pas',
+  UKipOrders in 'Src\wins\Orders\UKipOrders.pas',
+  FPutKipOrder in 'Src\wins\Orders\FPutKipOrder.pas' {FrmPutKipOrder},
+  UPutKipOrders in 'Src\wins\Orders\UPutKipOrders.pas',
+  UPutKipItems in 'Src\wins\Orders\UPutKipItems.pas',
+  UCommonParse in 'Src\api\UCommonParse.pas',
+  UDustManager in 'Src\engine\trade\UDustManager.pas',
+  UBithActiveOrderThread in 'Src\api\bithumb\UBithActiveOrderThread.pas',
+  URequestPools in 'Src\api\URequestPools.pas',
+  UThreadPools in 'Src\api\UThreadPools.pas',
+  UBinanceWebSocketApi in 'Src\api\binance\UBinanceWebSocketApi.pas',
+  URateLImits in 'Src\api\binance\URateLImits.pas',
+  UDllFormLoader in 'Src\engine\utils\UDllFormLoader.pas',
+  FAccountDnw in 'Src\wins\FAccountDnw.pas' {FrmAccountDnw},
+  FAccountDnwList in 'Src\wins\FAccountDnwList.pas' {FrmAccountDnwList},
+  FAutoOrderConfig in 'Src\wins\Orders\FAutoOrderConfig.pas' {FrmAutoOrderConfig},
+  FPKIDXOrders in 'Src\wins\Orders\FPKIDXOrders.pas' {FrmPKIDXOrders},
+  UPKIDXOrders in 'Src\wins\Orders\UPKIDXOrders.pas',
+  UTerms in 'Src\engine\symbol\UTerms.pas',
+  AntiDebugUtils in 'Src\Integrity\AntiDebugUtils.pas',
+  IntegrityMonitorThread in 'Src\Integrity\IntegrityMonitorThread.pas',
+  SecurityUtils in 'Src\Integrity\SecurityUtils.pas',
+  USecureString in 'Src\engine\utils\USecureString.pas',
+  FInputEntropy in 'Src\main\FInputEntropy.pas' {Form2},
+  USimpleShareMemory in 'Src\engine\utils\USimpleShareMemory.pas',
+  ULogWriter in 'Src\engine\utils\ULogWriter.pas',
+  ULogThread in 'Src\engine\utils\ULogThread.pas',
+  FSignalConfig in 'Src\wins\Orders\signal\FSignalConfig.pas' {FrmSignalConfig},
+  FTVSignals in 'Src\wins\Orders\signal\FTVSignals.pas' {FrmTVSignals},
+  UMainThreadProc in 'Src\wins\Orders\signal\UMainThreadProc.pas',
+  USignalTypes in 'Src\wins\Orders\signal\USignalTypes.pas',
+  UTimerThread in 'Src\wins\Orders\signal\UTimerThread.pas',
+  UTVSignals in 'Src\wins\Orders\signal\UTVSignals.pas',
+  UStgOrders in 'Src\wins\Orders\UStgOrders.pas',
+  UKimpLibs in 'Src\api\UKimpLibs.pas',
+  UDBTypes in 'Src\engine\common\UDBTypes.pas',
+  UNormalOrderEx in 'Src\wins\UNormalOrderEx.pas' {FrmNormalOrderEx},
+  uBinanceFuturesRateLimiter in 'Src\api\binance\uBinanceFuturesRateLimiter.pas',
+  UAssets in 'Src\engine\trade\UAssets.pas',
+  IDistributorItems in 'Src\engine\utils\IDistributorItems.pas',
+  UDirectSounds in 'Src\engine\utils\UDirectSounds.pas';
+
+{$R *.res}
+  var MutexHandle : longint;
+
+begin
+
+{$IFNDEF DEBUG}
+//  if not CheckFileIntegrity then
+//  begin
+//    ShowMessage('파일 무결성 체크 실패! 종료합니다.');
+//    Application.Terminate;
+//    Exit;
+//  end;
+
+//  var s: string;
+//  if IsBeingDebugged(s) then
+//  begin
+//    ShowMessage(s);
+//    Application.Terminate;
+//    Exit;
+//  end;
+{$ENDIF}
+
+  // 뮤텍스 생성
+  MutexHandle := CreateMutex(nil, true, 'DaLCoMiN');
+//  hMutex := OpenMutex(MUTEX_ALL_ACCESS, False, 'MyUniqueMutexName');
+  if GetlastError() = ERROR_ALREADY_EXISTS then begin
+    // 모든 화면 앞에 메세지 박스 띄우기
+    MessageBox(0, 'Dalin 이 이미 실행 중입니다.', '알림', MB_OK or MB_ICONINFORMATION or MB_TOPMOST);
+//    Application.MessageBox('프로그램이 이미 실행 중입니다.', '경고', 0);
+    ShowMessage('프로그램이 이미 실행 중입니다.');
+    Halt;
+  end;
+
+  var ah: THandle;
+  ah := FindWindow(PChar('TFrmMKPUpdater'), nil);
+
+  try
+
+{$IFDEF RELEASE}
+
+    if ParamCount = 0 then
+    begin
+      if aH <= 0 then
+        ShellExecute(0, nil, PChar( ExtractFilePath(Application.ExeName)+'updater.exe'), nil, nil, SW_SHOW);
+      Exit
+    end;
+
+{$ENDIF}
+
+    Application.Initialize;
+    Application.MainFormOnTaskbar := True;
+    Application.CreateForm(TFrmDalinMain, FrmDalinMain);
+  Application.CreateForm(TDataModule1, DataModule1);
+  FrmDalinMain.Start;
+//    CheckFileIntegrity;
+
+    Application.Run;
+
+
+  finally
+
+    if MutexHandle > 0 then
+      CloseHandle(MutexHandle);
+  end;
+
+//  {$IFDEF DEBUG} ReportMemoryLeaksOnShutdown := True; {$ENDIF}
+
+
+end.
+

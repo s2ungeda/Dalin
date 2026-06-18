@@ -1,0 +1,691 @@
+unit UNewStg1;
+
+interface
+
+uses
+  System.Classes, System.SysUtils, System.DateUtils,
+
+  UNS1Items , UApiTypes, UApiConsts, UTypes,
+
+  USymbols, UAccounts, UPositions, UOrders
+  ;
+
+const
+  FAR_CNL   = 200;
+  NEAR_CNL  = 100;
+  LIQ_CNL   = -100;
+
+type
+
+  TNewStg1 = class
+  private
+    FParam: TNS1Param;
+    FRun: boolean;
+    FCode: string;
+    FExKind: TExchangeKind;
+    FSymbol: TSymbol;
+    FAsset: TAsset;
+    FAccount: TAccount;
+    FReady: boolean;
+
+    FPutOrds : array [TPositionType] of TStringList;
+    FLiqOrds : array [TPositionType] of TOrderList;
+    FPrepare : array [TPositionType] of boolean;
+    FDustQty : array [TPositionType] of double;
+
+    procedure DoLog( stLog : string );
+    procedure FirstProc( aType : TPositionType; iCntType : integer = 0 );
+    procedure NextProc( aType : TPositionType );
+    procedure Init;  overload;
+
+    procedure PutOrderProc( aType : TPositionType );
+    function CheckAvailable(dPrice: double; aType: TPositionType): boolean;
+
+    function DoOrder(dPrice, dQty: double; aType: TPositionType; bLiq : boolean): TOrder;
+    function DoCancel(aOrder : TOrder; iCnlType : integer = 0 ) : boolean;
+
+    procedure AllCancel(aType : TPositionType);
+    procedure CancelNearOrder(aType : TPositionType);
+    procedure CancelFarOrder(aType : TPositionType);
+    procedure CheckOrder(aType: TPositionType);
+    function SnlTypeToStr(iType: integer): string;
+
+  public
+    constructor Create;
+    Destructor  Destroy; override;
+
+    function Start : boolean;
+    procedure Stop;
+
+    procedure Init( aExKind : TExchangeKind; sCode : string ); overload;
+    procedure OnQuote(aSymbol : TSymbol);
+    procedure OnOrder(aOrder : TOrder);
+    procedure OnFill(aOrder : TOrder);
+
+    property Run : boolean read FRun;
+    property Ready : boolean read FReady;
+
+    property Code: string read FCode;
+    property ExKind : TExchangeKind read FExKind;
+    property Param : TNS1Param read FParam;
+
+    property Account : TAccount read FAccount;
+    property Symbol  : TSymbol  read FSymbol;
+    property Asset   : TAsset   read FAsset;
+
+  end;
+
+implementation
+
+uses
+  GApp, GLibs
+  , System.Math, System.Types
+  , USymbolCore
+  , UDecimalHelper
+  , UFills
+  ;
+
+{ TNewStg1 }
+
+constructor TNewStg1.Create;
+var
+  I: TPositionType;
+begin
+  FRun  := false;
+  FReady := false;
+
+  FCode := '';
+
+  FParam.Init;
+
+  FSymbol := nil;
+  FAsset  := nil;
+  FAccount:= nil;
+
+  for I := ptLong to High(TPositionType) do
+  begin
+    FPutOrds[i] := TStringList.Create;
+    FPutOrds[i].Sorted  := true;
+    FLiqOrds[i] := TOrderList.Create;
+  end;
+end;
+
+destructor TNewStg1.Destroy;
+var
+  I: TPositionType;
+begin
+
+  for I := ptLong to High(TPositionType) do
+  begin
+    FPutOrds[i].Free;
+    FLiqOrds[i].Free;
+  end;
+
+  inherited;
+end;
+
+function TNewStg1.SnlTypeToStr(iType : integer) : string;
+begin
+  case iType of
+    FAR_CNL   : REsult := 'Far';
+    NEAR_CNL  : Result := 'Near';
+    LIQ_CNL   : Result := '청산';
+    else
+      Result := '일반';
+  end;
+end;
+
+function TNewStg1.DoCancel(aOrder : TOrder; iCnlType : integer): boolean;
+begin
+  if aOrder = nil then Exit;
+
+  if aOrder <> nil then
+      if aOrder.IsCancelAble then
+      begin
+        App.Engine.TradeCore.Orders[aOrder.Symbol.Spec.ExchangeType].NewCancelOrder(
+          aOrder, aOrder.ActiveQty
+        ) ;
+        // 멀리있는 취소하면..Entry = true;
+        aOrder.Tag  := iCnlType;
+        App.Engine.TradeBroker.Send( aOrder );
+        DoLog( Format('주문 취소(%s) -> %s ', [ SnlTypeToStr(iCnlType), aOrder.Represent ] ));
+      end;
+end;
+
+procedure TNewStg1.DoLog(stLog: string);
+begin
+  if FRun then
+    App.Log(llInfo, FSymbol.Code + '_NewStg_1', '%s', [stLog] );
+end;
+
+procedure TNewStg1.Init(aExKind : TExchangeKind; sCode: string);
+begin
+
+  FExKind := aExKind;
+  FCode   := Uppercase(sCode);
+end;
+
+
+function TNewStg1.Start: boolean;
+begin
+  Result := false;
+  // 일단 spot 만 할것임
+  FAccount  := App.Engine.TradeCore.FindAccount(FExKind, amSpot);
+  FSymbol   := App.Engine.SymbolCore.BaseSymbols.FindSymbol( FCode, FExKind, eaSpot );
+
+  if (FAccount = nil) or (FSymbol = nil) then Exit;
+
+  if not FParam.BaseCheck then Exit;
+
+  Init;
+
+  FRun  := true;
+  Result:= true;
+  DoLog('---------------------- start ----------------------');
+end;
+
+procedure TNewStg1.Stop;
+begin
+  DoLog('---------------------- stop ----------------------');
+  FRun   := false;
+  FReady := false;
+
+  AllCancel( ptLong );
+  AllCancel( ptShort );
+end;
+
+procedure TNewStg1.OnFill(aOrder: TOrder);
+var
+  aType, aType2 : TPositionType;
+  iRes  : integer;
+  aFill : TFill;
+  dAmt, dPrice, dQty  : double;
+  rOrder : TOrder;
+  I: Integer;
+  bLiq : boolean;
+begin
+
+  if aOrder.Side > 0 then begin
+    aType := ptLong;
+    aType2:= ptShort;
+  end
+  else begin
+    aType := ptShort;
+    aType2:= ptLong;
+  end;
+
+  try
+    iRes := FPutOrds[aType].IndexOf(FmtString(FSymbol.Spec.Precision,aOrder.Price,1) );
+    if iRes >= 0 then
+    begin
+      DoLog(Format('New Fill : %s', [aOrder.Fills.LastFill.Represent]));
+      if aOrder.Side > 0 then
+        dPrice  := TicksFromPrice(FSymbol, aOrder.Fills.LastFill.Price, 1 )
+      else
+        dPrice  := TicksFromPrice(FSymbol, aOrder.Fills.LastFill.Price, -1 );
+
+      bLiq  := true;
+      dQty :=  aOrder.Fills.LastFill.Volume;
+      if (dPrice * dQty) < MIN_ORD_AMT then
+      begin
+        var dTmpQty : double;
+        dTmpQty := FDustQty[aType2] + dQty;
+
+        if  (dPrice * dTmpQty) < MIN_ORD_AMT  then begin
+          FDustQty[aType2]  := dTmpQty;
+          bLiq := false;
+          DoLog(Format('Dust 발생 (%s)  %s, %s, %s', [ aOrder.SideToStr,
+            aOrder.Symbol.QtyToStr(FDustQty[aType2]),
+            aOrder.Symbol.PriceToStr(aOrder.Fills.LastFill.Price), aOrder.Symbol.QtyToStr(dQty) ] ));
+        end
+        else begin
+          FDustQty[aType2] := 0;
+          dQty  := dTmpQty;
+
+          DoLog(Format('Dust 감소 %s, %s, %s', [ aOrder.SideToStr,
+            aOrder.Symbol.PriceToStr(aOrder.Fills.LastFill.Price), aOrder.Symbol.QtyToStr(dQty) ] ));
+        end;
+      end;
+
+      if bLiq then
+      begin
+        rOrder := DoOrder( dPrice, dQty, aType2, true );
+        if rOrder = nil then
+        begin
+          DoLog( Format('청산 주문실패 %s, %s ', [ ifThenStr(aType2=ptLong, '매수', '매도'),
+            Fsymbol.PriceToStr(dPrice) ] ));
+          Exit;
+        end;
+        FLiqOrds[aType2].Add(rOrder);
+      end;
+
+      if aOrder.State = osFilled then
+      begin
+        DoLog(Format('%s 로 삭제 %s', [ aOrder.StateToStr, aOrder.Represent ]));
+        FPutOrds[aType].Delete(iRes);
+        FirstProc(aType);
+      end;
+    end;
+  finally
+    CheckOrder(aType);
+  end;
+end;
+
+
+procedure TNewStg1.CheckOrder(aType : TPositionType);
+var
+  i : integer;
+  aOrder : TOrder;
+begin
+
+  for I := FLiqOrds[aType].Count-1 downto 0 do begin
+    aOrder := TOrder(FLiqOrds[aType].Items[i]);
+    if aOrder <> nil then
+      if not (aOrder.State in [osReady, osSent, osSrvAcpt, osActive]) then
+        FLiqOrds[aType].Delete(i);
+  end;
+
+end;
+
+procedure TNewStg1.OnOrder(aOrder: TOrder);
+var
+  aType : TPositionType;
+  iRes  : integer;
+  rOrder : TOrder;
+  dPrice : double;
+begin
+
+  if not FRun then Exit;
+
+  if aOrder.Side > 0 then
+    aType := ptLong
+  else
+    aType := ptShort;
+
+  try
+
+    if (aOrder.State in [osCanceled, osRejected]) or
+       ( (aOrder.OrderType = otCancel) and (aOrder.State = osFilled))  then
+    begin
+
+      DoLog( Format('취소 : %s , %s', [SnlTypeToStr(aOrder.Tag), aOrder.Represent]));
+
+      if aOrder.Tag = LIQ_CNL then
+      begin
+          if FLiqOrds[aType].FindOrder(aOrder) <> nil then
+          begin
+            DoLog(Format('청산 주문 취소 %s', [aOrder.Represent ]));
+            if aOrder.ModifyCnt > FParam.modCnt then begin
+              if aOrder.Side > 0 then
+                dPrice  := TicksFromPrice(FSymbol, aOrder.Price, 50)
+              else
+                dPrice  := TicksFromPrice(FSymbol, aOrder.Price, -50)
+            end else
+              dPrice := ifThenFloat( aOrder.Side > 0, FSymbol.Bids[0].Price, FSymbol.Asks[0].Price );
+
+            rOrder := DoOrder( dPrice, aOrder.CanceledQty, aType, true );
+            if rOrder = nil then
+            begin
+              DoLog( Format('청산 주문실패 %s, %s ', [ ifThenStr(aType=ptLong, '매수', '매도'),
+                Fsymbol.PriceToStr(dPrice) ] ));
+              Exit;
+            end;
+            rOrder.ModifyCnt := aOrder.ModifyCnt + 1;
+            DoLog( format('%d.th 정정 %s', [ rOrder.ModifyCnt, rOrder.Represent]));
+            FLiqOrds[aType].Add(rOrder);
+          end;
+
+      end else
+      begin
+          iRes := FPutOrds[aType].IndexOf(FmtString(FSymbol.Spec.Precision,aOrder.Price,1) );
+          if iRes >= 0 then
+          begin
+            DoLog(Format('%s 로 삭제 %s', [ aOrder.StateToStr, aOrder.Represent ]));
+            FPutOrds[aType].Delete(iRes);
+            if aOrder.State = osCanceled then
+              FirstProc(aType, aOrder.Tag);
+          end ;
+      end;
+    end;
+
+  finally
+    CheckOrder(aType);
+  end;
+
+end;
+
+procedure TNewStg1.OnQuote(aSymbol: TSymbol);
+begin
+  if not FRun then Exit;
+
+  if FReady then
+  begin
+
+    CancelNearOrder(ptLong);
+    CancelNearOrder(ptShort);
+
+    CancelFarOrder(ptLong);
+    CancelFarOrder(ptShort);
+
+    NextProc(ptLong);
+ //   NextProc(ptShort);
+
+  end else
+  begin
+    FirstProc(ptLong);
+ //   FirstProc(ptShort);
+  end;
+
+end;
+
+procedure TNewStg1.PutOrderProc(aType: TPositionType);
+begin
+
+  if FPutOrds[aType].Count < FParam.count  then
+    FirstProc(aType);
+
+end;
+
+{
+  // 주문나가 있는 갯수 파악
+
+}
+
+procedure TNewStg1.AllCancel(aType: TPositionType);
+var
+  i : integer;
+  aOrder : TOrder;
+begin
+  for I := 0 to FPutOrds[aType].Count-1 do begin
+    aOrder  := TOrder(FPutOrds[aType].Objects[i]);
+    DoCancel(aOrder);
+  end;
+end;
+
+procedure TNewStg1.CancelFarOrder(aType: TPositionType);
+var
+  idx, iGap, iLimit : integer;
+  dInt : TDecimalHelper;
+  QPrice : double;
+  bCnl : boolean;
+  aOrder : TOrder;
+begin
+
+  if FPutOrds[aType].Count <= 0 then Exit;
+  // 매수는..
+  idx := ifThen(aType = ptLong,  FPutOrds[aType].Count-1, 0);
+  aOrder := TOrder(FPutOrds[aType].Objects[idx] );
+  if aOrder = nil then Exit;
+  if (aOrder.OrderType <> otNormal) or (aOrder.Modify) then Exit;
+
+  bCnl := false;
+  iLimit := ifThen(FParam.useLimitHoga,FParam.limitHoga,0);
+  if aType = ptLong then begin
+    QPrice := FSymbol.Bids[0].Price;
+    iGap := round(abs(QPrice - aOrder.Price) / UnitFromPrice(FSymbol, QPrice));
+    if iGap > FParam.startHoga + iLimit then
+      bCnl := true;
+  end
+  else begin
+    QPrice := FSymbol.Asks[0].Price;
+    iGap := round(abs(QPrice - aOrder.Price) / UnitFromPrice(FSymbol, QPrice));
+    if iGap > FParam.startHoga + iLimit then
+      bCnl := true;
+  end;
+
+  if bCnl then
+  begin
+    idx := ifThen(aType = ptLong, 0, FPutOrds[aType].Count-1);
+    DoCancel( TOrder(FPutOrds[aType].Objects[idx]), FAR_CNL);
+  end;
+
+end;
+
+procedure TNewStg1.CancelNearOrder(aType: TPositionType);
+var
+  idx, i, iLimit : integer;
+  dInt : TDecimalHelper;
+  QPrice, dTmp : double;
+  bCnl : boolean;
+  aOrder : TOrder;
+
+begin
+
+  for I := 0 to FLiqOrds[aType].Count-1 do
+  begin
+    aOrder  := FLiqOrds[aType].Orders[i];
+    if aOrder = nil then Continue;
+    if aOrder.IsCancelAble then
+    begin
+      if aOrder.Side > 0 then begin
+        if ((FSymbol.Bids[0].Price - EPSILON ) - aOrder.Price) > 0 then
+        begin
+          // 체결 안되고 상승...
+          DoLog( Format('매수 청산 주문 정정 : 매수가(%s) > 주문(%s) , %s', [
+            FSymbol.PriceToStr(FSymbol.Bids[0].Price), FSymbol.PriceToStr(aOrder.Price)
+            , aOrder.Represent ]) );
+          //aOrder.ModifyCnt := aOrder.ModifyCnt + 1;
+          DoCancel(aOrder, LIQ_CNL);
+        end;
+      end
+      else begin
+        if ((aOrder.Price - EPSILON ) - FSymbol.Asks[0].Price ) > 0 then
+        begin
+          // 체결 안되고 하락...
+          DoLog( Format('매도 청산 주문 정정 : 매도가(%s) < 주문(%s) , %s', [
+            FSymbol.PriceToStr(FSymbol.Asks[0].Price), FSymbol.PriceToStr(aOrder.Price)
+            , aOrder.Represent ]) );
+          //aOrder.ModifyCnt := aOrder.ModifyCnt + 1;
+          DoCancel(aOrder,LIQ_CNL);
+        end;
+      end;
+    end;
+  end;
+
+  if not FParam.useLimitHoga then  Exit;
+
+  if FPutOrds[aType].Count <= 0 then Exit;
+  // 매수는..
+  idx := ifThen(aType = ptLong,  FPutOrds[aType].Count-1, 0);
+  aOrder := TOrder(FPutOrds[aType].Objects[idx] );
+  if aOrder = nil then Exit;
+  if (aOrder.OrderType <> otNormal) or (aOrder.Modify) then Exit;
+
+  iLimit := Max(0, FParam.limitHoga-1);
+  bCnl := false;
+  if aType = ptLong then begin
+    QPrice := FSymbol.Bids[iLimit].Price;
+    dTmp := QPrice - aOrder.Price;
+    if dTmp < EPSILON then
+      bCnl := true;
+  end
+  else begin
+    QPrice := FSymbol.Asks[iLimit].Price;
+    dTmp := aOrder.Price - QPrice;
+    if dTmp < EPSILON then
+      bCnl := true;
+  end;
+
+  if bCnl then
+  begin
+    DoCancel( TOrder(FPutOrds[aType].Objects[idx]), NEAR_CNL );
+  end;
+
+end;
+
+function  TNewStg1.CheckAvailable(dPrice : double; aType : TPositionType) : boolean;
+var
+  dOrdAmt, dAvailable, dFee : double;
+  res  : TValueRelationship;
+  iSide: integer;
+begin
+
+  Result := false;
+
+  iSide := ifThen(aType = ptLong, 1, -1 );
+
+  with App.Engine.TradeCore.Orders[FExKind] do
+  begin
+    // 섭거래소 나가 있는 매수 미접수/미체결 주문 금액도 도 포함해서 ..체크
+    dAvailable := FAccount.Asset.Balance
+      - (GetAcceptOrderAmt(FAccount, iSide) + GetUnAcceptOrderAmt(FAccount, iSide));
+  end;
+
+  dFee:= App.Engine.ApiConfig.ExchangeInfo[integer(FExKind)].ApiInfo[FSymbol.Spec.ExApiType].TradeFee;
+  dOrdAmt   := (dPrice * FParam.orderQty) * ( 1+(dFee/100))  ;
+
+  res  := CompareValue( dAvailable, dOrdAmt );
+  if res <= 0 then
+  begin
+    DoLog( format('%s : 주문가능 금액 부족 %.0n > %.0n', [
+        ifThenStr(aType=ptLong,'매수','매도'), dOrdAmt,  dAvailable ]) );
+    Exit;
+  end;
+
+  Result := true;
+end;
+
+procedure TNewStg1.FirstProc( aType : TPositionType; iCntType : integer );
+var
+  I, idx : Integer;
+  dPrice : double;
+  aOrder, pOrder : TOrder;
+begin
+
+  try
+    dPrice := 0;
+    // 목표 카운트 채워졌는지..
+    if FPutOrds[aType].Count >= FParam.count then begin
+      FPrePare[aType] := true;
+      Exit;
+    end
+    else begin
+      if FPutOrds[aType].Count <= 0 then begin
+        if aType = ptLong then
+          dPrice  := FSymbol.Bids[FParam.startHoga-1].Price
+        else
+          dPrice  := FSymbol.Asks[FParam.startHoga-1].Price;
+      end else begin
+        if iCntType = FAR_CNL then
+        begin
+          idx  := ifThen(aType = ptLong, FPutOrds[aType].Count-1, 0);
+          if FPutOrds[aType].Objects[idx] = nil then Exit;
+          pOrder  := TOrder( FPutOrds[aType].Objects[idx] );
+          dPrice  := TicksFromPrice(FSymbol, pOrder.Price, ifThen( aType = ptLong, FParam.tick, -FParam.tick) ) ;
+        end else
+        begin
+          idx  := ifThen(aType = ptLong, 0, FPutOrds[aType].Count-1);
+          if FPutOrds[aType].Objects[idx] = nil then Exit;
+          pOrder  := TOrder( FPutOrds[aType].Objects[idx] );
+          dPrice  := TicksFromPrice(FSymbol, pOrder.Price, ifThen( aType = ptLong, -FParam.tick, FParam.tick) ) ;
+        end;
+      end;
+    end;
+
+    if CheckZero(dPrice) then Exit;
+    if FPutOrds[aType].IndexOf(FmtString( GetPrecision(FSymbol, dPrice), dPrice, 1)) >= 0 then
+      Exit;
+    if not CheckAvailable(dPrice, aType) then Exit;
+
+    aOrder := DoOrder( dPrice, FParam.orderQty, aType, false );
+    if aOrder = nil then
+    begin
+      DoLog( Format('주문실패 %s, %s ', [ ifThenStr(aType=ptLong, '매수', '매도'),
+        Fsymbol.PriceToStr(dPrice) ] ));
+      Exit;
+    end;
+
+    FPutOrds[aType].AddObject( FmtString(GetPrecision(FSymbol, dPrice), dPrice, 1), aOrder);
+
+  finally
+    FReady :=  FPrePare[ptLong] and FPrePare[ptShort];
+  end;
+end;
+
+procedure TNewStg1.NextProc( aType : TPositionType );
+var
+  I, idx, iCnt : Integer;
+  dPrice : double;
+  aOrder, pOrder : TOrder;
+begin
+
+  dPrice := 0;
+  // 목표 카운트 채워졌는지..
+  if FPutOrds[aType].Count >= FParam.count then
+  begin
+    iCnt := FPutOrds[aType].Count - FParam.count;
+    if iCnt > 0 then
+    begin
+      idx := ifThen(aType = ptLong, 0, FPutOrds[aType].Count-1);
+      DoCancel( TOrder(FPutOrds[aType].Objects[idx]));
+    end;
+
+  end
+  else begin
+    if FPutOrds[aType].Count <= 0 then begin
+      if aType = ptLong then
+        dPrice  := FSymbol.Bids[FParam.startHoga-1].Price
+      else
+        dPrice  := FSymbol.Asks[FParam.startHoga-1].Price;
+    end else begin
+      idx  := ifThen(aType = ptLong, 0, FPutOrds[aType].Count-1);
+      if FPutOrds[aType].Objects[idx] = nil then Exit;
+      pOrder  := TOrder( FPutOrds[aType].Objects[idx] );
+      dPrice  := TicksFromPrice(FSymbol, pOrder.Price, ifThen( aType = ptLong, -FParam.tick, FParam.tick) ) ;
+    end;
+  end;
+
+  if CheckZero(dPrice) then Exit;
+  if FPutOrds[aType].IndexOf(FmtString( GetPrecision(FSymbol, dPrice), dPrice, 1)) >= 0 then
+    Exit;
+  if not CheckAvailable(dPrice, aType) then Exit;
+
+  aOrder := DoOrder( dPrice, FParam.orderQty, aType, false );
+  if aOrder = nil then
+  begin
+    DoLog( Format('주문실패 %s, %s ', [ ifThenStr(aType=ptLong, '매수', '매도'),
+      Fsymbol.PriceToStr(dPrice) ] ));
+    Exit;
+  end;
+
+  FPutOrds[aType].AddObject( FmtString( GetPrecision(FSymbol, dPrice), dPrice, 1), aOrder);
+end;
+
+
+procedure TNewStg1.Init;
+begin
+  FPutOrds[ptLong].Clear;
+  FPutOrds[ptShort].Clear;
+  FLiqOrds[ptLong].Clear;
+  FLiqOrds[ptShort].Clear;
+
+  FPrepare[ptLong] := false;
+  FPrepare[ptShort] := false;
+
+  FDustQty[ptLong]  := 0;
+  FDustQty[ptShort] := 0;
+end;
+
+function TNewStg1.DoOrder(dPrice, dQty: double; aType: TPositionType; bLiq : boolean) : TOrder;
+begin
+
+  Result := App.Engine.TradeCore.Orders[FSymbol.Spec.ExchangeType].NewOrder(
+    FAccount, Fsymbol, ifThen(aType=ptLong, 1, -1),  dQty, pcLimit, dPrice, tmGTC
+  );
+
+  if Result = nil then Exit;
+
+  Result.StgType  := stNS1;
+  // 대놓는  주문...
+  Result.Entry    := not bLiq;
+  App.Engine.TradeBroker.Send(Result);
+
+  DoLog( Format('%s  주문 (%d) - %s', [ ifThenStr(bLiq,'청산','깔기'),
+    ifThen(bLiq, FLiqOrds[aType].Count, FPutOrds[aType].Count),
+    Result.Represent ]) );
+
+end;
+
+
+
+end.

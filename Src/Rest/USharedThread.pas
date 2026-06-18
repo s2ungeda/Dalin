@@ -1,0 +1,435 @@
+unit USharedThread;
+
+interface
+
+uses
+  Winapi.Windows, System.Classes, System.SysUtils,
+  USharedData
+  ;
+
+const
+  MS = INFINITE;
+
+type
+
+  TSharedThread = class(TThread)
+  private
+    hTerminate: THandle;
+
+    hMapLock: array [0..1] of THandle;
+    hMapEvent:array [0..1] of THandle;
+    hMapping: array [0..1] of THandle;
+    PMapData: array [0..1] of Pointer;
+
+    FOnNotify: TSharedDataNotify;
+    FDataItem : TDataItem;
+    FIsMain   : boolean;
+
+    FName : string;
+
+    POP, PUSH : integer;
+
+    MapName, LockName, EvntName : array [0..1] of string;
+    FSharedThreadType: TSharedThreadType;
+
+    procedure LockMap( idx : integer );
+    procedure UnlockMap( idx : integer );
+    procedure OpenMap;
+
+    { Private declarations }
+  protected
+    procedure Execute; override;
+    procedure DoTerminate; override;
+    procedure TerminatedSet; override;
+
+    procedure SyncProc;
+
+  public
+    constructor Create( aCallBack : TSharedDataNotify; bMain : boolean; stType : TSharedThreadType);
+    destructor Destroy; override;
+
+    // 실제 메서드
+    function PushData( c1, c2, c3 : char; s1, s2 : string ): boolean;
+    // 테스트 메서드
+    procedure PushData2(c1, c2, c3: char; s1, s2: string);
+    procedure DoSetEvent(bPush: boolean);
+
+    property SharedThreadType : TSharedThreadType read FSharedThreadType;
+    property OnNotify : TSharedDataNotify read FOnNotify write FOnNotify;
+  end;
+
+implementation
+
+uses
+   GLibs
+	, GApp
+  , USharedConsts
+  , System.Diagnostics
+  , UTypes
+  ;
+
+
+constructor TSharedThread.Create( aCallBack : TSharedDataNotify; bMain : boolean; stType : TSharedThreadType);
+var
+  sTmp : string;
+begin
+  FOnNotify := aCallBack;
+  // dalin : true   rest : false;
+  FIsMain   := bMain;
+  if FIsMain then begin
+    PUSH := 0; POP := 1;
+  end else begin
+    PUSH := 1; POP := 0;
+  end;
+
+  FSharedThreadType := stType;
+  FName := STTypeToStr(stType);
+
+  MapName[PUSH] := ifThenStr( FIsMain, 'dalinMap', 'restMap' ) + FName;
+  LockName[PUSH]:= ifThenStr( FIsMain, 'dalinLock', 'restLock' )+ FName ;
+  EvntName[PUSH]:= ifThenStr( FIsMain, 'dalinEvent', 'restEvent' )+ FName;
+
+  MapName[POP] := ifThenStr(  FIsMain, 'restMap', 'dalinMap' )+ FName;
+  LockName[POP]:= ifThenStr(  FIsMain, 'restLock', 'dalinLock' )+ FName ;
+  EvntName[POP]:= ifThenStr(  FIsMain, 'restEvent', 'dalinEvent' )+ FName;
+
+  inherited Create(true);
+  sTmp := Format('%sTermindate%s', [IfThenStr(FIsMain,'dalin','rest'), FName]);
+  hTerminate := CreateEvent(nil, True, False, PChar(sTmp));
+  if hTerminate = 0 then RaiseLastOSError;
+
+  OpenMap;
+end;
+
+destructor TSharedThread.Destroy;
+begin
+  if hTerminate <> 0 then CloseHandle(hTerminate);
+
+  UnmapViewOfFile(PMapData[PUSH]);
+
+  CloseHandle(hMapping[PUSH]);
+  CloseHandle(hMapLock[PUSH]);
+  CloseHandle(hMapEvent[PUSH]);
+
+end;
+
+procedure TSharedThread.DoSetEvent(bPush: boolean);
+begin
+  if bPush then
+    SetEvent(hMapEvent[PUSH])
+  else
+    SetEvent(hMapEvent[POP]);
+end;
+
+procedure TSharedThread.DoTerminate;
+var s: string;
+begin
+  FOnNotify := nil;
+
+  if FatalException <> nil then
+    s := Format('FATAL: %s', [Exception(FatalException).Message])
+  else
+    s := 'normal terminate (Terminated=' + BoolToStr(Terminated, True) + ')';
+
+  App.Log(llInfo, '%s Execute exit : %s', [FName, s]);
+
+  // 내가 만든거..
+  UnmapViewOfFile(PMapData[PUSH]);
+  if CloseHandle(hMapping[PUSH]) then hMapping[PUSH] := 0;
+  if CloseHandle(hMapLock[PUSH]) then hMapLock[PUSH] := 0;
+  if CloseHandle(hMapEvent[PUSH])then hMapEvent[PUSH]:= 0;
+  // 니가 만든거..
+  try
+  if PMapData[POP]  <> nil then UnmapViewOfFile(PMapData[POP]);
+  if hMapping[POP]  <> 0   then CloseHandle(hMapping[POP]);
+  if hMapEvent[POP] <> 0   then CloseHandle(hMapEvent[POP]);
+  if hMapLock[POP]  <> 0   then CloseHandle(hMapLock[POP]);
+  except on e : exception do
+    App.DebugLog( '%s', [e.Message]);
+  end;
+  inherited;
+end;
+
+procedure TSharedThread.Execute;
+var
+  llInit: Boolean;
+  llRet : DWORD;
+  llHandles: array[0..1] of THandle;
+  iSize, iCnt : integer;
+  vData : PSharedData;
+//  item : TDataItem;
+
+//  StopWatch: TStopwatch;
+
+begin
+  iSize  := SizeOf(TSharedData);
+  hMapEvent[POP] := CreateEvent(nil, False, False, PChar(EvntName[POP]));
+  if hMapEvent[POP] = 0 then RaiseLastOSError;
+
+  hMapLock[POP] := CreateMutex(nil, False, PChar(LockName[POP]));
+  if hMapLock[POP] = 0 then RaiseLastOSError;
+
+  hMapping[POP] := CreateFileMapping(INVALID_HANDLE_VALUE, nil, PAGE_READWRITE, 0, iSize, PChar(MapName[POP]));
+  if hMapping [POP]= 0 then RaiseLastOSError;
+  // Check if already exists
+  llInit := (GetLastError() <> ERROR_ALREADY_EXISTS);
+
+  PMapData[POP] := MapViewOfFile(hMapping[POP], FILE_MAP_WRITE, 0, 0, iSize);
+  if PMapData[POP] = nil then RaiseLastOSError;
+  if llInit then
+  begin
+    // Init block to #0 if newly created
+    FillChar(PMapData[POP]^, iSize, 0);
+  end;
+
+  llHandles[0] := hMapEvent[POP];
+  llHandles[1] := hTerminate;
+
+  App.Log(llInfo, '%s Shared Thread Start', [FName]);
+
+  while not Terminated do
+  begin
+    llRet := WaitForMultipleObjects(2, PWOHandleArray(@llHandles), False, MS);
+    //llRet := WaitForMultipleObjects(2, PWOHandleArray(@llHandles), False, 2);
+    case llRet of
+      WAIT_OBJECT_0+0, WAIT_TIMEOUT:
+      begin
+
+//-------------------------------------------------------------------------
+        vData   := PSharedData( PMapData[POP] );
+        while (not vData.IsEmpty) do
+        begin
+
+{$IFDEF REST}
+//                // 보낼수 있는 상태인지...파악
+//         //       if FSharedThreadType = stUpSThread then
+//                  if not App.RestManager.IsAbleReq(FSharedThreadType) then begin
+//                    inc(icnt);
+////                    App.DebugLog('%s(%d) Request Limit', [FName, App.RestManager.Rest[FSharedThreadType].AsyncRESTs.GetReqCount] );
+//                    sleep(2);
+//
+//                    continue;
+//                  end;
+{$ENDIF}
+          WaitForSingleObject(hMapLock[POP], MS);
+          vData.Front := ( vData.Front + 1) mod Q_SIZE;
+          CopyMemory(@FDataItem, @(vData.SharedData[vData.Front])  , sizeof( TDataItem) )        ;
+          UnlockMap(POP);
+          Synchronize(SyncProc );
+        end;
+
+        continue;
+
+      end;
+      WAIT_OBJECT_0+1:
+      begin
+//        App.DebugLog(Fo 'thread terminated');
+        Exit;
+      end;
+    end;
+    if llRet <> WAIT_FAILED then SetLastError(llRet);
+    RaiseLastOSError;
+  end;
+end;
+
+function TSharedThread.PushData(c1, c2, c3: char; s1, s2: string): boolean;
+var
+  vData : PSharedData;
+  aItem : TDataItem;
+  data  : ansiString;
+  bFull : boolean;
+begin
+  Result := false;
+
+  LockMap(PUSH);
+  try
+
+    try
+      vData := PSharedData( PMapData[PUSH] );
+
+      if vData.IsFull then
+      begin
+        App.DebugLog('Shared Queue Full : %s', [ifThenStr(FIsMain,'Dallin', 'Rest')] );
+        Exit;
+      end;
+      // 한칸 앞으로 이동 후 데이타 추가
+      vData.Rear := ( vData.Rear + 1 ) mod Q_SIZE;
+
+      FillChar( aItem.data, DATA_SIZE, $0 );
+      data  :=  AnsiString(s1);
+      aItem.exKind  := c1;
+      aItem.exApiType  := c2;
+      aItem.trDiv		:= c3;
+      aItem.ref     := s2;
+      aItem.size    := Length( data );
+
+      move(  data[1], aItem.data, Length(data) );
+
+      CopyMemory(@(vData.SharedData[vData.Rear]), @aItem, sizeof(TDataItem));
+  //    PDword(PMapData)^ := StrToInt(Edit1.Text);
+  //    SetEvent(hMapEvent[PUSH]);
+  //    App.DebugLog('Push %s queue(%d) : %d, %d', [FName, vData.Count, vData.Front, vdata.Rear ]    );
+      Result := true;
+    except on e : Exception do
+      begin
+        App.Log(llError, '%s Shared PushData Error : queue(%d) : %d, %d [%s] (%s)', [
+          FName, vData.Count, vData.Front, vdata.Rear
+          , c1 + c2 + c3 + s1 + s2
+          ,e.Message] );
+      end;
+    end;
+  finally
+    UnlockMap(PUSH);
+    if Result then
+    begin
+      SetEvent(hMapEvent[PUSH]);
+//      App.DebugLog('Push %s queue(%d) : %d, %d', [FName, vData.Count, vData.Front, vdata.Rear ]    );
+    end;
+  end;
+end;
+
+procedure TSharedThread.PushData2(c1, c2, c3: char; s1, s2: string);
+var
+  vData : PSharedData;
+  aItem : TDataItem;
+  data  : ansiString;
+  bFull : boolean;
+begin
+
+  bFull := false;
+  LockMap(PUSH);
+  try
+
+    vData := PSharedData( PMapData[POP] );
+
+    if vData.IsFull then
+    begin
+      App.DebugLog('Shared Queue Full : %s', [ifThenStr(FIsMain,'Dallin', 'Rest')] );
+      bFull := true;
+      Exit;
+    end;
+    // 한칸 앞으로 이동 후 데이타 추가
+    vData.Rear := ( vData.Rear + 1 ) mod Q_SIZE;
+
+    FillChar( aItem.data, DATA_SIZE, $0 );
+    data  :=  AnsiString(s1);
+    aItem.exKind  := c1;
+    aItem.exApiType  := c2;
+    aItem.trDiv		:= c3;
+    aItem.ref     := s2;
+    aItem.size    := Length( data );
+
+    move(  data[1], aItem.data, Length(data) );
+
+    CopyMemory(@(vData.SharedData[vData.Rear]), @aItem, sizeof(TDataItem));
+//    PDword(PMapData)^ := StrToInt(Edit1.Text);
+//    SetEvent(hMapEvent[PUSH]);
+//    App.DebugLog('Push %s queue(%d) : %d, %d', [FName, vData.Count, vData.Front, vdata.Rear ]    );
+
+  finally
+    UnlockMap(POP);
+    if not bFull then
+    begin
+      SetEvent(hMapEvent[POP]);
+      //App.DebugLog('Push %s queue(%d) : %d, %d', [FName, vData.Count, vData.Front, vdata.Rear ]    );
+    end;
+  end;
+end;
+
+
+
+procedure TSharedThread.OpenMap;
+var
+  llInit: Boolean;
+  iSize : integer;
+begin
+  llInit := False;
+  iSize  := SizeOf(TSharedData);
+
+  if hMapEvent[PUSH] = 0 then
+  begin
+    hMapEvent[PUSH] := CreateEvent(nil, False, False, PChar(EvntName[PUSH]));
+    if hMapEvent[PUSH] = 0 then RaiseLastOSError;
+  end;
+
+  if hMapLock[PUSH] = 0 then
+  begin
+    hMapLock[PUSH] := CreateMutex(nil, False, PChar(LockName[PUSH]));
+    if hMapLock[PUSH] = 0 then RaiseLastOSError;
+  end;
+
+  if hMapping[PUSH] = 0 then
+  begin
+    hMapping[PUSH] := CreateFileMapping(INVALID_HANDLE_VALUE, nil, PAGE_READWRITE, 0, iSize, PChar(MapName[PUSH]));
+    if hMapping[PUSH] = 0 then RaiseLastOSError;
+    // Check if already exists
+    llInit := (GetLastError() <> ERROR_ALREADY_EXISTS);
+  end;
+
+  if PMapData[PUSH] = nil then
+  begin
+    PMapData[PUSH] := MapViewOfFile(hMapping[PUSH], FILE_MAP_WRITE, 0, 0, iSize);
+    if PMapData[PUSH] = nil then RaiseLastOSError;
+
+    if llInit then
+    begin
+      // Init block to #0 if newly created
+      ZeroMemory(PMapData[PUSH], iSize);
+    end;
+  end;
+
+end;
+
+
+procedure TSharedThread.LockMap( idx : integer );
+var
+  llRet, err: DWORD;
+ begin
+//  llRet := WaitForSingleObject(hMapLock[idx], MS);// 1000*5);
+//  // 정장
+//  if llRet = WAIT_OBJECT_0 then Exit;
+//  if llRet = WAIT_FAILED then
+//    RaiseLastOSError(GetLastError, Format('LockMap = %d', [llRet]))
+//  else begin
+//    // WAIT_ABANDONED/WAIT_TIMEOUT
+//    SetLastError(llRet);
+//    RaiseLastOSError;
+//  end;
+
+  llRet := WaitForSingleObject(hMapLock[idx], MS);
+  case llRet of
+    WAIT_OBJECT_0, WAIT_ABANDONED:
+      Exit;                         // 둘 다 소유권은 받은 상태
+    WAIT_FAILED:
+      begin
+        err := GetLastError;        // Format 전에 먼저 캡처
+        RaiseLastOSError(err,
+          Format(' [LockMap %s idx=%d h=%x]', [FName, idx, hMapLock[idx]]));
+      end;
+  else
+    RaiseLastOSError(llRet,
+      Format(' [LockMap %s idx=%d ret=%d]', [FName, idx, llRet]));
+  end;
+
+end;
+
+procedure TSharedThread.UnlockMap( idx : integer );
+begin
+  ReleaseMutex(hMapLock[idx]);
+end;
+
+procedure TSharedThread.SyncProc;
+begin
+  try
+    if Assigned( FOnNotify ) then
+      FOnNotify( FDataItem );
+  except
+  end;
+end;
+
+procedure TSharedThread.TerminatedSet;
+begin
+  SetEvent(hTerminate);
+end;
+
+end.

@@ -1,0 +1,237 @@
+unit UDustManager;
+
+interface
+
+uses
+  System.Classes, System.SysUtils,
+
+  USymbols, UAccounts,
+
+  UApiTypes, UApiConsts
+
+  ;
+
+type
+  TDust = class(TCollectionItem)
+  private
+    FSymbol: TSymbol;
+    FQty: double;
+    FSide: integer;
+    FOrdPrice: double;
+    FOrdQty: double;
+    FAccount: TAccount;
+  public
+    // etc
+    GroupNo: string;
+
+    //
+    constructor Create(aColl: TCollection); override;
+    destructor Destroy; override;
+
+    function IsOrder(iTick : integer) : boolean;
+    function Represent: string;
+
+    procedure DecQty(dQty : double);
+
+    property Symbol : TSymbol read FSymbol;
+    property Account: TAccount read FAccount;
+    property Qty    : double read FQty;
+    property Side   : integer read FSide;
+
+    property OrdPrice  : double read FOrdPrice;
+    property OrdQty    : double read FOrdQty;
+  end;
+
+  TDusts = class(TCollection)
+  private
+    function GetDust(i: integer): TDust; overload;
+  public
+    constructor Create;
+    destructor Destroy; override;
+
+    function New(aSymbol : TSymbol; iSide : integer) : TDust;
+    function Find(aSymbol : TSymbol; iSide : integer) : TDust;
+
+    function GetDust(aSymbol : TSymbol; iSide : integer) : double; overload;
+
+    procedure SetDust(aSymbol : TSymbol; iSide : integer; dQty : double);
+    function AddDust(aSymbol : TSymbol; iSide : integer; dQty : double): TDust;
+    // 종목이 다르더라도.. 한 종목처럼 다루기 위해.
+    procedure DecDust(iSide : integer; dQty : double);
+    function GetTotDust(iSide : integer) : double;
+
+    property Dust[i:integer] : TDust read GetDust;
+  end;
+
+implementation
+
+uses
+  GApp, GLibs, Math,
+  USymbolCore, UConsts
+  ;
+
+
+{ TDust }
+
+constructor TDust.Create(aColl: TCollection);
+begin
+  inherited Create(aColl);
+  FSymbol := nil;
+  FAccount:= nil;
+  FQty    := 0;
+  FSide   := 0;
+
+  FOrdPrice := 0;
+  FOrdQty   := 0;
+
+  GroupNo := '';
+end;
+
+destructor TDust.Destroy;
+begin
+
+  inherited;
+end;
+
+function TDust.IsOrder(iTick : integer): boolean;
+var
+  dQty, dPrice : double;
+begin
+  Result := false;
+  if FQty <= EPSILON then Exit;
+
+  dPrice := TicksFromPrice(FSymbol, FSymbol.Last, iTick * FSide);
+
+  dQty := FQty;
+  if FSymbol.Spec.ExchangeType = ekBinance then
+    dQty := TruncDecimal(FQty, FSymbol.Spec.QtyPrecision);
+
+  REsult := FSymbol.IsOrderAble(dPrice, dQty);
+
+  if Result then
+  begin
+    FOrdPrice := dPrice;
+    FOrdQty   := dQty;
+  end;
+end;
+
+function TDust.Represent: string;
+begin
+  Result := Format('%s, %s, %s', [
+    FSymbol.Code, IfThenStr(FSide > 0,'매수', '매도'), DoubleToStr(FQty)
+    ]);
+end;
+
+procedure TDust.DecQty(dQty: double);
+begin
+  FQty := Max(0, FQty - dQty);
+end;
+
+{ TDusts }
+
+function TDusts.AddDust(aSymbol: TSymbol; iSide: integer; dQty: double): TDust;
+var
+  aDust : TDust;
+begin
+  aDust := New(aSymbol, iSide);
+  aDust.FQty  := aDust.FQty + dQty;
+
+  Result := aDust;
+end;
+
+constructor TDusts.Create;
+begin
+  inherited Create(TDust);
+end;
+
+procedure TDusts.DecDust(iSide: integer; dQty: double);
+var
+  I: Integer;
+  dGap : double;
+begin
+
+  if dQty <= 0 then Exit;
+
+  for I := Count-1 downto 0 do
+    if (GetDust(i).Side = iSide) then
+    begin
+      dGap := GetDust(i).Qty - dQty;
+
+      if dGap > 0 then
+        GetDust(i).FQty  := dGap
+      else if dGap <= 0 then
+      begin
+        dQty  := dQty - GetDust(i).Qty;
+        Delete(i);
+      end;
+    end;
+
+end;
+
+destructor TDusts.Destroy;
+begin
+
+  inherited;
+end;
+
+function TDusts.Find(aSymbol: TSymbol; iSide: integer): TDust;
+var
+  I: Integer;
+begin
+  Result := nil;
+  for I := 0 to Count-1 do
+    if (GetDust(i).Symbol = aSymbol) and (GetDust(i).Side = iSide) then
+    begin
+      Result := GetDust(i);
+      break;
+    end;
+end;
+
+function TDusts.GetDust(aSymbol: TSymbol; iSide: integer): double;
+var
+  aDust : TDust;
+begin
+  Result := 0;
+
+  aDust := Find(aSymbol, iSide);
+  if aDust <> nil then
+    Result := aDust.Qty;
+end;
+
+function TDusts.GetTotDust(iSide: integer): double;
+var
+  I: Integer;
+begin
+  Result := 0;
+  for I := 0 to Count-1 do
+    if (GetDust(i).Side = iSide) then
+      Result := Result + GetDust(i).Qty;
+end;
+
+function TDusts.GetDust(i: integer): TDust;
+begin
+  if (i < 0) or (i >= Count) then
+    Result := nil
+  else
+    Result := Items[i] as TDust;
+end;
+
+function TDusts.New(aSymbol: TSymbol; iSide : integer): TDust;
+begin
+  Result := Find(aSymbol, iSide);
+  if Result = nil then begin
+    Result := Add as TDust;
+    Result.FSymbol  := aSymbol;
+    Result.FSide    := iSide;
+  end;
+end;
+
+procedure TDusts.SetDust(aSymbol: TSymbol; iSide: integer; dQty: double);
+var
+  aDust : TDust;
+begin
+  aDust := New(aSymbol, iSide);
+  aDust.FQty  := dQty;
+end;
+
+end.

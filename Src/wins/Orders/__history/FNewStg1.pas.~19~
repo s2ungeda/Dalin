@@ -1,0 +1,603 @@
+unit FNewStg1;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
+  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.Grids, Vcl.StdCtrls, Vcl.ExtCtrls,
+  Vcl.Buttons, Vcl.ComCtrls,
+
+  UNS1Items, UNewStg1, UStorage, UApiTypes, UApiConsts,
+
+  UOrders, UDistributor
+
+  ;
+
+const
+  title : array [0..10] of string = ('No','거래소','코드',' ','','수량','S호가','갯수','Tick','제한','정정');
+  S_COL   = 0;
+  S_ROW   = 1;
+
+  OBJ_COL = 0;
+  EX_COL  = 1;
+  CODe_COL = 2;
+  EXE_COL = 3;
+  CFG_COL = 4;
+
+type
+
+  TmpGrid = class(TCustomGrid);
+
+  TFrmNewStg = class(TForm)
+    Panel1: TPanel;
+    cbExchange: TComboBox;
+    edtCode: TEdit;
+    Button1: TButton;
+    sgItem: TStringGrid;
+    Button2: TButton;
+    Button3: TButton;
+    Button4: TButton;
+    StatusBar1: TStatusBar;
+    procedure sgItemMouseDown(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
+    procedure FormDestroy(Sender: TObject);
+    procedure FormCreate(Sender: TObject);
+    procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure Button1Click(Sender: TObject);
+    procedure sgItemDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect;
+      State: TGridDrawState);
+    procedure Button2Click(Sender: TObject);
+    procedure FormResize(Sender: TObject);
+  private
+    { Private declarations }
+    FCell : array [0..1] of integer;
+    procedure SetBoundButtons(aItem : TNewStg1; iCol : integer );
+    procedure reArrangeControls;
+
+    procedure _CfgClick(Sender: TObject);
+    procedure _ExeClick(Sender: TObject);
+
+    procedure UpdateData(aItem : TNewStg1; iRow : integer);
+    procedure DeleteItem(iRow : integer);
+
+    function FindCode : boolean;
+//    function GetExchangeName(idx : integer) : string;
+
+    function L : integer;
+    function T : integer;
+
+    procedure QuoteProc(Sender, Receiver: TObject; DataID: Integer;
+          DataObj: TObject; EventID: TDistributorID);
+
+    procedure TradeProc(Sender, Receiver: TObject; DataID: Integer;
+          DataObj: TObject; EventID: TDistributorID);
+
+    procedure DoOrder( aOrder : TOrder; EventID: TDistributorID);
+
+  public
+    { Public declarations }
+    procedure LoadEnv( aStorage : TStorage );
+    procedure SaveEnv( aStorage : TStorage );
+
+  end;
+
+var
+  FrmNewStg: TFrmNewStg;
+
+  procedure DeleteLine( aGrid : TStringGrid; iline: Integer);
+
+implementation
+
+uses
+  GApp, GLibs, UConsts
+  , FNSConfig
+  , UQuoteBroker
+  , System.UITypes
+  ;
+
+{$R *.dfm}
+
+procedure DeleteLine( aGrid : TStringGrid; iline: Integer);
+begin
+  with aGrid do begin
+    TmpGrid(aGrid).DeleteRow(iline);
+    Rows[rowcount].Clear;
+  end;
+end;
+
+
+procedure TFrmNewStg.Button1Click(Sender: TObject);
+var
+  aItem : TNewStg1;
+begin
+  //
+  with sgItem do
+  begin
+    if edtCode.Text = '' then
+    begin
+      ShowMessagePos('종목코드 입력', L, T );
+      Exit;
+    end;
+
+    if FindCode then
+    begin
+      ShowMessagePos('동일종목이 있음', L, T);
+      Exit;
+    end;
+
+    RowCount := RowCount + 1;
+
+    aItem := TNewStg1.Create;
+    aItem.Init( TExchangeKind(cbExchange.ItemIndex+1), edtCode.Text);
+
+    SetBoundButtons( aItem, EXE_COL);
+    SetBoundButtons( aItem, CFG_COL);
+
+    UpdateData(aItem, RowCount-1);
+  end;
+
+end;
+
+procedure TFrmNewStg.Button2Click(Sender: TObject);
+var
+  aItem : TNewStg1;
+  bDel  : boolean;
+begin
+  if (FCell[S_ROW] > 0) and ( FCell[S_ROW] < sgItem.RowCount ) then
+  begin
+
+    aItem := sgItem.Objects[OBJ_COL, FCell[S_ROW]] as TNewStg1;
+    bDel  := true;
+    if (aItem <> nil) and (aItem.Run) then
+      if MessageDlg('실행중인데 정말로 삭제 ?', mtInformation, [mbYes, mbNo], 0) = mrYes then
+      begin
+        bDel := true;
+        aItem.Stop;
+        App.Engine.QuoteBroker.Brokers[aItem.ExKind].Cancel(aItem, aItem.Symbol);
+      end else
+        bDel := false;
+
+    if bDel then
+    begin
+      DeleteItem(FCell[S_ROW]);
+      DeleteLine(sgItem, FCell[S_ROW]);
+      reArrangeControls;
+    end;
+  end;
+end;
+
+procedure TFrmNewStg.DeleteItem(iRow: integer);
+begin
+  with sgItem do
+  begin
+    FreeAndNil( Objects[EXE_COL, iRow] as TSpeedButton );
+    FreeAndNil( Objects[CFG_COL, iRow] as TSpeedButton);
+    FreeAndNil( Objects[OBJ_COL, iRow] as TNewStg1 );
+  end;
+end;
+
+procedure TFrmNewStg.DoOrder(aOrder: TOrder; EventID: TDistributorID);
+var
+  I: Integer;
+  aItem : TNewStg1;
+begin
+  if aOrder = nil then Exit;
+  if aOrder.StgType <> stNS1 then Exit;
+
+  for I := 1 to sgItem.RowCount-1 do
+  begin
+    aItem := TNewStg1(sgItem.Objects[OBJ_COL, i]);
+    if aItem <> nil then
+      if aItem.Run then
+      begin
+        if (aItem.Account = aOrder.Account) and (aItem.Symbol = aItem.Symbol) then
+          if EventID = ORDER_FILLED then
+            aItem.OnFilled(aOrder)
+          else
+            aItem.OnOrder(aOrder);
+      end;
+  end;
+end;
+
+procedure TFrmNewStg._CfgClick(Sender: TObject);
+var
+  aForm : TFrmNSConfig;
+  iTag  : integer;
+  aItem : TNewStg1;
+begin
+
+  iTag  := (Sender as TComponent).Tag;
+  aItem := TNewStg1( sgItem.Objects[OBJ_COL, iTag]);
+  if aItem = nil then
+  begin
+    ShowMessagePos('............', L, T);
+    Exit;
+  end;
+
+  aForm := TFrmNSConfig.Create(Self);
+  try
+    if aForm.Open(aItem.Param) then
+    begin
+      aItem.Param.Assign(aForm.Param);
+      UpdateData(aItem, iTag );
+    end;
+  finally
+    aForm.Free;
+  end;
+
+end;
+
+procedure TFrmNewStg._ExeClick(Sender: TObject);
+var
+  iTag  : integer;
+  aItem : TNewStg1;
+  aBtn  : TSpeedButton;
+begin
+
+  aBtn  := Sender as TSpeedButton;
+
+  try
+
+    iTag  := (Sender as TComponent).Tag;
+    aItem := TNewStg1( sgItem.Objects[OBJ_COL, iTag]);
+
+    if aBtn.Down then
+    begin
+
+      if aItem <> nil then
+        aItem.Stop;
+
+      App.Engine.QuoteBroker.Brokers[aItem.ExKind].Cancel(aItem, aItem.Symbol);
+
+    end else
+    begin
+
+      if aItem = nil then
+      begin
+        ShowMessagePos('............', L, T);
+        aBtn.Down := true;
+        Exit;
+      end;
+
+      if not aItem.Start then
+      begin
+        ShowMessagePos('입력값이 잘못되어서 실행할수 없음', L, T);
+        aBtn.Down := true;
+        Exit;
+      end;
+
+      App.Engine.QuoteBroker.Brokers[aItem.ExKind].Subscribe(aItem, aItem.Symbol, QuoteProc);
+    end;
+
+  finally
+
+    if aBtn.Down then
+      aBtn.Caption  := '실행'
+    else
+      aBtn.Caption  := '정지';
+  end;
+
+end;
+
+function TFrmNewStg.FindCode: boolean;
+var
+  I : Integer;
+  aItem : TNewStg1;
+begin
+
+  Result := false;
+
+  with sgItem do
+    for I := 1 to RowCount-1 do  begin
+      aItem := TNewStg1(Objects[OBJ_COL, i]);
+      if aItem <> nil then
+        if ( aItem.ExKind = TExchangeKind(cbExchange.ItemIndex+1 )) and (aItem.Code = edtCode.Text) then
+        begin
+          Result := true;
+          break;
+        end;
+    end;
+end;
+
+procedure TFrmNewStg.FormClose(Sender: TObject; var Action: TCloseAction);
+begin
+  action := caFree;
+end;
+
+procedure TFrmNewStg.FormCreate(Sender: TObject);
+var
+  I: Integer;
+begin
+  FCell[S_COL]  := -1;
+  FCell[S_ROW]  := -1;
+
+  for I := 0 to sgItem.ColCount-1 do
+    sgItem.Cells[i, 0]  := title[i];
+
+  App.Engine.TradeBroker.Subscribe(Self, TradeProc);
+
+end;
+
+procedure TFrmNewStg.FormDestroy(Sender: TObject);
+var
+  I: Integer;
+  aItem : TNewStg1;
+begin
+
+  App.Engine.TradeBroker.Unsubscribe(Self);
+
+  for I := 1 to sgItem.RowCount-1 do
+  begin
+    aItem := TNewStg1(sgItem.Objects[OBJ_COL, i]);
+    if aItem <> nil then
+      App.Engine.QuoteBroker.Brokers[aItem.ExKind].Cancel(aItem, aItem.Symbol);
+
+    DeleteItem(i)
+  end;
+
+end;
+
+procedure TFrmNewStg.FormResize(Sender: TObject);
+begin
+  reArrangeControls;
+end;
+
+function TFrmNewStg.L: integer;
+begin
+  Result := Left;
+end;
+
+procedure TFrmNewStg.LoadEnv(aStorage: TStorage);
+var
+  i, iCnt : integer;
+  aItem : TNewStg1;
+begin
+
+  iCnt  := aStorage.FieldByName('Count').AsInteger;
+
+  with sgItem do
+    for I := 0 to iCnt-1 do
+    begin
+      RowCount := RowCount + 1;
+
+      aItem := TNewStg1.Create;
+      aItem.Init( TExchangeKind(aStorage.FieldByName('ExKind_'+i.ToString).AsInteger)
+        , aStorage.FieldByName('Code_'+i.ToString).AsString);
+
+      aItem.Param.SetParm(
+        aStorage.FieldByName('OrdQty_'+i.ToString).AsString,
+        aStorage.FieldByName('SHoga_'+i.ToString).AsInteger,
+        aStorage.FieldByName('Tick_'+i.ToString).AsInteger,
+        aStorage.FieldByName('Count_'+i.ToString).AsInteger,
+        aStorage.FieldByName('ModCnt_'+i.ToString).AsInteger,
+        aStorage.FieldByName('LHoga_'+i.ToString).AsInteger
+        );
+
+      SetBoundButtons( aItem, EXE_COL);
+      SetBoundButtons( aItem, CFG_COL);
+
+      UpdateData(aItem, RowCount-1);
+    end;
+
+end;
+
+procedure TFrmNewStg.QuoteProc(Sender, Receiver: TObject; DataID: Integer;
+  DataObj: TObject; EventID: TDistributorID);
+var
+  I: Integer;
+  aItem : TNewStg1;
+begin
+  if DataObj = nil then Exit;
+
+  for I := 1 to sgItem.RowCount-1 do
+  begin
+
+    aItem := TNewStg1(sgItem.Objects[OBJ_COL,i]);
+    if aItem = nil then continue;
+
+    if aItem.Symbol = (DataObj as TQuote).Symbol then
+    begin
+      aItem.OnQuote((DataObj as TQuote).Symbol) ;
+      break;
+    end;
+  end;
+end;
+
+procedure TFrmNewStg.SaveEnv(aStorage: TStorage);
+var
+  I, iCnt: Integer;
+  aItem : TNewStg1;
+begin
+
+  iCnt := 0;
+
+  for I := 1 to sgItem.RowCount-1 do
+  begin
+    aItem := TNewStg1(  sgItem.Objects[OBJ_COL, i] );
+    if aItem <> nil then
+    begin
+
+      aStorage.FieldByName('ExKind_'+iCnt.ToString).AsInteger  := integer(aItem.ExKind);
+      aStorage.FieldByName('Code_'+iCnt.ToString).AsString   := aItem.Code;
+
+      aStorage.FieldByName('OrdQty_'+iCnt.ToString).AsString := aItem.Param.orderQty_s;
+      aStorage.FieldByName('SHoga_'+iCnt.ToString).AsInteger  := aItem.Param.startHoga;
+      aStorage.FieldByName('Tick_'+iCnt.ToString).AsInteger   := aItem.Param.tick;
+      aStorage.FieldByName('Count_'+iCnt.ToString).AsInteger  := aItem.Param.count;
+
+      aStorage.FieldByName('ModCnt_'+i.ToString).AsInteger    := aItem.Param.modCnt;
+      aStorage.FieldByName('LHoga_'+i.ToString).AsInteger     := aItem.Param.limitHoga;
+      inc(iCnt);
+    end;
+  end;
+
+  aStorage.FieldByName('Count').AsInteger := iCnt;
+end;
+
+procedure TFrmNewStg.reArrangeControls;
+var
+  I: Integer;
+  aBtn1, aBtn2   : TSpeedButton;
+  aRect1, aRect2 : TRect;
+begin
+
+  for I := 1 to sgItem.RowCount - 1 do
+  begin
+
+    sgItem.Cells[0,i] := i.ToString;
+    aBtn1  := TSpeedButton( sgItem.Objects[EXE_COL, i]);
+    aBtn2  := TSpeedButton( sgItem.Objects[CFG_COL, i]);
+    if (aBtn2 = nil) or (aBtn1 = nil) then continue;
+
+    aBtn2.Tag := i;
+    aBtn1.Tag := i;
+    aBtn1.GroupIndex  := aBtn1.Tag;
+
+    with sgItem do
+    begin
+      aRect1 := CellRect( EXE_COL, i);
+      if (aRect1.Left > 0 ) and ( aRect1.Top > 0) then
+        aBtn1.SetBounds( aRect1.Left, aRect1.Top , Colwidths[EXE_COL], DefaultRowHeight  );
+
+      aRect2 := CellRect( CFG_COL, i);
+      if (aRect2.Left > 0 ) and ( aRect2.Top > 0) then
+        aBtn2.SetBounds( aRect2.Left, aRect2.Top , Colwidths[CFG_COL], DefaultRowHeight  );
+    end;
+
+  end;
+end;
+
+
+
+procedure TFrmNewStg.SetBoundButtons(aItem : TNewStg1; iCol : integer);
+var
+  aRect : TRect;
+  aBtn  : TSpeedButton;
+begin
+
+  aRect := sgItem.CellRect(iCol, sgItem.RowCount-1);
+  aBtn  := TSpeedButton.Create(self);
+
+  with aBtn do
+  begin
+
+    SetBounds( aRect.Left, aRect.Top , sgItem.Colwidths[iCol], sgItem.DefaultRowHeight );
+    Parent:= sgItem;
+    sgItem.Objects[iCol, sgItem.RowCount-1]  := aBtn;
+    Tag := sgItem.RowCount-1;
+
+    if iCol = EXE_COL then begin
+      Caption := '실행'+Tag.ToString;
+      OnClick := _ExeClick;
+      sgItem.Objects[OBJ_COL, sgItem.RowCount-1]  := aItem;
+
+      GroupIndex  := Tag;
+      AllowAllUp  := true;
+      Down        := true;
+    end
+    else begin
+      Caption := '설정'+Tag.ToString;
+      OnClick := _CfgClick;
+    end;
+  end;
+
+end;
+
+procedure TFrmNewStg.sgItemDrawCell(Sender: TObject; ACol, ARow: Integer;
+  Rect: TRect; State: TGridDrawState);
+  var
+    stTxt : string;
+    aFont, aBack : TColor;
+    dFormat : word;
+begin
+  aFont := clBlack;
+  aBack := clWhite;
+  dFormat := DT_CENTER;
+
+  with Sender as TStringGrid do
+  begin
+    stTxt := CElls[ACol, ARow];
+
+    if (ACol = 0) or (ARow = 0) then
+      aBack := clBtnFace
+    else begin
+      dFormat := DT_LEFT;
+      if FCell[S_ROW] = ARow then
+        aBack := clSilver;
+    end;
+
+    Canvas.Brush.Color  := aBack;
+    Canvas.Font.Color   := aFont;
+    Canvas.FillRect(Rect);
+
+    DrawText( Canvas.Handle, PChar( stTxt ), Length( stTxt ), Rect, dFormat );
+
+  end;
+end;
+
+procedure TFrmNewStg.sgItemMouseDown(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: Integer);
+begin
+  sgItem.MouseToCell(X,Y,FCell[S_COL], FCell[S_ROW]);
+
+  sgItem.Invalidate;
+end;
+
+function TFrmNewStg.T: integer;
+begin
+  Result := Top;
+end;
+
+procedure TFrmNewStg.TradeProc(Sender, Receiver: TObject; DataID: Integer;
+  DataObj: TObject; EventID: TDistributorID);
+var
+  iID: Integer;
+begin
+  if (Receiver <> Self) or (DataID <> TRD_DATA) then Exit;
+
+  case Integer(EventID) of
+      // order events
+    ORDER_NEW,
+    ORDER_ACCEPTED,
+    ORDER_REJECTED,
+//    ORDER_CHANGED,
+//    ORDER_CONFIRMED,
+//    ORDER_CONFIRMFAILED,
+    ORDER_CANCELED,
+    ORDER_FILLED: DoOrder(DataObj as TOrder, EventID);
+      // fill events
+//    FILL_NEW: ;
+//      // position events
+//    POSITION_NEW,
+//    POSITION_UPDATE: DoPosition(DataObj as TPosition, EventID);
+  end;
+end;
+
+procedure TFrmNewStg.UpdateData(aItem: TNewStg1; iRow : integer);
+var
+  iCol : integer;
+
+  procedure SetData( stData : string );
+  begin
+    sgItem.Cells[iCol, iRow]  := stData;
+    inc(iCol);
+  end;
+
+begin
+  with sgItem do
+  begin
+    iCol := 0;
+    SetData( iRow.ToString );
+    SetData( TExchangeKindDesc[aItem.ExKind] );
+    SetData( aItem.Code );
+    iCol := CFG_COL +1;
+    SetData( aItem.Param.orderQty.ToString );
+    SetData( aItem.Param.startHoga.ToString );
+    SetData( aItem.Param.count.ToString );
+    SetData( aItem.Param.tick.ToString );
+    SetData( aItem.Param.limitHoga.ToString );
+    SetData( aItem.Param.modCnt.ToString );
+  end;
+end;
+
+end.

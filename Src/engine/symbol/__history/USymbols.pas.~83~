@@ -1,0 +1,1948 @@
+unit USymbols;
+
+interface
+
+uses
+
+  system.Classes, system.SysUtils, system.DateUtils ,
+
+  GLibs, UFQN , UApiTypes, UMarketSpecs ,UTerms,
+
+  UDataLogs
+  ;
+
+type
+
+  TSymbol = class;
+
+  TSymbolFindEvent = function(stCode: String): TSymbol of object;
+
+
+  TMarketDepth = class(TCollectionItem)
+  private
+    FPrice: Double;   // order price
+    FVolume: double; // number of contracts
+    FCnt: Integer;
+    FAccVol: double;
+  public
+    constructor Create(aColl : TCollection); overload;
+    property Price: Double read FPrice write FPrice;
+    property Volume: double read FVolume write FVolume;
+    property Cnt: Integer read FCnt write FCnt;
+    // 1호가씩 잔량  누적
+//    property AccVol : double read FAccVol write FAccVol;
+  end;
+
+  TMarketDepths = class(TCollection)
+  private
+    FVolumeTotal: double;
+    FCntTotal: Integer;
+    FRealTimeAvg: double;
+    FRealCount: integer;
+    FRealVolSum: integer;
+
+    function GetSize: Integer;
+    procedure SetSize(const Value: Integer);
+    function GetDepth(i: Integer): TMarketDepth;
+  public
+    constructor Create; overload;
+    constructor Create( iSize : integer ); overload;
+
+    function GetBiggerDepth( dVol : double ) : TMarketDepth;
+
+    property VolumeTotal: double read FVolumeTotal write FVolumeTotal;
+    property CntTotal: Integer read FCntTotal write FCntTotal;
+
+    property RealTimeAvg : double read FRealTimeAvg write FRealTimeAvg;
+    property RealVolSum  : integer read FRealVolSum write FRealVolSum;
+    property RealCount : integer read FRealCount write FRealCount;
+    property Size: Integer read GetSize write SetSize;
+    property Depths[i:Integer]: TMarketDepth read GetDepth; default;
+  end;
+
+  TTimeNSale = class(TCollectionItem)
+  private
+      // required
+    FPrice: Double;
+    FVolume: double;
+    FTime: TDateTime;
+      // optional I
+    FSide: Integer;  // 1=long, -1=short
+      // Korea only
+    FDailyVolume: double;
+    FDailyAmount: Currency;
+
+    FLocalTime: TDateTime;
+    //FTick : TTickItem;
+    FPrevPrice: Double;
+
+  public
+    property Price: Double read FPrice write FPrice;
+    property PrevPrice : Double read FPrevPrice write FPrevPrice;
+    property Volume: double read FVolume write FVolume;
+    property Time: TDateTime read FTime write FTime;
+    property LocalTime : TDateTime read FLocalTime write FLocalTime;
+
+    property Side: Integer read FSide write FSide;
+      //
+    property DayVolume: double read FDailyVolume write FDailyVolume;
+    property DayAmount: Currency read FDailyAmount write FDailyAmount;
+
+    //property Tick : TTickItem read FTick write FTick;
+  end;
+
+  TTimeNSales = class(TCollection)
+  private
+    FLast: TTimeNSale;
+    FPrev: TTimeNSale;
+    FMaxCount: Integer;
+    function GetSale(i: Integer): TTimeNSale;
+  public
+    constructor Create;
+
+    function New: TTimeNSale;
+    property MaxCount: Integer read FMaxCount write FMaxCount;
+    property Prev: TTimeNSale read FPrev;
+    property Last: TTimeNSale read FLast;
+    property Sales[i:Integer]: TTimeNSale read GetSale; default;
+  end;
+
+
+  TDnwNetWork = class(TCollectionItem)
+  private
+    FName: string;
+    FWithdrawlState: boolean;
+    FDepositState: boolean;
+    FWithdrawFee: string;
+    FWithdrawMin: string;
+    procedure SetDepositState(const Value: boolean);
+    procedure SetWithdrawlState(const Value: boolean);
+
+  public
+
+    constructor Create( aColl : TCollection ); override;
+
+    property Name: string read FName write FName;
+    property WithDrawlState : boolean read FWithdrawlState write SetWithdrawlState;
+    property DepositState   : boolean read FDepositState   write SetDepositState;
+    property WithdrawFee    : string read FWithdrawFee     write FWithdrawFee;
+    property WithdrawMin    : string read FWithdrawMin     write FWithdrawMin;
+  end;
+
+  TDnwNetWorkList = class(TCollection)
+  private
+    function GetNetwork(i: Integer): TDnwNetWork;
+
+  public
+
+    DpCnt : array [0..1] of integer;
+    WdCnt : array [0..1] of integer;
+
+    constructor Create;
+    procedure init;
+
+    function New: TDnwNetWork;
+    function IsDeposit( bState : boolean ) : boolean;
+    function IsWithdraw( bState : boolean ) : boolean;
+    property Network[i:Integer]: TDnwNetWork read GetNetwork; default;
+  end;
+
+  TSymbol = class( TCollectionItem )
+  private
+ //   FExchangeCode: string;
+    FCode: string;
+
+    FQuoteCode: string;
+    FOrgCode: string;
+    FBaseCode: string;
+    FLast: Double;
+    FPrevOpen: double;
+    FPrevHigh: Double;
+    FDayLow: Double;
+    FChange: Double;
+    FPrevClose: Double;
+
+    FLocalTime: TDateTime;
+    FTime: TDateTime;
+    FSide: Integer;
+    FVolume: double;
+    FDayOpen: Double;
+    FBase: Double;
+    FDayHigh: Double;
+    FDailyAmount: Currency;
+//    FPrevLast: Double;
+    FPrevLow: Double;
+    FDailyVolume: double;
+    FSpec: TMarketSpec;
+    FSettleCode: string;
+    FTradeAble: boolean;
+    FIsFuture: boolean;
+    FIsMargin: boolean;
+    FBids: TMarketDepths;
+    FAsks: TMarketDepths;
+    FSales: TTimeNSales;
+    FTicks: TCollection;
+    FSubCode: string;
+    FTerms: TTerms;
+    FMarkeTerm: boolean;
+    FAddTerm: boolean;
+    FLastEventTime: TDateTime;
+    FLastTime: TDateTime;
+    FKimpPrice: double;
+    FKimpAskPrice: double;
+    FKimpBidPrice: double;
+    FWithdrawlState: boolean;
+    FDepositState: boolean;
+    FDnwCount: int64;
+    FWDCPrice: double;
+
+    FSPrice: double;
+    FLastTradeTime: TDateTime;
+    FDepositTime: TDateTime;
+    FWithDrawlTime: TDateTime;
+    FLastID: int64;
+
+    FNetworkList: TDnwNetWorkList;
+    FRefSymbol: TSymbol;
+    FSpreadRate: double;
+    FDay5MinLow: double;
+    FDay5MinHigh: double;
+    FBasis: double;
+    FIndexPrice: double;
+    FDelayTime: double;
+    FDelayMS: integer;
+    FMinDelayTime: double;
+    FBids2: TMarketDepths;
+    FAsks2: TMarketDepths;
+    FContiCnt: integer;
+    FTrnsTimeF: int64;
+    FTrnsTimeQ: int64;
+    FLastTrnsTime: int64;
+
+    procedure OnTermAddEvent(Sender: TObject);
+    function AsksLogNow: string;
+    function BidsLogNow: string;
+  public
+
+    DataTrace : TDataTrace;
+    // 시세 모니터링을 위한
+    SPValue   : array [0..1] of Double;
+    // 실제 SP 주문을 위하
+    TrdSpValue: array [0..1] of Double;
+
+    constructor Create( aColl : TCollection ); override;
+    Destructor Destroy ; override;
+
+    procedure AdjustDepth;
+    function AdjustByLast : boolean;
+    procedure AdjustAsks(dPrice, dVolume: double); overload;
+    procedure AdjustBids(dPrice, dVolume: double); overload;
+    function AdjustAsks: integer; overload;
+    function AdjustBids: integer; overload;
+    
+    procedure reArrageBids(i : Integer);
+    procedure reArrageAsks(i : integer);
+    procedure SavePrevDepth;
+    procedure ReSizeMarketDepth(iSize: integer);
+
+    function  GetLimitOrderPrice(bBid : boolean) : double;
+    function  DepthLog(bPrev: boolean) : string;
+    function  DepthLogPrev : string;
+    function  DepthLogNow  : string;
+    function  PriceToStr( Value : double ) : string;
+    function  QtyToStr( Value : double ) : string;
+    function  CheckDnwState( depoit, withdraw : boolean ) : integer;
+    //
+    function  CalcEstPrice( iSide : integer; dQty : double ) : double;
+    function  CalcMakerPrice( iSide : integer; iRate: integer) : double;
+    function  CalcTicksPrice(dPrice:double; iTick: integer): double;
+    // get estrpice
+    function  GetOrderPrice(iSide : integer; dEstPrice : double; iTick : integer ) : double;
+    // get hit orderPrice
+    function  GetHitOrderPrice(iSide : integer; dComPrice : double) : double;
+    function  DayUpDown : double;
+    function  IsOrderAble(const dPrice, dQty : double) : boolean;
+
+    // only upbit
+    function  IsHogaChangeSymbol : boolean;
+    // calc custom index ( for usdt )
+    function GetCustomIndex : double;
+//    property  ExchangeCode : string read FExchangeCode;
+    property  Code  : string read FCode write FCode;
+    property  OrgCode : string read FOrgCode write FOrgCode;
+    // 거래소별, 마켓별, 코드 같은경우가 많아서..유니크한 종목코드를 만들기 위해.
+    property  SubCode : string read FSubCode write FSubCode;
+    property  BaseCode  : string read FBaseCode write FQuoteCode;
+    property  QuoteCode  : string read FQuoteCode write FQuoteCode;
+    property  SettleCode : string read FSettleCode write FSettleCode;
+
+    property Base: Double read FBase write FBase;
+    property PrevClose: Double read FPrevClose write FPrevClose;
+    property DayOpen: Double read FDayOpen write FDayOpen;
+    property DayHigh: Double read FDayHigh write FDayHigh;
+    property DayLow: Double read FDayLow write FDayLow;
+    property Day5MinLow : double read FDay5MinLow write FDay5MinLow;
+    property Day5MinHigh : double read FDay5MinHigh write FDay5MinHigh;
+
+    property Last: Double read FLast write FLast;
+    property Change: Double read FChange write FChange;
+//    property PrevLast : Double read FPrevLast write FPrevLast;
+    property PrevHigh : Double read FPrevHigh write FPrevHigh;
+    property PrevLow : Double read FPrevLow write FPrevLow;
+    property PrevOpen: double read FPrevOpen write FPrevOpen;
+    property IndexPrice : double read FIndexPrice write FIndexPrice;
+
+    property KimpPrice : double read FKimpPrice write FKimpPrice;
+    property WDCPrice  : double read FWDCPrice  write FWDCPrice;
+    property SPrice    : double read FSPrice    write FSPrice;// 현재가 기준
+
+    property Basis     : double read FBasis     write FBasis; // 바이낸스만.
+    // 호가 기준 김프는 안 쓸듯...
+    property KimpAskPrice : double read FKimpAskPrice write FKimpAskPrice;
+    property KimpBidPrice : double read FKimpBidPrice write FKimpBidPrice;
+
+    property SpreadRate : double read FSpreadRate write FSpreadRate;
+
+    property DayVolume: double read FDailyVolume write FDailyVolume;
+    property DayAmount: Currency read FDailyAmount write FDailyAmount;
+
+    property Volume: double read FVolume write FVolume;
+    property Time: TDateTime read FTime write FTime;
+    property LocalTime : TDateTime read FLocalTime write FLocalTime;
+    property Side: Integer read FSide write FSide;
+
+    property Spec: TMarketSpec read FSpec write FSpec;
+
+    property Asks : TMarketDepths read FAsks;
+    property Bids : TMarketDepths read FBids;
+
+    property Asks2 : TMarketDepths read FAsks2;
+    property Bids2 : TMarketDepths read FBids2;
+    property ContiCnt : integer read FContiCnt write FContiCnt;
+
+    property Sales: TTimeNSales read FSales;
+    property Ticks: TCollection read FTicks;
+    property NetworkList : TDnwNetWorkList read FNetworkList;
+    //
+    property TradeAble : boolean read FTradeAble write FTradeAble;
+    property IsMargin  : boolean read FIsMargin write FIsMargin;
+    property IsFuture  : boolean read FIsFuture write FIsFuture;
+    property RefSymbol : TSymbol read FRefSymbol write FRefSymbol;
+    //
+    property WithDrawlState : boolean read FWithdrawlState write FWithdrawlState;
+    property DepositState   : boolean read FDepositState   write FDepositState;
+    property WithDrawlTime  : TDateTime read FWithDrawlTime write FWithDrawlTime;
+    property DepositTime    : TDateTime read FDepositTime   write FDepositTime;
+
+    property Terms: TTerms read FTerms write FTerms;
+//    property FiveTerm : TSTermItem read GetTermItem;
+    property MakeTerm: boolean read FMarkeTerm write FMarkeTerm;
+    property AddTerm: boolean read FAddTerm write FAddTerm;
+
+    property DnwCount : int64 read FDnwCount;
+
+    property LastTime : TDateTime read FLastTime write FLastTime;
+    property LastEventTime  : TDateTime read FLastEventTime write FLastEventTime;
+    property LastTradeTime  : TDateTime read FLastTradeTime write FLastTradeTime;
+    property DelayTime      : double read FDelayTime write FDelayTime;
+    property MinDelayTime   : double  read FMinDelayTime write FMinDelayTime;
+    property DelayMS        : integer read FDelayMS write FDelayMS;
+
+    // only binance future trade sequence
+    property LastID : int64 read FLastID write FLastID;
+    property TrnsTimeF : int64 read FTrnsTimeF write FTrnsTimeF;
+    property TrnsTimeQ : int64 read FTrnsTimeQ write FTrnsTimeQ;
+    property LastTrnsTime : int64 read FLastTrnsTime write FLastTrnsTime;
+
+  end;
+
+  TSymbols = class(TCollection)
+  protected
+  public
+    function Find(stCode: String): TSymbol;
+  end;
+
+  TSymbolList = class(TStringList)
+  private
+    function GetSymbol(i: Integer): TSymbol;
+  public
+    constructor Create;
+
+    function FindCode(stCode: String): TSymbol;
+    function FindCode2( stCode : string ) : TSymbol;
+    procedure AddSymbol(aSymbol: TSymbol);
+    procedure AddSymbol2(aSymbol: TSymbol);
+    procedure DeleteSymbol( aSymbol : TSymbol );
+    procedure GetList( aList: TStrings); overload;
+    procedure GetList( aList: TStrings; aMarket : TMarketType ); overload;
+    procedure GetLists( aList : TSTrings; aMarkets : TMarketTypes );
+
+    property Symbols[i:Integer]: TSymbol read GetSymbol; default;
+  end;
+
+
+  TBaseSymbols = class(TStringList)
+  private
+    function GetSymbolList( i : integer ) : TSymbolList;
+  public
+    constructor Create;
+    destructor  Destroy; override;
+    function FindSymbolList(sBase: String ): TSymbolList;
+    function FindSymbol( sBase : string ;  aExKind : TExchangeKind ) : TSymbol; overload;
+    function FindSymbol( sBase : string ;  aExKind : TExchangeKind; aExApiType : TExchangeApiType) : TSymbol; overload;
+    //
+    function FindSymbol(sBase : string; aExKind : TExchangeKind; aExApiType : TExchangeApiType; aSCType : TSettleCurType) : TSymbol; overload;
+
+    function FindSymbolEx( sBase : string ;  aExKind : TExchangeKind ) : TSymbol;
+    procedure AddSymbol(aSymbol: TSymbol);
+  end;
+
+  TSpot  = class(TSymbol);
+
+  TSpots = class(TSymbols)
+  private
+    function GetSpot(i: Integer): TSpot;
+  public
+    constructor Create;
+    function New(stCode: String): TSpot;
+    property Spots[i:Integer]: TSpot read GetSpot; default;
+  end;
+
+  TMargin = class(TSpot);
+
+  TMargins = class(TSymbols)
+  private
+    function GetMargin(i: Integer): TMargin;
+  public
+    constructor Create;
+    function New(stCode: String): TMargin;
+    property Margins[i:Integer]: TMargin read GetMargin; default;
+  end;
+
+  TFuture = class(TSymbol)
+  private
+    FDeliveryTime: TDateTime;
+    FMarkPrice: double;
+    FUnderlying: TSymbol;
+    FExpMonth: Integer;
+    FExpYear: Integer;
+    FExpDate: TDateTime;
+    FDaysToExp: Integer;
+    FFundingRate: double;
+    procedure SetExpDate(const Value: TDateTime);
+  public
+    property  DeliveryTime : TDateTime read FDeliveryTime write FDeliveryTime;
+    property  MarkPrice : double read FMarkPrice write FMarkPrice;
+    property  FundingRate: double read FFundingRate write FFundingRate;
+    property  Underlying : TSymbol read FUnderlying write FUnderlying;
+
+    property  DaysToExp: Integer read FDaysToExp write FDaysToExp;
+    property  ExpDate: TDateTime read FExpDate write SetExpDate;
+    property  ExpMonth: Integer read FExpMonth;
+    property  ExpYear: Integer read FExpYear;
+  end;
+
+  TFutures = class(TSymbols)
+  private
+    function GetFuture(i: Integer): TFuture;
+  public
+    constructor Create;
+    function New(stCode: String): TFuture;
+    property Futures[i:Integer]: TFuture read GetFuture; default;
+  end;
+
+
+  TCommSymbolList = class(TList)
+  private
+    function GetCommSymbol(i: Integer): TSymbol;
+
+  public
+
+    function FindSymbol( aExKind : TExchangeKind;  sCode : string ) : TSymbol; overload;
+    procedure SortByDailyAmount;
+    property CommSymbols[i:Integer]: TSymbol read GetCommSymbol; default;
+  end;
+
+
+
+
+implementation
+
+uses
+  USymbolCore    , USymbolUtils
+  , System.Math
+  , UTypes
+  , UConsts , UApiConsts
+  , GApp
+
+
+  ;
+
+
+{ TSymbol }
+
+function TSymbol.AdjustAsks : integer;
+var
+  i, iRes : integer;
+  dSum, dVol : double;
+begin
+
+  dVol  := Sales.Last.Volume;
+  dSum  := 0;
+  
+  for I := 0 to Asks.Count-1 do
+  begin
+    iRes := CmpVal(Asks[i].Price, Sales.Last.Price);
+    dSum := dSum + Asks[i].Volume;
+    if iRes > 0 then
+      break
+    else if iRes < 0 then
+    begin
+      Asks[i].Volume  := 0;
+    end
+    else begin
+      Asks[i].Volume := Max(0, dSum - dVol);
+      if Asks[i].Volume <= EPSILON then
+        // i+1 을 매수호가로 재정렬
+        reArrageAsks(i+1)
+      else if (Asks[i].Volume > EPSILON) and (i > 0) then
+        reArrageAsks(i);
+    end;
+  end;
+
+  Result := i;
+end;
+
+procedure TSymbol.AdjustAsks(dPrice, dVolume: double);
+var
+  i, j, iRes, iCmp : integer;
+  bOK: boolean;
+
+  s1, s2: string;
+  procedure SetFirstAsk;
+  begin
+    Asks[0].Price := dPrice;
+    Asks[0].Volume:= dVolume;
+  end;
+
+begin
+
+  if dPrice <= EPSILON then Exit;
+
+  iCmp := CmpVal(Asks[0].Price, dPrice);
+  // 현재매도가가 더 크다면..한호가씩 뒤로 밀림
+  if iCmp > 0 then begin
+    s1 := AsksLogNow;
+    for j := Asks.Count-1 downto 0 do
+      if j = 0 then
+        SetFirstAsk
+      else  begin
+        Asks[j].Price :=  Asks[j-1].Price;
+        Asks[j].Volume := Asks[j-1].Volume;
+      end;
+    s2 := AsksLogNow ;
+  end else
+  if iCmp < 0 then begin
+    s1 := AsksLogNow;
+    bOK := false;
+    for j := 1 to Asks.Count-1 do
+    begin
+      bOK := false;
+      iRes := CmpVal(Asks[j].Price, dPrice);
+      if iRes > 0 then begin
+        reArrageAsks(j-1);
+        bOK := true;
+        break;
+      end else
+      if iRes = 0 then begin
+        reArrageAsks(j);
+        bOK := true;
+        break;
+      end;
+    end;
+
+    if bOK then SetFirstAsk
+    else begin
+      // 최우선 매도가가 현재 구성된 호가보다 클때( Count-1 매도호가 보다 클때)
+      // 2호가부터 호가만 새로 만들어준다.
+      SetFirstAsk;
+      for j := 1 to Asks.Count-1 do
+      begin
+        Asks[j].Price   := TicksFromPrice(Self, Asks[j-1].Price, 1);
+        Asks[j].Volume  := 0;
+      end;
+    end;
+    s2 := AsksLogNow;
+  end else
+    SetFirstAsk;
+
+//  if iCmp <> 0 then begin
+//    App.Log(llDebug, 'TestAsks', 'Asks %d:%s,%S', [iCmp, PriceToStr(dPrice), QtyToStr(dVolume)] );
+//    App.Log(llDebug, 'TestAsks', s1);
+//    App.Log(llDebug, 'TestAsks', s2);
+//  end;
+
+end;
+
+procedure TSymbol.AdjustBids(dPrice, dVolume: double);
+var
+  i, j, iRes, iCmp : integer;
+  bOK: boolean;
+
+  s1, s2: string;
+  procedure SetFirstBid;
+  begin
+    Bids[0].Price := dPrice;
+    Bids[0].Volume:= dVolume;
+  end;
+
+begin
+
+  if dPrice <= EPSILON then Exit;
+
+  iCmp := CmpVal(dPrice, Bids[0].Price);
+  // 현재매수가가 더 작다면..한호가씩 뒤로 밀림
+  if iCmp > 0 then begin
+    s1 := BidsLogNow;
+    for j := Bids.Count-1 downto 0 do
+      if j = 0 then
+        SetFirstBid
+      else  begin
+        Bids[j].Price :=  Bids[j-1].Price;
+        Bids[j].Volume := Bids[j-1].Volume;
+      end;
+    s2 := BidsLogNow ;
+  end else
+  if iCmp < 0 then begin
+    s1 := BidsLogNow;
+    bOK := false;
+    for j := 1 to Bids.Count-1 do
+    begin
+      bOK := false;
+      iRes := CmpVal(dPrice, Bids[j].Price);
+      if iRes > 0 then begin
+        reArrageBids(j-1);
+        bOK := true;
+        break;
+      end else
+      if iRes = 0 then begin
+        reArrageBids(j);
+        bOK := true;
+        break;
+      end;
+    end;
+
+    if bOK then SetFirstBid
+    else begin
+      // 최우선 매도가가 현재 구성된 호가보다 클때( Count-1 매도호가 보다 클때)
+      // 2호가부터 호가만 새로 만들어준다.
+      SetFirstBid;
+      for j := 1 to Bids.Count-1 do
+      begin
+        Bids[j].Price   := TicksFromPrice(Self, Bids[j-1].Price, -1);
+        Bids[j].Volume  := 0;
+      end;
+    end;
+    s2 := BidsLogNow;
+  end else
+    SetFirstBid;
+
+//  if iCmp <> 0 then begin
+//    App.Log(llDebug, 'TestBids', 'Bids %d:%s,%S', [iCmp, PriceToStr(dPrice), QtyToStr(dVolume)] );
+//    App.Log(llDebug, 'TestBids', s1);
+//    App.Log(llDebug, 'TestBids', s2);
+//  end;
+
+end;
+
+function TSymbol.AdjustBids : integer;
+var
+  i, iRes : integer;
+  dSum, dVol : double;
+begin
+
+  dVol  := Sales.Last.Volume;
+  dSum  := 0;
+
+  for I := 0 to Bids.Count-1 do
+  begin
+    iRes := CmpVal(Sales.Last.Price, Bids[i].Price);
+    dSum := dSum + Bids[i].Volume;
+    if iRes > 0 then
+      break
+    else if iRes < 0 then
+    begin
+      Bids[i].Volume  := 0;
+    end
+    else begin
+      Bids[i].Volume := Max(0, dSum - dVol);
+      if Bids[i].Volume <= EPSILON then
+        // i+1 을 매수호가로 재정렬
+        reArrageBids(i+1)
+      else if (Bids[i].Volume > EPSILON) and (i > 0) then
+        reArrageBids(i);
+        // i 를 매수호가로 하고 재정렬..
+    end;
+  end;
+
+  Result := i
+end;
+
+
+
+function TSymbol.AdjustByLast : boolean;
+var
+  iRes, i : integer;
+  bMove : boolean;
+begin
+  Result := false;
+  if CmpVal(FLast, FAsks[0].Price) > 0 then
+  begin
+    bMove := false;
+    for I := 0 to Asks.Count-1 do
+    begin
+      iRes := CmpVal(Asks[i].Price, FLast);
+      if iRes >= 0 then
+        break
+      else if iRes < 0 then
+      begin
+        Asks[i].Volume  := 0;
+        bMove := true;
+      end;
+    end;
+
+    if bMove and (i > 0) then begin
+      reArrageAsks(i);
+      Result := true;
+
+      if CmpVal(FLast, FAsks[0].Price) > 0 then
+        Result := true;
+    end;
+
+  end else
+  if CmpVal(FBids[0].Price, FLast) > 0 then
+  begin
+    bMove := false;
+    for I := 0 to Bids.Count-1 do
+    begin
+      iRes := CmpVal(FLast, Bids[i].Price);
+      if iRes >= 0 then
+        break
+      else if iRes < 0 then
+      begin
+        Bids[i].Volume  := 0;
+        bMove := true;
+      end;
+    end;
+
+    if bMove and (i > 0) then begin
+      reArrageBids(i);
+      Result := true;
+
+      if CmpVal(FBids[0].Price, FLast) > 0 then
+        Result := true;
+    end;
+
+  end;
+
+end;
+
+procedure TSymbol.AdjustDepth;
+var
+  iRes : integer;
+  I: Integer;
+  dVol, dSum, dRes : double;
+
+begin
+  //
+  inc(FContiCnt);
+
+  if Sales.Last.Side > 0 then
+  begin
+    AdjustAsks;
+    // 매수 체결인데 매도1호가보다 작은경우..체결로
+//    if AdjustAsks = 0 then
+//      AdJustBids;
+  end else
+  begin
+    AdJustBids;
+//    if AdJustBids = 0 then
+//      AdjustAsks    ;       \
+
+  end;
+end;
+
+function TSymbol.DepthLog(bPrev: boolean): string;
+var
+  aAsks, aBids : TMarketDepths;
+begin
+
+  if bPrev then
+  begin
+    Result := DepthLogPrev;
+  end else
+  begin
+    Result := DepthLogNow;
+  end;
+
+
+end;
+
+function TSymbol.AsksLogNow: string;
+var
+  I: Integer;
+begin
+  Result := ''; Exit;
+  for I := 0 to Asks.Count-1 do
+    Result := Result + Format('(%s,%s)', [PriceToStr(Asks[i].Price), QtyToStr(Asks[i].Volume)]);
+end;
+
+function TSymbol.BidsLogNow: string;
+var
+  I: Integer;
+begin
+  Result := '';  Exit;
+  for I := 0 to Bids.Count-1 do
+    Result := Result + Format('(%s,%s)', [PriceToStr(Bids[i].Price), QtyToStr(Bids[i].Volume)]);
+end;
+
+function TSymbol.DepthLogNow: string;
+begin
+  Result := Format('%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s', [
+  Format('%.*f', [ Spec.QtyPrecision, FAsks[3].Volume]),
+  Format('%.*f', [ GetPrecision(Self, FAsks[3].Price), FAsks[3].Price]),
+
+  Format('%.*f', [ Spec.QtyPrecision, FAsks[2].Volume]),
+  Format('%.*f', [ GetPrecision(Self, FAsks[2].Price), FAsks[2].Price]),
+
+  Format('%.*f', [ Spec.QtyPrecision, FAsks[1].Volume]),
+  Format('%.*f', [ GetPrecision(Self, FAsks[1].Price), FAsks[1].Price]),
+
+  Format('%.*f', [ Spec.QtyPrecision, FAsks[0].Volume]),
+  Format('%.*f', [ GetPrecision(Self, FAsks[0].Price), FAsks[0].Price]),
+
+  Format('%.*f', [ GetPrecision(Self, FLast), FLast]),
+
+  Format('%.*f', [ GetPrecision(Self, FBids[0].Price), FBids[0].Price]),
+  Format('%.*f', [ Spec.QtyPrecision, FBids[0].Volume]),
+
+  Format('%.*f', [ GetPrecision(Self, FBids[1].Price), FBids[1].Price]),
+  Format('%.*f', [ Spec.QtyPrecision, FBids[1].Volume]),
+
+  Format('%.*f', [ GetPrecision(Self, FBids[2].Price), FBids[2].Price]),
+  Format('%.*f', [ Spec.QtyPrecision, FBids[2].Volume]),
+
+  Format('%.*f', [ GetPrecision(Self, FBids[3].Price), FBids[3].Price]),
+  Format('%.*f', [ Spec.QtyPrecision, FBids[3].Volume])
+  ]);
+end;
+
+function TSymbol.DepthLogPrev: string;
+begin
+  Result := Format('%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s', [
+  Format('%.*f', [ Spec.QtyPrecision, FAsks2[3].Volume]),
+  Format('%.*f', [ GetPrecision(Self, FAsks2[3].Price), FAsks2[3].Price]),
+
+  Format('%.*f', [ Spec.QtyPrecision, FAsks2[2].Volume]),
+  Format('%.*f', [ GetPrecision(Self, FAsks2[2].Price), FAsks2[2].Price]),
+
+  Format('%.*f', [ Spec.QtyPrecision, FAsks2[1].Volume]),
+  Format('%.*f', [ GetPrecision(Self, FAsks2[1].Price), FAsks2[1].Price]),
+
+  Format('%.*f', [ Spec.QtyPrecision, FAsks2[0].Volume]),
+  Format('%.*f', [ GetPrecision(Self, FAsks2[0].Price), FAsks2[0].Price]),
+
+  Format('%.*f', [ GetPrecision(Self, FLast), FLast]),
+
+  Format('%.*f', [ GetPrecision(Self, FBids2[0].Price), FBids2[0].Price]),
+  Format('%.*f', [ Spec.QtyPrecision, FBids2[0].Volume]),
+
+  Format('%.*f', [ GetPrecision(Self, FBids2[1].Price), FBids2[1].Price]),
+  Format('%.*f', [ Spec.QtyPrecision, FBids2[1].Volume]),
+
+  Format('%.*f', [ GetPrecision(Self, FBids2[2].Price), FBids2[2].Price]),
+  Format('%.*f', [ Spec.QtyPrecision, FBids2[2].Volume]),
+
+  Format('%.*f', [ GetPrecision(Self, FBids2[3].Price), FBids2[3].Price]),
+  Format('%.*f', [ Spec.QtyPrecision, FBids2[3].Volume])
+  ]);
+end;
+
+function TSymbol.CalcEstPrice(iSide: integer; dQty : double): double;
+var
+  i : Integer;
+  dTmp, dSum, dVolSum : double;
+  aDepths : TMarketDepths;
+  bDone : boolean;
+begin
+
+  if iSide > 0 then
+    aDepths := Asks
+  else
+    aDepths := Bids;
+
+  case FSpec.ExchangeType of
+    ekBinance: dQty := dQty + gAOConfig.Result.SafeMarginQty[0];
+    ekUpbit:   dQty := dQty + gAOConfig.Result.SafeMarginQty[1];
+    ekBithumb: dQty := dQty + gAOConfig.Result.SafeMarginQty[2];
+  end;
+
+  dSum := 0;    dVolSum := 0;   bDone := false;
+  for I := 0 to aDepths.Count-1 do
+  begin
+    //dSum := dSum + aDepths[i].Volume;
+    dVolSum := dVolSum + aDepths[i].Volume;
+
+    dTmp := dVolSum - dQty;
+
+    if (dTmp > 0) or ( CheckZero(dTmp)) then begin
+      dSum  := dSum + ( aDepths[i].Price * (aDepths[i].Volume - dTmp ) );
+      dVolSum := dVolSum - dTmp;
+      bDone := true;
+      break;
+    end
+    else begin
+      dSum  := dSum + ( aDepths[i].Price * aDepths[i].Volume );
+    end;
+  end;
+
+  if CheckZero( dVolSum ) then begin
+    if not bDone then Exit (0);
+    Result := aDepths[i].Price
+  end
+  else
+    Result := dSum / dVolSum;
+
+  if (( iSide > 0 ) and ( Result  + PRICE_EPSILON < aDepths[0].Price ) )
+    or
+    (( iSide < 0 ) and ( Result > aDepths[0].Price + PRICE_EPSILON )) then
+    Result := aDepths[0].Price;
+
+  if Result <= 0 then
+    Result := 0;
+end;
+
+function TSymbol.CalcMakerPrice(iSide, iRate: integer): double;
+var
+  dTick, dPrice, dTmp : double;
+  iRes: integer;
+  i : Integer;
+  iSteps : int64;
+begin
+  Result := 0;
+
+  if (Asks[0].Price <= EPSILON) or (Bids[0].Price <= EPSILON) then Exit;
+
+  if iSide > 0 then begin
+    dPrice  := Bids[0].Price + (Asks[0].Price - Bids[0].Price) * (iRate / 100);
+
+    if FSpec.ExchangeType = ekBinance then
+      dTick := FSpec.TickSize
+    else
+      dTick := UnitFromPrice(Self, dPrice);
+    // 올림. (일반적으로 매수는 내림인데, 체결이 잘 안될 거 같아서 올림)
+    iSteps  := Trunc(dPrice / dTick + 1.0 - ZERO_EPSILON);
+    dPrice  := iSteps * dTick;
+
+    if CmpVal(dPrice, Asks[0].Price) >= 0 then
+      dPrice  := TicksFromPrice(Self, Asks[0].Price, -1);
+
+    Result := dPrice;
+  end else
+  begin
+    dPrice  := Asks[0].Price - (Asks[0].Price - Bids[0].Price) * (iRate / 100);
+
+    if FSpec.ExchangeType = ekBinance then
+      dTick := FSpec.TickSize
+    else
+      dTick := UnitFromPrice(Self, dPrice);
+
+    // 내림.
+    iSteps := Trunc(dPrice / dTick + ZERO_EPSILON);
+    dPrice  := iSteps * dTick;
+
+    if CmpVal(Bids[0].Price, dPrice) >= 0 then
+      dPrice := TicksFromPrice(Self, Bids[0].Price, 1);;
+
+    Result := dPrice;
+  end;
+end;
+
+function TSymbol.CalcTicksPrice(dPrice:double; iTick: integer): double;
+begin
+  Result := TicksFromPrice(Self, dPrice, iTick);
+end;
+
+const
+  c = 16;
+  s : array [0..c-1] of string =
+  ('ADA', 'ALGO', 'BLUR', 'CELO', 'ELF', 'EOS', 'GRS', 'GRT', 'ICX', 'MANA', 'MINA', 'POL', 'SAND', 'SEI', 'STG', 'TRX');
+function TSymbol.IsHogaChangeSymbol: boolean;
+var
+  I: Integer;
+begin
+  //
+  Result := false;
+  for I := 0 to c-1 do
+    if s[i] = FCode then
+    begin
+      Result := true;
+      break;
+    end;
+end;
+
+function TSymbol.IsOrderAble(const dPrice, dQty: double): boolean;
+var
+  dAmt : double;
+begin
+  dAmt := dPrice * dQty * FSpec.PointValue;
+  Result  := CmpVal( dAmt, FSpec.MinNotional ) >= 0;
+end;
+
+function TSymbol.CheckDnwState(depoit, withdraw: boolean): integer;
+var
+  bPrevDpst , bPrevWthd, bChange : boolean;
+begin
+  Result := 0;
+
+  try
+    if FDnwCount = 0 then
+    begin
+      bPrevDpst := depoit;
+      bPrevWthd := withdraw;
+    end else
+    begin
+      bPrevDpst := FDepositState;
+      bPrevWthd := FWithdrawlState;
+    end;
+
+    FDepositState   := depoit;
+    FWithdrawlState := withdraw;
+
+    if FDepositState and FWithdrawlState then
+    begin
+
+      if FDnwCount = 0 then exit ;
+      if ( bPrevDpst <> FDepositState ) or ( bPrevWthd <> FWithdrawlState ) then
+      begin
+        App.Engine.SymbolCore.SymbolDnwStates[ Spec.ExchangeType ].DeleteSymbol( Self );
+//        App.Log(llInfo, '[%s] %s  정상화 : %s -> %s, %s ->%s', [ TExchangeKindDesc[ Spec.ExchangeType], Code,
+//          ifThenStr( bPrevDpst, '입금가능','입금금지'), ifThenStr( FDepositState, '입금가능','입금금지'),
+//          ifThenStr( bPrevWthd, '출금가능','출금금지'), ifThenStr( FWithdrawlState, '출금가능','출금금지')
+//          ]   );
+      end;
+    end else
+    begin
+
+      if FDnwCount = 0 then begin
+        bChange := true;
+      end
+      else begin
+        if ( bPrevDpst = FDepositState ) and ( bPrevWthd = FWithdrawlState ) then Exit;
+        bChange := false;
+        if bPrevDpst and ( not FDepositState )  then
+        begin
+           bChange := true;
+           DepositTime := now;
+        end;
+        if bPrevWthd and ( not FWithdrawlState ) then
+        begin
+           bChange := true;
+           WithDrawlTime := now;
+        end;
+        Result := 1;
+      end;
+
+      if bChange then
+      begin
+        if App.Engine.SymbolCore.SymbolDnwStates[ Spec.ExchangeType ].FindCode( Code ) = nil then
+          App.Engine.SymbolCore.SymbolDnwStates[ Spec.ExchangeType ].AddSymbol( Self );
+//        App.Log(llInfo, '[%s] %s (%d)  정지 : %s -> %s, %s ->%s', [ TExchangeKindDesc[ Spec.ExchangeType], Code, FDnwCount,
+//          ifThenStr( bPrevDpst, '입금가능','입금금지'), ifThenStr( FDepositState, '입금가능','입금금지'),
+//          ifThenStr( bPrevWthd, '출금가능','출금금지'), ifThenStr( FWithdrawlState, '출금가능','출금금지')
+//          ]   );
+      end;
+    end;
+  finally
+    inc( FDnwCount );
+  end;
+
+
+
+end;
+
+constructor TSymbol.Create(aColl: TCollection);
+begin
+  inherited Create( aColl );
+
+  FRefSymbol  := nil;
+
+  FIsFuture:= false;
+  FIsMargin:= false;
+
+  FBids:= TMarketDepths.Create;
+  FAsks:= TMarketDepths.Create;
+
+  FBids2:= TMarketDepths.Create;
+  FAsks2:= TMarketDepths.Create;
+
+  FSales:= TTimeNSales.Create;
+//  FTicks := TCollection.Create( TTickItem);
+  FNetworkList:= TDnwNetWorkList.Create;
+
+  FTerms    := TTerms.Create;
+  FTerms.OnAdd  := OnTermAddEvent;
+
+  DataTrace := TDataTrace.Create;
+
+  FAddTerm  := false;
+
+  FWithdrawlState := true;
+  FDepositState   := true;
+
+  FDnwCount := 0;
+  FDepositTime  := 0;
+  FWithDrawlTime:= 0;
+  FLastID := 0;
+  FTrnsTimeQ	:= 0;
+  FTrnsTimeF	:= 0;
+
+  FKimpPrice := 0.0;
+  FWDCPrice  := 0.0;
+  FSPrice    := 0.0;
+  FBasis     := 0.0;
+  FIndexPrice:= 0.0;
+
+  SPValue[0]  := 0.0;
+  SPValue[1]  := 0.0;
+
+  TrdSpValue[0] := 0.0;
+  TrdSpValue[1] := 0.0;
+
+  FMinDelayTime := 100000000;
+  FDelayMs      := 0;
+  FDelayTime    := 0;
+
+  FContiCnt     := 0;
+
+end;
+
+
+
+function TSymbol.DayUpDown: double;
+var
+  dTmp : double;
+begin
+  if DayOpen <= 0 then  dTmp := 1
+  else dTmp := DayOpen;
+
+  Result := ( DayHigh - DayOpen) / dTmp * 100;
+end;
+
+destructor TSymbol.Destroy;
+begin
+
+  FNetworkList.Free;
+  DataTrace.Free;
+  FTicks.free;
+  FBids.Free;
+  FAsks.Free;
+  FBids2.Free;
+  FAsks2.Free;
+  FSales.Free;
+
+  FTerms.Free;
+  inherited;
+end;
+
+function TSymbol.GetCustomIndex: double;
+var
+ dEstPrice : double;
+begin
+  //: 1매수호가잔량/(1매도호가잔량+1매수호가잔량)*매도호가가격 +
+  //  1매도호가잔량/(1매도호가잔량+1매수호가잔량)*매수호가가격
+  dEstPrice := (CalcDiv(Bids[0].Volume, (Asks[0].Volume + Bids[0].Volume)) * Asks[0].Price) +
+               (CalcDiv(Asks[0].Volume, (Asks[0].Volume + Bids[0].Volume)) * Bids[0].Price);
+
+  if (dEstPrice <= EPSILON) or (Last <= EPSILON) then
+    Result := 0
+  else
+    Result  := (dEstPrice * 2 + Last) / 3;
+end;
+
+//  only binance futures
+function TSymbol.GetHitOrderPrice(iSide: integer; dComPrice: double): double;
+var
+  dPrice : double;
+begin
+  Result := dComPrice;
+  dPrice := GetLimitOrderPrice(iSide = 1);
+  if dPrice > EPSILON then
+    if (iSide = 1 ) and (CmpVal(dPrice, dComPrice) < 0) then
+      Result := dPrice
+    else if (iSide = -1) and (CmpVal(dPrice, dComPrice) > 0) then
+      Result := dPrice;
+end;
+
+//  only binance futures
+function TSymbol.GetLimitOrderPrice(bBid: boolean): double;
+var
+  dMultiple : double;
+begin
+  if bBid then
+    dMultiple := 1 + ((FSpec.MultiplierUp-1) / 2)
+  else
+    dMultiple := 1 - ((1-FSPec.MultiplierDown) / 2);
+
+  Result := TruncDecimal(TFuture(Self).MarkPrice * dMultiple, FSpec.Precision);
+end;
+
+function TSymbol.GetOrderPrice(iSide: integer; dEstPrice: double;
+  iTick: integer): double;
+var
+  I: Integer;
+begin
+  Result := 0;
+
+  if iSide > 0 then
+  begin
+    for I := 0 to FAsks.Count-1 do
+    begin
+      if FAsks[i].Price > dEstPrice - DOUBLE_EPSILON then
+      begin
+        REsult := TicksFromPrice( Self, FAsks[i].Price, iTick );
+        break;
+      end;
+    end;
+  end else
+  begin
+    for I := 0 to FBids.Count-1 do
+    begin
+      if FBids[i].Price - DOUBLE_EPSILON < dEstPrice  then
+      begin
+        Result := TicksFromPrice( Self, FBids[i].Price, -iTick );
+        break;
+      end;
+    end;
+  end;
+end;
+
+
+procedure TSymbol.OnTermAddEvent(Sender: TObject);
+begin
+  FAddTerm  := true;
+  if FTerms.Count > 1000 then
+    FTerms.Delete(0);
+end;
+
+function TSymbol.PriceToStr(Value: double): string;
+var
+  iPre : integer;
+begin
+  iPre   := GetPrecision(Self, Value );
+  Result := Format('%.*n', [ iPre , Value + 0.0] );
+end;
+
+function TSymbol.QtyToStr(Value: double): string;
+begin
+  Result := Format('%.*n', [ Spec.QtyPrecision, Value + 0.0 ] );
+end;
+
+procedure TSymbol.reArrageAsks(i: integer);
+var
+  j : integer;
+begin
+  if i >= Asks.Count then Exit;
+
+  for j := i to Asks.Count-1 do
+    if Asks[j].Volume > EPSILON then
+    begin
+      i := j;
+      break;
+    end;
+
+  for j := 0 to Asks.Count-1 do
+    if (j + i) < Asks.Count then
+    begin
+      Asks[j].Price := Asks[i+j].Price;
+      Asks[j].Volume:= Asks[i+j].Volume;
+    end else
+    begin
+      Asks[j].Price   := TicksFromPrice(Self, Asks[j-1].Price, 1);
+      Asks[j].Volume  := 0;
+    end;
+end;
+
+procedure TSymbol.reArrageBids(i: Integer);
+var
+  j : integer;
+begin
+
+  if i >= Bids.Count then Exit;
+
+  for j := i to Bids.Count-1 do
+    if Bids[j].Volume > EPSILON then
+    begin
+      i := j;
+      break;
+    end;
+
+  for j := 0 to Bids.Count-1 do
+    if (j + i) < Bids.Count then
+    begin
+      Bids[j].Price := Bids[i+j].Price;
+      Bids[j].Volume:= Bids[i+j].Volume;
+    end else
+    begin
+      Bids[j].Price   := TicksFromPrice(Self, Bids[j-1].Price, -1);
+      Bids[j].Volume  := 0;
+    end;
+
+end;
+
+procedure TSymbol.ReSizeMarketDepth(iSize: integer);
+begin
+  if iSize <= 0 then Exit;
+
+  FAsks.Size  := iSize;
+  FBids.Size  := iSize;
+  FAsks2.Size := iSize;
+  FBids2.Size := iSize;
+end;
+
+procedure TSymbol.SavePrevDepth;
+var
+  I: Integer;
+begin
+  if FContiCnt > 0 then Exit;
+  
+  for I := 0 to Asks.Count-1 do
+  begin
+    Asks2[i].Price  := Asks[i].Price;
+    Asks2[i].Volume := Asks[i].Volume;
+
+    Bids2[i].Price  := Bids[i].Price;
+    Bids2[i].Volume := Bids[i].Volume;
+  end;
+end;
+
+{ TSymbolList }
+
+procedure TSymbolList.AddSymbol(aSymbol: TSymbol);
+begin
+  AddObject(aSymbol.Code, aSymbol);
+end;
+
+procedure TSymbolList.AddSymbol2(aSymbol: TSymbol);
+begin
+  AddObject(aSymbol.Spec.FQN, aSymbol);
+end;
+
+constructor TSymbolList.Create;
+begin
+  inherited Create;
+
+  Sorted := True;
+end;
+
+procedure TSymbolList.DeleteSymbol(aSymbol: TSymbol);
+var
+  idx : Integer;
+begin
+  idx := IndexOf( aSymbol.Code );
+  if idx >= 0 then
+    Delete(idx);
+end;
+
+function TSymbolList.FindCode(stCode: String): TSymbol;
+begin
+  Result := GetSymbol(IndexOf(stCode));
+end;
+
+function TSymbolList.FindCode2(stCode: string): TSymbol;
+begin
+
+end;
+
+procedure TSymbolList.GetList(aList: TStrings);
+var
+  i: Integer;
+  aSymbol: TSymbol;
+begin
+  if aList = nil then Exit;
+
+  for i := 0 to Count - 1 do
+  begin
+    aSymbol := GetSymbol(i);
+    aList.AddObject(aSymbol.Code, aSymbol);
+  end;
+end;
+
+procedure TSymbolList.GetList(aList: TStrings; aMarket: TMarketType );
+var
+  i: Integer;
+  aSymbol: TSymbol;
+begin
+  if aList = nil then Exit;
+
+  for i := 0 to Count - 1 do
+  begin
+    aSymbol := GetSymbol(i);
+    if aSymbol.Spec.Market = aMarket then
+      aList.AddObject(aSymbol.Code, aSymbol);
+  end;
+
+end;
+
+procedure TSymbolList.GetLists(aList: TSTrings; aMarkets: TMarketTypes);
+var
+  i : integer;
+  aSymbol : TSymbol;
+begin
+  if aList = nil  then Exit;
+
+  for i := 0 to Count - 1 do
+  begin
+    aSymbol := GetSymbol(i);
+    if aSymbol.Spec.Market in aMarkets then
+      aList.AddObject( aSymbol.Code, aSymbol);
+  end;
+end;
+
+function TSymbolList.GetSymbol(i: Integer): TSymbol;
+begin
+  if (i >= 0) and (i <= Count-1) then
+    Result := TSymbol(Objects[i])
+  else
+    Result := nil;
+end;
+
+{ TSymbols }
+
+function TSymbols.Find(stCode: String): TSymbol;
+var
+  i: Integer;
+begin
+  Result := nil;
+
+  for i := 0 to Count - 1 do
+    if CompareStr((Items[i] as TSymbol).Code, stCode) = 0 then
+    begin
+      Result := Items[i] as TSymbol;
+      Break;
+    end;
+end;
+
+{ TStocks }
+
+constructor TSpots.Create;
+begin
+  inherited Create(TSpot)
+end;
+
+function TSpots.GetSpot(i: Integer): TSpot;
+begin
+  if (i >= 0) and (i <= Count-1) then
+    Result := Items[i] as TSpot
+  else
+    Result := nil;
+end;
+
+function TSpots.New(stCode: String): TSpot;
+begin
+  Result  := Add as TSpot;
+  Result.FCode  := stCode;
+
+end;
+
+{ TFutures }
+
+constructor TFutures.Create;
+begin
+  inherited Create(TFuture);
+end;
+
+function TFutures.GetFuture(i: Integer): TFuture;
+begin
+  if (i >= 0) and (i <= Count-1) then
+    Result := Items[i] as TFuture
+  else
+    Result := nil;
+end;
+
+function TFutures.New(stCode: String): TFuture;
+begin
+  Result := Add as TFuture;
+  Result.FCode := stCode;
+end;
+
+{ TMargins }
+
+constructor TMargins.Create;
+begin
+  inherited Create(TMargin);
+end;
+
+function TMargins.GetMargin(i: Integer): TMargin;
+begin
+  if (i >= 0) and (i <= Count-1) then
+    Result := Items[i] as TMargin
+  else
+    Result := nil;
+end;
+
+
+function TMargins.New(stCode: String): TMargin;
+begin
+  Result := Add as TMargin;
+  Result.FCode := stCode;
+end;
+
+{ TFuture }
+
+procedure TFuture.SetExpDate(const Value: TDateTime);
+var
+  wYear, wMonth, wDay: Word;
+begin
+  FExpDate := Value;
+
+  DecodeDate(Value, wYear, wMonth, wDay);
+
+  FExpMonth := wMonth;
+  FExpYear := wYear;
+end;
+
+{ TMarketDepths }
+
+constructor TMarketDepths.Create;
+begin
+  inherited Create(TMarketDepth);
+  FRealCount  := 0;
+  SetSize(15);
+end;
+
+constructor TMarketDepths.Create(iSize: integer);
+begin
+  inherited Create(TMarketDepth);
+  FRealCount  := 0;
+  SetSize(iSize);
+end;
+
+function TMarketDepths.GetDepth(i: Integer): TMarketDepth;
+begin
+  if (i >= 0) and (i <= Count-1) then
+    Result := Items[i] as TMarketDepth
+  else
+    Result := nil;
+end;
+
+function TMarketDepths.GetBiggerDepth(dVol: double): TMarketDepth;
+var
+  I: Integer;
+  aDepth : TMarketDepth;
+begin
+  Result := nil;
+
+  for I := 0 to Count-1 do
+  begin
+    aDepth  := GetDepth(i);
+    if aDepth <> nil then
+      if aDepth.Volume >= dVol then
+      begin
+        Result := aDepth;
+        break;
+      end;
+
+    // 최대 5호가까지만..
+    //if i >= 4 then break;
+    // 2024.01.05    1호가까지만 하기로 함
+    if i = 0 then break;
+  end;
+end;
+
+function TMarketDepths.GetSize: Integer;
+begin
+  Result := Count;
+end;
+
+procedure TMarketDepths.SetSize(const Value: Integer);
+var
+  i: Integer;
+begin
+  if Value > 0 then
+    if Value > Count then
+    begin
+      for i := Count to Value-1 do Add;
+    end else
+    if Value < Count then
+    begin
+      for i := Count-1 downto Value do Items[i].Free;
+    end;
+
+end;
+
+{ TTimeNSales }
+
+constructor TTimeNSales.Create;
+begin
+  inherited Create(TTimeNSale);
+
+  FPrev := nil;
+  FLast := nil;
+  FMaxCount := 1000;
+end;
+
+function TTimeNSales.GetSale(i: Integer): TTimeNSale;
+begin
+  if (i >= 0) and (i <= Count-1) then
+    Result := Items[i] as TTimeNSale
+  else
+    Result := nil;
+end;
+
+function TTimeNSales.New: TTimeNSale;
+begin
+    // limit size
+  if (FMaxCount > 0) and (Count >= FMaxCount) then
+    Items[Count-1].Free;
+
+    // insert new object
+  Result := Insert(0) as TTimeNSale;
+
+  with Result do
+  begin
+    FVolume := 0;
+    FSide := 0; // not assigned
+  end;
+
+    // store
+  FPrev := FLast;
+  FLast := Result;
+end;
+
+
+
+{ TCommSymbolList }
+
+function TCommSymbolList.FindSymbol(aExKind: TExchangeKind;
+  sCode: string): TSymbol;
+var
+  I: Integer;
+  aSymbol : TSymbol;
+begin
+  Result := nil;
+  for I := 0 to Count-1 do
+  begin
+    aSymbol := TSymbol( Items[i] );
+    if ( aSymbol.Code = sCode )
+      and ( aSymbol.Spec.ExchangeType = aExKind ) then
+    begin
+      Result := aSymbol;
+      break;
+    end;
+  end;
+end;
+
+function TCommSymbolList.GetCommSymbol(i: Integer): TSymbol;
+begin
+  if( i < 0 ) or ( i >= Count ) then
+    Result := nil
+  else
+    Result := TSymbol( Items[i] );
+end;
+
+procedure TCommSymbolList.SortByDailyAmount;
+begin
+  Sort( CompareDailyAmount );
+end;
+
+{ TBaseSymbols }
+
+//constructor TBaseSymbols.Create;
+//begin
+//  inherited Create;
+//  Sorted := true;
+//
+//  FSymbols := TList.Create;
+//end;
+//
+//destructor TBaseSymbols.Destroy;
+//begin
+//  FSymbols.Free;
+//  inherited;
+//end;
+//
+//function TBaseSymbols.FindList(sBase: String): TList;
+//begin
+//  Result := GetList(IndexOf(sBase));
+//end;
+//
+//function TBaseSymbols.GetList(i: Integer): TList;
+//begin
+//  if (i >= 0) and (i <= Count-1) then
+//    Result := Objects[i] as TList
+//  else
+//    Result := nil;
+//end;
+//
+//function TBaseSymbols.AddSymbols(aSymbol : TSymbol) : TList;
+//begin
+//  Result := FindList( aSymbol.Spec.BaseCode );
+//  if Result = nil then
+//  begin
+//    AddObject(aSymbol.Spec.BaseCode , aSymbol);
+//  end;
+//end;
+
+{ TBaseSymbols }
+
+procedure TBaseSymbols.AddSymbol(aSymbol: TSymbol);
+var
+  aSymbolList : TSymbolList;
+begin
+  aSymbolList := FindSymbolList( aSymbol.Spec.BaseCode ) ;
+
+  if aSymbolList = nil then
+  begin
+    aSymbolList := TSymbolList.Create;
+    AddObject( aSymbol.Spec.BaseCode, aSymbolList );
+  end;
+
+  aSymbolList.AddSymbol2( aSymbol );
+end;
+
+
+constructor TBaseSymbols.Create;
+begin
+  inherited Create;
+  Sorted := true;
+end;
+
+destructor TBaseSymbols.Destroy;
+var
+  I: Integer;
+begin
+
+  for I := 0 to Count-1 do
+    Objects[i].Free;
+  inherited;
+end;
+
+function TBaseSymbols.FindSymbol(sBase: string;
+  aExKind: TExchangeKind): TSymbol;
+  var
+    aSymbolList : TSymbolList;
+    aSymbol : TSymbol;
+    I: Integer;
+begin
+  Result := nil;
+  aSymbolList := FindSymbolList( sBase ) ;
+  if aSymbolList <> nil then
+    for I := 0 to aSymbolList.Count-1 do
+    begin
+      aSymbol := aSymbolList.Symbols[i];
+      if aSymbol.Spec.ExchangeType = aExKind then
+      begin
+        Result := aSymbol;
+        Break;
+      end;
+    end;
+end;
+
+function TBaseSymbols.FindSymbol(sBase: string; aExKind: TExchangeKind;
+  aExApiType : TExchangeApiType): TSymbol;
+  var
+    aSymbolList : TSymbolList;
+    aSymbol : TSymbol;
+    I: Integer;
+begin
+  Result := nil;
+  aSymbolList := FindSymbolList( sBase ) ;
+  if aSymbolList <> nil then
+    for I := 0 to aSymbolList.Count-1 do
+    begin
+      aSymbol := aSymbolList.Symbols[i];
+      if ( aSymbol.Spec.ExchangeType = aExKind )
+       and ( aSymbol.Spec.ExApiType = aExApiType) then
+      begin
+        Result := aSymbol;
+        Break;
+      end;
+    end;
+end;
+
+
+function TBaseSymbols.FindSymbol(sBase: string; aExKind: TExchangeKind; aExApiType : TExchangeApiType;
+  aSCType: TSettleCurType): TSymbol;
+  var
+    aSymbolList : TSymbolList;
+    aSymbol : TSymbol;
+    I: Integer;
+begin
+  Result := nil;
+  aSymbolList := FindSymbolList( sBase ) ;
+  if aSymbolList <> nil then
+    for I := 0 to aSymbolList.Count-1 do
+    begin
+      aSymbol := aSymbolList.Symbols[i];
+      if (aSymbol.Spec.ExchangeType = aExKind) and (aSymbol.Spec.SettleType = aSCType)  and ( aSymbol.Spec.ExApiType = aExApiType) then
+      begin
+        Result := aSymbol;
+        Break;
+      end;
+    end;
+
+end;
+
+function TBaseSymbols.FindSymbolEx(sBase: string;
+  aExKind: TExchangeKind): TSymbol;
+  var
+    aSymbolList : TSymbolList;
+    aSymbol : TSymbol;
+    I: Integer;
+begin
+  Result := nil;
+  aSymbolList := FindSymbolList( sBase ) ;
+  if aSymbolList <> nil then
+    for I := 0 to aSymbolList.Count-1 do
+    begin
+      aSymbol := aSymbolList.Symbols[i];
+
+      if aExKind = App.Engine.SymbolCore.MainExKind then
+      begin
+        if App.Engine.SymbolCore.IsOSMain(aSymbol)then
+        begin
+          Result := aSymbol;
+          Break;
+        end
+      end
+      else begin
+        if aSymbol.Spec.ExchangeType = aExKind then
+        begin
+          Result := aSymbol;
+          Break;
+        end;
+      end;
+    end;
+
+end;
+
+function TBaseSymbols.FindSymbolList(sBase: String): TSymbolList;
+begin
+  Result := GetSymbolList( IndexOf(sBase) );
+end;
+
+
+function TBaseSymbols.GetSymbolList(i: integer): TSymbolList;
+begin
+  if (i >= 0) and (i <= Count-1) then
+    Result := Objects[i] as TSymbolList
+  else
+    Result := nil;
+end;
+
+
+
+
+
+
+
+{ TDnwNetWorkList }
+
+constructor TDnwNetWorkList.Create;
+begin
+  inherited Create( TDnwNetWork );
+  init;
+end;
+
+procedure TDnwNetWorkList.init;
+begin
+  DpCnt[0] := 0;
+  DpCnt[1] := 0;
+  WdCnt[0] := 0;
+  WdCnt[1] := 0;
+end;
+
+function TDnwNetWorkList.IsDeposit(bState: boolean): boolean;
+begin
+  if bState then begin
+    // 입금 정상인가..
+    Result := false;
+    if Count = DpCnt[0] then
+      Result := true
+  end else
+  begin
+    // 입금 금지인가?
+    Result := false;
+    if Count = DpCnt[1] then
+      Result := true;
+  end;
+end;
+
+function TDnwNetWorkList.IsWithdraw(bState: boolean): boolean;
+begin
+  if bState then begin
+    // 출금 정상인가..
+    Result := false;
+    if Count = WdCnt[0] then
+      Result := true
+  end else
+  begin
+    // 출금 금지인가?
+    Result := false;
+    if Count = WdCnt[1] then
+      Result := true;
+  end;
+end;
+
+function TDnwNetWorkList.GetNetwork(i: Integer): TDnwNetWork;
+begin
+  if (i >= 0) and (i <= Count-1) then
+    Result := Items[i] as TDnwNetWork
+  else
+    Result := nil;
+end;
+
+function TDnwNetWorkList.New: TDnwNetWork;
+begin
+  Result := Add as TDnwNetWork;
+end;
+
+{ TDnwNetWork }
+
+constructor TDnwNetWork.Create(aColl: TCollection);
+begin
+  inherited Create( aColl );
+
+end;
+
+procedure TDnwNetWork.SetDepositState(const Value: boolean);
+begin
+  if Value then
+    inc( (Collection as TDnwNetWorkList).DpCnt[0] )
+  else
+    inc( (Collection as TDnwNetWorkList).DpCnt[1] );
+
+  FDepositState := Value;
+end;
+
+procedure TDnwNetWork.SetWithdrawlState(const Value: boolean);
+begin
+  if Value then
+    inc( (Collection as TDnwNetWorkList).WdCnt[0] )
+  else
+    inc( (Collection as TDnwNetWorkList).WdCnt[1] );
+
+  FWithdrawlState := Value;
+end;
+
+{ TMarketDepth }
+
+constructor TMarketDepth.Create(aColl: TCollection);
+begin
+  inherited Create(aColl);
+  FVolume := 0;
+  FPrice  := 0;
+end;
+
+end.

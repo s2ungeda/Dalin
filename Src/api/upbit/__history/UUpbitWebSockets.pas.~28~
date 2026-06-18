@@ -1,0 +1,245 @@
+unit UUpbitWebSockets;
+interface
+uses
+  System.Classes, System.SysUtils, System.DateUtils
+  , UQuoteTimers
+  , UWebSockets  , USymbols
+  , UApiTypes
+  , sgcWebSocket_Classes
+  ;
+type
+
+  TUpbitWebSocket = class( TWebSocket )
+  private
+    FSubList: TStrings;
+    FParam : string;
+
+    FTimer   : TQuoteTimer;
+    FSendList: TStrings;
+
+    procedure wsConnect(Connection: TsgcWSConnection); override;
+
+    procedure OnMessage( const S : string );
+    procedure OnHandshake(Connection: TsgcWSConnection;  var Headers: TStringList);
+    function GetSubData: string;
+
+  public
+
+    Constructor Create( iSockDiv, iSeq : Integer; aExApiType : TExchangeApiType ); overload;
+    destructor Destroy; override;
+
+      // 한종목씩
+    procedure SubScribe( aSymbol : TSymbol ) ;
+    procedure UnSubScribe( aSymbol : TSymbol ) ;
+
+    procedure OnSubTimer( Sender : TObject );
+
+    procedure SubscribeAll; override;
+    procedure MakeSubData; override;
+
+    property SubList  : TStrings  read FSubList;
+    property Descript : string    read GetDescript;
+
+  end;
+
+  function GetSig: string;
+
+implementation
+uses
+  GApp , GLibs , UEncrypts , UTypes
+  , UApiConsts
+  , UUpbitParse
+  , JOSE.Core.JWT
+  , JOSE.Core.JWA
+  , JOSE.Core.Builder
+  ;
+{ TUpbitWebSocket }
+
+function GetSig : string;
+var
+  LToken: TJWT;
+  //guid : TGUID;
+  sSig : string;
+begin
+
+  LToken:= TJWT.Create(TJWTClaims);
+
+  try
+    LToken.Claims.SetClaimOfType<string>('access_key', App.Engine.ApiConfig.GetApiKey( ekUpbit , eaSpot ));
+    LToken.Claims.SetClaimOfType<string>('nonce', GetUUID );
+
+    sSig := TJOSE.SerializeCompact(  App.Engine.ApiConfig.GetSceretKey( ekUpbit , eaSpot )
+      ,  TJOSEAlgorithmId.HS256, LToken);
+    Result := Format('Bearer %s', [sSig ]);
+  finally
+    LToken.Free;
+  end;
+end;
+
+constructor TUpbitWebSocket.Create(iSockDiv, iSeq: Integer; aExApiType : TExchangeApiType);
+begin
+  inherited Create( iSockDiv, iSeq, ekUpbit, aExApiType );
+
+  FSubList    := TStringList.Create;
+  OnNotify    := OnMessage;
+
+  if iSockDiv = TRADE_SOCK then
+    WebSocket.OnHandshake := OnHandshake;
+
+  with WebSocket do
+  begin
+    HeartBeat.Enabled := true;
+    if iSockDiv = TRADE_SOCK then begin
+      HeartBeat.Interval:= 20;
+    end
+    else
+      HeartBeat.Interval:= 60;
+  end;
+
+  FSendList:= TStringList.Create;
+
+  FTimer  := App.Engine.QuoteBroker.Timers.New;
+  FTimer.Interval := 500;
+  FTimer.OnTimer  := OnSubTimer;
+
+end;
+
+destructor TUpbitWebSocket.Destroy;
+begin
+  FSendList.Free;
+  FSubList.Free;
+  inherited;
+end;
+
+function TUpbitWebSocket.GetSubData: string;
+begin
+  if FSubList.Count <= 0 then Exit ('');
+
+//  Result := Format('[{"ticket":"%s"},{"type":"trade","codes":[%s],"isOnlyRealtime":true } '
+//    + ',{"type":"orderbook","codes":[%s],"isOnlyRealtime":true}'
+  Result := Format('[{"ticket":"%s"},{"type":"trade","codes":[%s]} '
+    + ',{"type":"orderbook","codes":[%s]}'
+    + ',{"format":"SIMPLE"}]'
+    , [ GetUUID, FParam, FParam ] );
+end;
+
+procedure TUpbitWebSocket.MakeSubData;
+var
+  sData : string;
+  i : integer;
+begin
+  if SubList.Count > 0 then Exit;
+
+  FParam := '';
+  with App.Engine.SymbolCore.Symbols[ ekUpbit] do
+    for I := iStart to  iEnd-1 do
+    begin
+      FParam := FParam + Format('"%s"', [Symbols[i].OrgCode  ]);
+//      FParam2:= FParam2 + Format('"%s.5"', [Symbols[i].OrgCode ]);
+      if i < iEnd-1  then begin
+        FParam  := FParam + ',' ;
+//        FParam2 := FParam2 + ',';
+      end;
+    end;
+
+
+  SubList.Add( GetSubData );
+  App.DebugLog( '========== upbit sub ===========');
+
+  for I := 0 to SubList.Count-1 do
+    App.DebugLog('(%d):%s',[ i, SubList[i] ]);
+end;
+
+procedure TUpbitWebSocket.wsConnect(Connection: TsgcWSConnection);
+begin
+  inherited wsConnect(Connection);
+  App.Log(llInfo, ' %s  %d.th Connected', [ Descript, ConnectTry ]);
+
+  if SockDiv = TRADE_SOCK then
+  begin
+//    SendData( '[{"ticket":"'+GetUUID+'"},{"type":"myTrade"},{"format":"SIMPLE"}]' );
+    SendData( '[{"ticket":"'+GetUUID+'"},{"type":"myOrder"}]' );
+  end else
+    if ( ConnectTry > 1 ) and  ( GetSockState = 'Open' ) then
+      SubscribeAll;
+end;
+
+//procedure TUpbitWebSocket.OnAfterDisconnect(Sender: TObject);
+//begin
+//  inherited OnAfterDisconnect(Sender);
+//  App.Log(llInfo, ' %s Disconnected', [ Descript]);
+//end;
+
+procedure TUpbitWebSocket.OnHandshake(Connection: TsgcWSConnection;
+  var Headers: TStringList);
+  var
+    sHeader : string;
+begin
+  sHeader := Format('Authorization:%s', [ GetSig ] );
+  headers.Add(sHeader);
+end;
+
+procedure TUpbitWebSocket.OnMessage(const S: string);
+begin
+  gUpReceiver.ParseSocketData(ExApiType, S);
+end;
+
+procedure TUpbitWebSocket.OnSubTimer(Sender: TObject);
+var
+  sTmp : string;
+begin
+  if FSendList.Count <= 0 then Exit;
+
+  sTmp := FSendList[0];
+  FSendList.Delete(0);
+  SendData( sTmp );
+end;
+
+procedure TUpbitWebSocket.SubScribe(aSymbol: TSymbol);
+var
+  sData : string;
+  i : integer;
+begin
+
+  if FSubList.IndexOf(aSymbol.OrgCode) < 0 then
+    FSubList.Add(aSymbol.OrgCode);
+
+  FParam := '';
+  for I := 0 to FSubList.Count-1 do
+  begin
+    FParam := FParam + Format('"%s"', [FSubList[i]]);
+    if i < FSubList.Count-1  then begin
+      FParam  := FParam + ',' ;
+    end;
+  end;
+
+  if App.AppStatus <> asShow then Exit;
+
+  //SendData( GetSubData );
+
+  if FTimer.Enabled then
+    FSendList.Add( GetSubData )
+  else
+    SendData( GetSubData );
+end;
+
+procedure TUpbitWebSocket.SubscribeAll;
+begin
+  SendData( GetSubData );
+  FTimer.Enabled := true;
+end;
+
+procedure TUpbitWebSocket.UnSubScribe(aSymbol: TSymbol);
+var
+  idx : integer;
+begin
+  idx := FSubList.IndexOf(aSymbol.OrgCode);
+  if idx >= 0 then
+    FSubList.Delete(idx);
+end;
+
+
+
+end.
+
+

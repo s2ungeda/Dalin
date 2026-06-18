@@ -1,0 +1,1331 @@
+unit UAutoKipOrders;
+
+interface
+
+uses
+  system.Classes, system.SysUtils, system.DateUtils, Windows
+
+  , UAccounts, USymbols, UOrders, UPositions, UAssets
+  , UOrderParams, UKipOrders
+  , UApiTypes, UApiConsts, UTypes
+  , UQuoteTimers, UDistributor
+  ;
+
+const
+  STOP_STR = 'STOP';
+  DONE_STR = 'DONE';
+  BAL_STR  = 'BAL';
+  RJCT_STR = 'RJCT'; //
+  RANG_STR  = 'RANG';
+  ORD_STR  = 'ORDER';
+
+type
+
+  TSymbolArray  = array [TSymbolCountryType ] of TSymbol;
+  TAccountArray = array [TSymbolCountryType]  of TAccount;
+  TEstPriceArray= array [TPositionType ] of double;
+  TOrderPriceArry = array [TPositionType ] of double;
+  TKipArray     = array [TAutoOrderType] of double;
+  TKipPositionArray = array [TSymbolCountryType] of TPosition;
+
+  TAutoKipOrderItem = class( TCollectionItem )
+  private
+    FRun: boolean;
+    FTimer: TQuoteTimer;
+    FKipData: TAutoKipData;
+    FName: string;
+    FOnNotify: TTextNotifyEvent;
+    FSymbols: TSymbolArray;
+    FIsEntry: boolean;
+    FParent: TObject;
+    FEstPrice: TEstPriceArray;
+    FKipValue: double;
+    FWorking: boolean;
+    FCount: integer;
+    FAccounts: TAccountArray;
+//    FFirstOrder: boolean;
+    FOrdPrice: TOrderPriceArry;
+    FKipOrders: TKipOrders;
+    FRetry: TKipConfig;
+    FDone: boolean;
+    FOnKipNotify: TTextNotifyEvent;
+
+    FDataCount : integer;
+
+    procedure init;
+    procedure DoEntry;
+    procedure DoOrder;
+    procedure DoCancelOrder( aOrder : TOrder );
+    procedure DoChangeOrder( aOrder : TOrder; dOrderQty : double );
+    procedure DoModifyOrder;
+    procedure DoReOrder;
+
+    procedure CalclEstPrice( aSymbol : TSymbol );
+
+    function CheckBalance : boolean;
+    function CheckPriceRange : boolean;
+    function GetOrderPrice: boolean;
+    function CheckKipValue: boolean;
+
+    function GetLogName : string;
+
+    procedure CheckOrders( aOrder : TOrder );
+    procedure OnTimer( Sender : TObject );
+
+  public
+    TradeAmt  : array [TPositionType] of double;
+    FilledQty : array [TPositionType] of double;
+    AvgFillPrice : array [TPositionType] of double;
+
+    constructor Create( aColl : TCollection ); override;
+    Destructor Destroy ; override;
+
+    function IsRun : boolean;
+    function Start : boolean;
+    procedure Stop;
+    procedure SetSymbol( aObj : TObject; bEntry : boolean; aSymbols : array of Tsymbol ) ;
+    procedure OnProc;
+    procedure OnOrder( aOrder : TOrder; iEventID : integer );
+    procedure OnReduceOnly(bReduce: boolean);
+
+    procedure CalcTradeAmt;
+
+    procedure DoLog( stLog : string; bNotify : boolean = true );
+
+    property Run    : boolean read FRun write FRun;
+    property Timer  : TQuoteTimer read FTimer;
+    property KipData: TAutoKipData read FKipData;
+    property KipOrders : TKipOrders read FKipOrders;
+
+    property Name : string read FName write FName;
+
+    property OnNotify : TTextNotifyEvent read FOnNotify write FOnNotify;
+    property OnKipNotify : TTextNotifyEvent read FOnKipNotify write FOnKipNotify;
+
+    property Symbols  : TSymbolArray read FSymbols;
+    property Accounts : TAccountArray read FAccounts;
+    property IsEntry  : boolean read FIsEntry write FIsEntry;
+    property Parent   : TObject read FParent write FParent;
+
+    //
+    property EstPrice : TEstPriceArray read FEstPrice;
+    property OrdPrice : TOrderPriceArry read FOrdPrice;
+    property KipValue : double  read FKipValue;
+
+      // 조건 체크중인 여부
+    property Working  : boolean read FWorking;
+
+    property Count    : integer read FCount;
+    property Retry : TKipConfig read FRetry;
+
+    property Done  : boolean read FDone;
+
+  end;
+
+  TAutoKipOrders = class( TCollection )
+  private
+    FLastGetTime: TDateTime;
+    FPositions: TKipPositionArray;
+    function GetKipOrders(i: integer): TAutoKipOrderItem;
+  public
+
+    KipReport : array [TAutoOrderType] of TKipTradeAmt;
+    constructor Create;
+    destructor Destroy; override;
+
+    procedure SetPosition( aType : TSymbolCountryType; aAccount : TAccount; aSymbol : TSymbol );
+
+    function New(stName : string): TAutoKipOrderItem;
+    function Find(stName: string): TAutoKipOrderItem;
+
+    function GetRunItemCount : integer;
+
+    function IsWaiting : boolean;
+
+    procedure InitReport;
+    procedure SetTime;
+    procedure OnProc;
+    procedure OnOrder( aOrder : TOrder; iEventID : integer );
+    procedure OnReduceOnly( bReduce : boolean );
+    procedure OnConfig( aCfg : TKipConfig );
+    procedure GetTradeAmt( var tradeAmt : array of TKipTradeAmt );
+    property KipOrders[ i : integer ] : TAutoKipOrderItem read GetKipOrders; default;
+    property LastGetTime : TDateTime read FLastGetTime;
+
+    property Positions : TKipPositionArray read FPositions;
+  end;
+
+  var
+    CriticalSection: TRTLCriticalSection;
+
+implementation
+
+uses
+  GApp, Math, System.Types, UDecimalHelper
+  , USymbolCore
+  , GLibs
+  , UConsts
+  , UStrategyItem
+  , system.Threading
+  , FAutoKipOrder
+  , Dialogs, Controls
+  ;
+
+{ TAutoKipOrderItem }
+
+
+procedure TAutoKipOrderItem.CalclEstPrice( aSymbol : TSymbol );
+//var
+//  stTmp, stLog : string;
+begin
+
+  if  aSymbol = nil  then Exit;
+
+//  stLog := '-----------';
+
+  if ( aSymbol = FSymbols[scDomes]) then begin
+    if FIsEntry then       // 진입 매수
+      FEstPrice[ptLong] := aSymbol.CalcEstPrice(1, KipData.OrderQty)
+    else                  // 청산 매도
+      FEstPrice[ptShort]:= aSymbol.CalcEstPrice(-1, KipData.OrderQty);
+
+//    if FIsEntry then
+//      stTmp := Format( '%s, %s', [ aSymbol.PriceToStr( aSymbol.Asks[0].Price ),
+//        aSymbol.QtyToStr( aSymbol.Asks[0].Volume ) ])
+//    else
+//      stTmp := Format( '%s, %s', [ aSymbol.PriceToStr( aSymbol.Bids[0].Price ),
+//        aSymbol.QtyToStr( aSymbol.Bids[0].Volume ) ]) ;
+//
+//    stLog := Format('%s, %s, %f, %s', [ ifThenStr( FIsEntry, '진입, 매수','청산, 매도'),
+//      aSymbol.PriceToStr( ifThenFloat( FIsEntry , FEstPrice[ptLong], FEstPrice[ptShort])),
+//      KipData.OrderQty, stTmp ] );
+  end
+  else if ( aSymbol = FSymbols[scInter] ) then begin
+    if FIsEntry then       // 진입 매도
+      FEstPrice[ptShort] := aSymbol.CalcEstPrice(-1, KipData.OrderQty)
+    else                  // 청산 매수
+      FEstPrice[ptLong]  := aSymbol.CalcEstPrice(1, KipData.OrderQty);
+
+//    if FIsEntry then
+//      stTmp := Format( '%s, %s', [ aSymbol.PriceToStr( aSymbol.Bids[0].Price ),
+//        aSymbol.QtyToStr( aSymbol.Bids[0].Volume ) ])
+//    else
+//      stTmp := Format( '%s, %s', [ aSymbol.PriceToStr( aSymbol.Asks[0].Price ),
+//        aSymbol.QtyToStr( aSymbol.Asks[0].Volume ) ]) ;
+//
+//    stLog := Format('%s, %s, %f, %s', [ ifThenStr( FIsEntry, '진입, 매도','청산, 매수'),
+//      aSymbol.PriceToStr( ifThenFloat( FIsEntry , FEstPrice[ptShort], FEstPrice[ptLong])),
+//      KipData.OrderQty, stTmp ] );
+  end;
+end;
+
+
+procedure TAutoKipOrderItem.CalcTradeAmt;
+var
+  I    : Integer;
+  aKip : TKipOrder;
+begin
+
+  TradeAmt[ptLong] := 0;
+  TradeAmt[ptShort]:= 0;
+
+  FilledQty[ptLong] := 0;
+  FilledQty[ptShort]:= 0;
+
+  AvgFillPrice[ptLong]  := 0;
+  AvgFillPrice[ptShort] := 0;
+
+  for I := 0 to FKipOrders.Count-1 do
+  begin
+    aKip  := FKipOrders.KipOrders[i];
+    if ( aKip <> nil ) then
+    begin
+      TradeAmt[ptLong] := TradeAmt[ptLong]   + aKip.Orders[ptLong].FilledAmt;
+      TradeAmt[ptShort]:= TradeAmt[ptShort]  + aKip.Orders[ptShort].FilledAmt;
+
+      FilledQty[ptLong] := FilledQty[ptLong] + aKip.Orders[ptLong].FilledQty;
+      FilledQty[ptShort]:= FilledQty[ptShort]+ aKip.Orders[ptShort].FilledQty;
+
+      AvgFillPrice[ptLong]  :=  CalcDiv( (AvgFillPrice[ptLong] * (FilledQty[ptLong] - aKip.Orders[ptLong].FilledQty)
+        + aKip.Orders[ptLong].AvgPrice * aKip.Orders[ptLong].FilledQty ), FilledQty[ptLong] );
+
+      AvgFillPrice[ptShort] :=  CalcDiv( (AvgFillPrice[ptShort] * (FilledQty[ptShort] - aKip.Orders[ptShort].FilledQty)
+        + aKip.Orders[ptShort].AvgPrice * aKip.Orders[ptShort].FilledQty ), FilledQty[ptShort] );
+    end;
+  end;
+end;
+
+function TAutoKipOrderItem.CheckBalance: boolean;
+var
+  aAsset : array [TSymbolCountryType] of TAsset;
+  dAmt, dAmt2, dQty, dQty2, dOrderQty, dFee, dAvailable, dOrderAmt : double;
+  aPos   : TPosition;
+  aAcnt  : TAccount;
+  res : TValueRelationship;
+  stLog, stTmp : string;
+  aSpItem : TSPObject;
+  iLeverage : integer;
+  dBalance : array [TSymbolCountryType] of double;
+  bInt : TDecimalHelper;
+  bOrder : boolean;
+begin
+
+  Result := false;
+
+  try
+    bOrder := false;
+    stTmp := '진입 : 자산 or 포지션 없음';
+     // 국내 원화...바이낸스 usdt
+    if ( FAccounts[scDomes].Asset = nil ) or ( FAccounts[scInter].Asset = nil )
+      or ( TAutoKipOrders(Collection).Positions[scInter] = nil )
+      then Exit (false);
+
+    dBalance[scDomes] := FAccounts[scDomes].Balance;
+    dBalance[scInter] := FAccounts[scInter].Balance;
+
+    if FIsEntry then
+    begin
+      // 주문가능금액 구하기
+      with App.Engine.TradeCore.Orders[FAccounts[scDomes].ExchangeKind] do
+        dAmt := GetAcceptOrderAmt(FAccounts[scDomes], 1) +
+                GetUnAcceptOrderAmt(FAccounts[scDomes], 1);
+
+      //dFee:= App.Engine.ApiConfig.ExchangeInfo[integer(FAccounts[scDomes].ExchangeKind)].ApiInfo[FSymbols[scDomes].Spec.ExApiType].TradeFee;
+//      dFee:= App.Engine.ApiConfig.ExchangeInfo[integer(FAccounts[scDomes].ExchangeKind)].Fee[FSymbols[scDomes].Spec.ExApiType, ].TradeFee;
+      // 나가야할 매수 주문이 있는 파악( sp 청산 주문 )
+      aSpItem := App.Engine.StgManager.SPObject.Find( FSymbols[scDomes].Spec.ExchangeType, FSymbols[scDomes].Code );
+      dQty := 0.0;  dAmt2 := 0.0;
+      if aSpItem <> nil then begin
+        aAcnt := App.Engine.TradeCore.FindAccount(aSpItem.SubEx);
+        with App.Engine.TradeCore.Orders[aSpItem.SubEx] do
+        begin
+          dQty := GetActiveOrderQty(aAcnt, stSPOrder, -1) +
+                  GetUnActiveOrderQty(aAcnt, stSPOrder, -1);
+          dAmt2 := (dQty * FOrdPrice[ptLong] )*(1+(dFee/100));
+        end;
+      end;
+
+      //dAvailable  := FAccounts[scDomes].Asset.Balance - dAmt - dAmt2;
+      dAvailable  := dBalance[scDomes] - dAmt - dAmt2;
+      dOrderAmt := (FKipData.OrderQty * FOrdPrice[ptLong])*(1+(dFee/100)) ;
+      res  := CompareValue( dAvailable, dOrderAmt );
+      if res <= 0 then
+      begin
+  //      stLog := '-40';//'청산 : 주거래소 주문가능 금액 부족';
+        stTmp := '진입 : 국내 주문가능 금액 부족';
+        Exit (false);
+      end;
+
+      stLog := Format('진입 : %s 매수가능금액 -> %.0n < %.0n ( %.0n - %.0n - %.0n )', [ ExKindToStr(FAccounts[scDomes].ExchangeKind),
+        dOrderAmt, dAvailable, dBalance[scDomes], dAmt, dAmt2] );
+
+//      // 평가손익
+//      dAmt  := App.Engine.TradeCore.Positions[FAccounts[scInter].ExchangeKind].GetOpenPL( FAccounts[scInter] );
+//      // 마진
+//      dAmt2 := App.Engine.TradeCore.Positions[FAccounts[scInter].ExchangeKind].GetTotInitMargin(FAccounts[scInter]);
+//      dAvailable:= dBalance[scInter] + dAmt - dAmt2;
+
+      // 1. 잔고 체크
+      aPos  := (Collection as TAutoKipOrders).Positions[scInter];
+      if aPos.Side > 0 then
+      begin
+
+        with App.Engine.TradeCore.Orders[FAccounts[scInter].ExchangeKind] do
+          dQty  := GetActiveOrderQty(FAccounts[scInter], FSymbols[scInter], -1 ) +
+                  GetUnActiveOrderQty(FAccounts[scInter], FSymbols[scInter], -1 );
+
+        // 매수 잔고가 있는지 체크..
+        if aPos.Volume - (FKipData.OrderQty + dQty) >= 0 then
+          bOrder := true;
+      end;
+
+      // 2. 금액 체크
+      dAvailable := FAccounts[scInter].Available;
+      dFee:= App.Engine.ApiConfig.ExchangeInfo[ integer(FAccounts[scInter].ExchangeKind)].GetTradeFee(
+        FSymbols[scInter].Spec.ExApiType, FSymbols[scInter].Spec.SettleType, ftMaker);
+
+      iLeverage := ifThen(TAutoKipOrders(Collection).Positions[scInter].Leverage <= 0, 1, TAutoKipOrders(Collection).Positions[scInter].Leverage );
+      dOrderAmt := ((FKipData.OrderQty * FOrdPrice[ptShort] * FSymbols[scInter].Spec.PointValue) / iLeverage)*(1+(dFee/100)) ;
+
+      res  := CompareValue( dAvailable, dOrderAmt );
+      if res <= 0 then
+        if not bOrder then begin
+          Exit ;
+          stTmp := '진입 : 해외 주문가능 금액 부족';
+        end;
+
+      DoLog(Format('%s %s 매도가능금액&잔고 -> %.4n < %.4n ( %.4n + %.4n - %.4n ) , pos : %s ', [ stLog, ExKindToStr( FAccounts[scInter].ExchangeKind),
+        dOrderAmt, dAvailable, dBalance[scInter], dAmt, dAmt2, bInt.DoubleToStr(aPos.Volume) ]));
+
+    end else
+    begin
+
+      stTmp := '청산 : 자산 or 포지션 없음';
+
+      aAsset[scDomes]  := FAccounts[scDomes].Assets.Find( FSymbols[scDomes].Spec.BaseCode);
+      if aAsset[scDomes] = nil then Exit;
+      if aAsset[scDomes].Balance <= 0 then Exit;
+      if TAutoKipOrders(Collection).Positions[scInter].Volume >= 0 then Exit;
+      // 나가야할 매도 주문이 있는 파악( sp 진입 주문 )
+      dQty  := 0;   dQty2 := 0;
+      aSpItem := App.Engine.StgManager.SPObject.Find( FSymbols[scDomes].Spec.ExchangeType, FSymbols[scDomes].Code );
+      if aSpItem <> nil then begin
+        aAcnt := App.Engine.TradeCore.FindAccount(aSpItem.SubEx);
+        with App.Engine.TradeCore.Orders[aSpItem.SubEx] do
+          dQty := GetActiveOrderQty(aACnt, FSymbols[scDomes], 1 ) +
+                  GetUnActiveOrderQty(aACnt, FSymbols[scDomes], 1 );
+      end;
+      // 나가 있는 매도 주문..
+      with App.Engine.TradeCore.Orders[FAccounts[scDomes].ExchangeKind] do
+        dQty2:= GetActiveOrderQty(FAccounts[scDomes], FSymbols[scDomes], -1 ) +
+                GetUnActiveOrderQty(FAccounts[scDomes], FSymbols[scDomes], -1 );
+
+      dAmt := FKipData.OrderQty + dQty + dQty2;
+      res := CompareValue( aAsset[scDomes].Balance, dAmt );
+      if res < 0 then
+      begin
+  //     stLog := '50';
+  //        format('진입 : 주거래소 매수 잔고 부족 %4n < %.4n + %.4n + %.4n)', [
+  //         aAsset.Balance, dOrderQty, dQty, dQty2   ]);
+        stTmp := '청산 : 국내 매수잔고 부족';
+        Exit;
+      end;
+
+      stLog := Format('청산 : %s 매수잔고 %.4n > %.4n (%.4n + %.4n + %.4n)', [ ExKindToStr(FAccounts[scInter].ExchangeKind),
+        aAsset[scDomes].Balance, dAmt, FKipData.OrderQty, dQty, dQty2 ]);
+
+      // 1. 금액 체크
+      dAvailable := FAccounts[scInter].Available;
+      dFee:= App.Engine.ApiConfig.ExchangeInfo[ integer(FAccounts[scInter].ExchangeKind) ].GetTradeFee(
+        FSymbols[scInter].Spec.ExApiType, FSymbols[scInter].Spec.SettleType, ftMaker);
+      iLeverage := ifThen(TAutoKipOrders(Collection).Positions[scInter].Leverage <= 0, 1, TAutoKipOrders(Collection).Positions[scInter].Leverage );
+      dOrderAmt := ((FKipData.OrderQty * FOrdPrice[ptLong] * FSymbols[scInter].Spec.PointValue) / iLeverage)*(1+(dFee/100)) ;
+
+      res  := CompareValue( dAvailable, dOrderAmt );
+      if res > 0 then
+        bOrder := true;
+
+      // 2. 잔고 체크..
+      with App.Engine.TradeCore.Orders[FAccounts[scInter].ExchangeKind] do
+        dQty  := GetActiveOrderQty(FAccounts[scInter], FSymbols[scInter], 1 ) +
+                GetUnActiveOrderQty(FAccounts[scInter], FSymbols[scInter], 1 );
+
+      dOrderQty := dQty + FKipData.OrderQty;
+
+      aPos := TAutoKipOrders(Collection).Positions[scInter];
+
+      // reduce only 로 주문 낼때는 잔고만 있으면 거부 안난다..
+      if not FKipData.ReduceOnly then
+      begin
+        // 1. 잔고 체크
+        if aPos.Side < 0 then
+        begin
+          with App.Engine.TradeCore.Orders[FAccounts[scInter].ExchangeKind] do
+            dQty  := GetActiveOrderQty(FAccounts[scInter], FSymbols[scInter], 1 ) +
+                    GetUnActiveOrderQty(FAccounts[scInter], FSymbols[scInter], 1 );
+          // 매수 잔고가 있는지 체크..
+          if aPos.Volume + (FKipData.OrderQty + dQty) <= 0 then
+            bOrder := true;
+        end;
+        // 2. 금액 체크
+        dAvailable := FAccounts[scInter].Available;
+        dFee:= App.Engine.ApiConfig.ExchangeInfo[ integer(FAccounts[scInter].ExchangeKind) ].GetTradeFee(
+          FSymbols[scInter].Spec.ExApiType, FSymbols[scInter].Spec.SettleType, ftMaker);
+        iLeverage := ifThen(TAutoKipOrders(Collection).Positions[scInter].Leverage <= 0, 1, TAutoKipOrders(Collection).Positions[scInter].Leverage );
+        dOrderAmt := ((FKipData.OrderQty * FOrdPrice[ptShort] * FSymbols[scInter].Spec.PointValue) / iLeverage)*(1+(dFee/100)) ;
+
+        res  := CompareValue( dAvailable, dOrderAmt );
+        if res <= 0 then
+          if not bOrder then begin
+            stTmp := '청산 : 해외 주문가능금액 부족';
+            Exit
+          end;
+      end;
+
+      DoLog( Format('%s %s 매수잔고&금액 %.4n > %.4n ( %.4n + %.4n )', [ stLog, ExKindToStr(FAccounts[scInter].ExchangeKind),
+        abs(aPos.Volume), dOrderQty, dQty,  FKipData.OrderQty ]));
+
+    end;
+
+    Result := true;
+
+  finally
+    if not Result then DoLog(stTmp);
+  end;
+
+end;
+
+function TAutoKipOrderItem.CheckKipValue: boolean;
+var
+  dTmp : double;
+begin
+  Result := false;
+  try
+
+    if FIsEntry then begin
+      dTmp  := FEstPrice[ptShort] * App.Engine.ApiManager.ExRate.Value;
+      if CheckZero( dTmp ) then
+        FKipValue := 0
+      else begin
+        FKipValue := (FEstPrice[ptLong] - dTmp) / dTmp * 100;
+        if FKipData.Kip - DOUBLE_EPSILON > FKipValue then
+          Result := true;
+      end;
+    end else
+    begin
+      dTmp  := FEstPrice[ptLong] * App.Engine.ApiManager.ExRate.Value;
+      if CheckZero( dTmp ) then
+        FKipValue := 0
+      else begin
+        FKipValue := (FEstPrice[ptShort] - dTmp) / dTmp * 100;
+        if FKipValue - DOUBLE_EPSILON > FKipData.Kip then
+          Result := true;
+      end;
+    end;
+
+//    if Assigned(FOnKipNotify) then
+//      FOnKipNotify( Self, Format('%.2f', [ FKipValue ]));
+
+  except
+  end;
+end;
+
+procedure TAutoKipOrderItem.CheckOrders( aOrder : TOrder );
+var
+  aKip : TKipOrder;
+  dTmp : double;
+
+begin
+
+//  if aOrder.GroupNo <> FName then Exit;
+
+  aKip := FKipOrders.Kip;
+  if aKip = nil then
+  begin
+//    DoLog( Format('Error !! Kip Order Count %d', [ FKipOrders.Count ] ));
+    Exit;
+  end;
+
+  if aKip.Done then Exit;
+
+  aKip.CheckState;
+  if aKip.Done then
+  begin
+    DoLog( Format(' %d Kip Order 전량체결', [ FKipOrders.Count ] ));
+
+    var aoType : TAutoOrderType;
+    var dKip, dQty   : double;
+
+    if FIsEntry then begin
+      aoType  := aoEntry;
+      dTmp  :=  aKip.Orders[ptShort].AvgPrice * App.Engine.ApiManager.ExRate.Value;
+      if CheckZero(dTmp) then Exit;
+
+      dKip  := ( aKip.Orders[ptLong].AvgPrice - dTmp ) / dTmp * 100;
+      dQty  := aKip.Orders[ptLong].FilledQty;
+    end
+    else begin
+      aoType  := aoExit;;
+      dTmp  := aKip.Orders[ptLong].AvgPrice *  App.Engine.ApiManager.ExRate.Value;
+      if CheckZero(dTmp) then Exit;
+
+      dKip  := ( aKip.Orders[ptShort].AvgPrice - dTmp ) / dTmp * 100;
+      dQty  := aKip.Orders[ptShort].FilledQty;
+    end;
+
+    with (Collection as TAutoKipOrders) do
+    begin
+      KipReport[aoType].KipFillAvg.KipFill := KipReport[aoType].KipFillAvg.KipFill + (dKip * dQty);
+      KipReport[aoType].KipFillAvg.FilledQty := KipReport[aoType].KipFillAvg.FilledQty + dQty;
+
+      DoLog( Format('[%.2f] %s 체결 -> %.2f(%.4n|%.4n), %.2f, %.8f ', [ FKipData.Kip, ifThenStr( aoType = aoEntry,'진입', '청산'),
+        KipReport[aoType].KipFillAvg.KipFill  / KipReport[aoType].KipFillAvg.FilledQty,
+        KipReport[aoType].KipFillAvg.KipFill, KipReport[aoType].KipFillAvg.FilledQty,
+        dKip, dQty ]) );
+    end;
+
+  end else
+  begin
+
+    if ( aKip.Orders[ptLong] = aOrder ) or ( aKip.Orders[ptShort] = aOrder ) then
+    begin
+      // 취소 주문이면 타이머에 의해서..취소 주문 나간것
+      if (aOrder.OrderType = otCancel )  and ( aOrder.State = osCanceled ) then
+//        DoChangeOrder( aOrder, aOrder.CanceledQty )
+      // 거부 나면 바로 주문 낸다.. 거부났다고 화면에 표시만 해준다.
+      else if (aOrder.OrderType = otNormal ) and ( aOrder.State = osRejected ) then
+      begin
+//        DoLog( Format('주문거부 %s', [ aOrder.Represent ] ));
+//        DoChangeOrder( aOrder, aOrder.OrderQty );
+
+        if Assigned(FOnKipNotify) then
+          FOnKipNotify(Self, RJCT_STR );
+      end;
+    end;
+
+  end;
+end;
+
+
+function TAutoKipOrderItem.CheckPriceRange: boolean;
+var
+  dMPrice : double;
+  iVal : integer;
+begin
+  Result := false;
+  if FIsEntry then
+  begin
+    // 바이낸스 매도 주문이 너무 낮은지 체크
+    if CmpVal(FOrdPrice[ptShort], (FSymbols[scInter] as TFuture).MarkPrice * FSymbols[scInter].Spec.MultiplierDown) < 0 then
+    begin
+      DoLog(Format('매도주문가격이%s < %s (%s, %s%%) 보다 낮음', [FSymbols[scInter].PriceToStr(FOrdPrice[ptShort]),
+        FSymbols[scInter].PriceToStr((FSymbols[scInter] as TFuture).MarkPrice * FSymbols[scInter].Spec.MultiplierDown),
+        FSymbols[scInter].PriceToStr((FSymbols[scInter] as TFuture).MarkPrice),
+        FSymbols[scInter].QtyToStr(FSymbols[scInter].Spec.MultiplierDown)
+        ]));
+      Exit;
+    end;
+
+  end else
+  begin
+    if CmpVal(FOrdPrice[ptLong], (FSymbols[scInter] as TFuture).MarkPrice * FSymbols[scInter].Spec.MultiplierUp) > 0 then
+    begin
+      DoLog(Format('매수주문가격이%s > %s (%s, %s%%) 보다 높음', [ FSymbols[scInter].PriceToStr(FOrdPrice[ptLong]),
+        FSymbols[scInter].PriceToStr((FSymbols[scInter] as TFuture).MarkPrice * FSymbols[scInter].Spec.MultiplierUp),
+        FSymbols[scInter].PriceToStr((FSymbols[scInter] as TFuture).MarkPrice),
+        FSymbols[scInter].QtyToStr(FSymbols[scInter].Spec.MultiplierUp)
+        ]));
+      Exit;
+    end;
+  end;
+
+  Result := true;
+end;
+
+constructor TAutoKipOrderItem.Create(aColl: TCollection);
+begin
+  inherited Create( aColl );
+
+  FTimer  := App.Engine.QuoteBroker.Timers.New;
+  FTimer.OnTimer  := OnTimer;
+  FKipOrders := nil;
+  FDone      := false;
+
+end;
+
+destructor TAutoKipOrderItem.Destroy;
+begin
+
+  FKipOrders.Free;
+  App.Engine.QuoteBroker.Timers.DeleteTimer(FTimer);
+  inherited;
+end;
+
+
+
+procedure TAutoKipOrderItem.DoEntry;
+var
+  stLog : string;
+begin
+  //
+  if TAutoKipOrders( Collection ).IsWaiting then Exit;
+
+  if not GetOrderPrice then Exit;
+  if not CheckPriceRange then
+  begin
+    DoLog('주문가격 범위 이상');
+    if Assigned(FOnKipNotify) then
+      FOnKipNotify(Self, RANG_STR );
+    Exit;
+  end;
+  if not CheckBalance then
+  begin
+    DoLog('Stop 잔고 부족');
+    if Assigned(FOnKipNotify) then
+      FOnKipNotify(Self, BAL_STR );
+    Exit;
+  end;
+
+  // start 체크 클릭하자마자 주문 나갈때
+  if FDataCount <= 0 then
+  begin
+    stLog  := Format( '%s 주문을 내시겠습니까?', [ FName ]) ;
+    if (MessageDlg( stLog, mtInformation, [mbYes, mbNo], 0) = mrYes ) then
+      DoOrder
+    else begin
+      Stop;
+      if Assigned(FOnKipNotify) then
+        FOnKipNotify(Self, STOP_STR);
+    end;
+  end else
+    DoOrder;
+end;
+
+
+procedure TAutoKipOrderItem.DoOrder;
+var
+  aOrder : array [TPositionType] of TOrder;
+  aKip : TKipOrder;
+begin
+
+  if FIsEntry then
+  begin
+
+    aOrder[ptLong]  := App.Engine.TradeCore.Orders[ FSymbols[scDomes].Spec.ExchangeType ].NewOrder(
+      FAccounts[scDomes], FSymbols[scDomes], 1, FKipData.OrderQty, pcLimit, FOrdPrice[ptLong], tmGTC
+    );
+
+    aOrder[ptShort] := App.Engine.TradeCore.Orders[ FSymbols[scInter].Spec.ExchangeType ].NewOrder(
+      FAccounts[scInter], FSymbols[scInter], -1, FKipData.OrderQty, pcLimit, FOrdPrice[ptShort], tmGTC
+    );
+
+    // 테스트 - 체결 안된게
+//    aOrder[ptLong]  := App.Engine.TradeCore.Orders[ FSymbols[scDomes].Spec.ExchangeType ].NewOrder(
+//      FAccounts[scDomes], FSymbols[scDomes], 1, FKipData.OrderQty, pcLimit, FSymbols[scDomes].Bids[9].Price, tmGTC
+//    );
+//
+//    aOrder[ptShort] := App.Engine.TradeCore.Orders[ FSymbols[scInter].Spec.ExchangeType ].NewOrder(
+//      FAccounts[scInter], FSymbols[scInter], -1, FKipData.OrderQty, pcLimit, FSymbols[scInter].Asks[9].Price, tmGTC
+//    );
+
+  end else
+  begin
+
+    aOrder[ptShort]  := App.Engine.TradeCore.Orders[ FSymbols[scDomes].Spec.ExchangeType ].NewOrder(
+      FAccounts[scDomes], FSymbols[scDomes], -1, FKipData.OrderQty, pcLimit, FOrdPrice[ptShort], tmGTC
+    );
+
+    aOrder[ptLong] := App.Engine.TradeCore.Orders[ FSymbols[scInter].Spec.ExchangeType ].NewOrder(
+      FAccounts[scInter], FSymbols[scInter], 1, FKipData.OrderQty, pcLimit, FOrdPrice[ptLong], tmGTC
+    );
+
+    // 테스트 - 체결 안되게
+//    aOrder[ptShort]  := App.Engine.TradeCore.Orders[ FSymbols[scDomes].Spec.ExchangeType ].NewOrder(
+//      FAccounts[scDomes], FSymbols[scDomes], -1, FKipData.OrderQty, pcLimit, FSymbols[scDomes].Asks[9].Price, tmGTC
+//    );
+//
+//    aOrder[ptLong] := App.Engine.TradeCore.Orders[ FSymbols[scInter].Spec.ExchangeType ].NewOrder(
+//      FAccounts[scInter], FSymbols[scInter], 1, FKipData.OrderQty, pcLimit, FSymbols[scInter].Bids[9].Price, tmGTC
+//    );
+
+    if aOrder[ptLong] <> nil then
+      aOrder[ptLong].ReduceOnly := FKipData.ReduceOnly;
+  end;
+
+  if (aOrder[ptLong] <> nil) and ( aOrder[ptShort] <> nil ) then
+  begin
+    aOrder[ptLong].StgType   := stKipOrder;
+    aOrder[ptShort].StgType  := stKipOrder;
+    aOrder[ptLong].GroupNo   := FName;
+    aOrder[ptShort].GroupNo  := FName;
+
+    App.Engine.TradeBroker.Send( aOrder[ptLong] );
+    App.Engine.TradeBroker.Send( aOrder[ptShort] );
+
+//    FFirstOrder := true;
+    inc( FCount );
+    // 주르르 주문 나가는것을 막기 위해..마지막 주문 시간을 셋팅.
+    TAutoKipOrders( Collection ).SetTime;
+
+
+    aKip := FKipOrders.New( aOrder[ptLong], aOrder[ptShort] );
+    FKipOrders.Count  := FCount;
+
+    if Assigned(FOnKipNotify) then
+      FOnKipNotify(Self, ORD_STR);
+
+    App.Log(llInfo, GetLogName, '-----------------------------');
+    DoLog( Format('%s 주문 발생 (%.2f)', [ ifThenStr( FIsEntry,'진입','청산'), FKipValue ] ) );
+
+    App.Log(llInfo, GetLogName, '%s %s', [ aOrder[ptShort].RepresentWithEx,
+      aOrder[ptShort].Symbol.PriceToStr( aOrder[ptShort].Symbol.Bids[0].Price ) ] );
+    App.Log(llInfo, GetLogName, '%s %s', [ aOrder[ptLong].RepresentWithEx,
+      aOrder[ptLong].Symbol.PriceToStr(aOrder[ptLong].Symbol.Asks[0].Price ) ]  );
+
+    if FCount > 0 then begin
+      FRetry.Init;
+      FTimer.Enabled  := true;
+    end;
+  end;
+end;
+
+
+
+procedure TAutoKipOrderItem.DoReOrder;
+var
+  aKip : TKipOrder;
+  I: TPositionType;
+begin
+  // 취소..
+  aKip := FKipOrders.Kip;
+  if aKip = nil then Exit;
+
+  for I := ptLong to High(TPositionType) do
+    if (aKip.Orders[i].OrderType = otNormal) and (aKip.Orders[i].State = osRejected ) then
+    begin
+      DoLog( Format('주문거부 %s', [ aKip.Orders[i].Represent ] ));
+      DoChangeOrder( aKip.Orders[i], aKip.Orders[i].OrderQty );
+    end;
+end;
+
+procedure TAutoKipOrderItem.DoLog(stLog: string; bNotify : boolean);
+begin
+  stLog := Format('%s, %d.th - ', [ FName, FCount ]) + stLog;
+  App.Log(llInfo, GetLogName, stLog);
+  if bNotify and Assigned( FOnNotify ) then
+    FOnNotify( Self, stLog );
+end;
+
+procedure TAutoKipOrderItem.DoModifyOrder;
+var
+  aKip : TKipOrder;
+begin
+  // 취소..
+  aKip := FKipOrders.Kip;
+  if aKip = nil then Exit;
+
+  DoCancelOrder( FKipOrders.Kip.Orders[ptLong] );
+  DoCancelOrder( FKipOrders.Kip.Orders[ptShort] );
+
+end;
+
+procedure TAutoKipOrderItem.DoCancelOrder( aOrder : TOrder );
+var
+  aCnlOrder : TOrder;
+begin
+  if ( aOrder <> nil ) and (aOrder.OrderType = otNormal ) and
+     ( aOrder.State = osActive ) and ( not aOrder.Modify ) then
+  begin
+    aCnlOrder := App.Engine.TradeCore.Orders[ aOrder.Account.ExchangeKind].NewCancelOrder( aOrder, aOrder.ActiveQty);
+    App.Engine.TradeBroker.Send( aCnlOrder);
+
+    DoLog( Format('%d.th 취소 주문 - %s', [ FRetry.ReTryCount, aOrder.Represent ]  ) );
+  end;
+end;
+
+procedure TAutoKipOrderItem.DoChangeOrder(aOrder: TOrder; dOrderQty : double);
+var
+  dPrice : double;
+  aNewOrder : TOrder;
+  iTick : integer;
+begin
+
+  if aOrder.Symbol = FSymbols[scDomes] then
+    if not TryStrToInt( TFrmKipAutoOrder( FParent ).edtSpotOrdTick.Text, iTick) then
+      Exit;
+
+  if aOrder.Symbol = FSymbols[scInter] then
+    if not TryStrToInt( TFrmKipAutoOrder( FParent ).edtFutOrdTick.Text, iTick) then
+      Exit;
+
+  dPrice  := aOrder.Symbol.GetOrderPrice( aOrder.Side,
+    aOrder.Symbol.CalcEstPrice( aOrder.Side, dOrderQty ), iTick );
+
+  if CheckZero( dPrice ) then
+  begin
+    DoLog( Format(' %d.th 재진입 주문 실패 - %s, %.3f', [ FRetry.ReTryCount, dPrice, dOrderQty ]) );
+    Exit;
+  end;
+
+  aNewOrder  := App.Engine.TradeCore.Orders[ aOrder.Account.ExchangeKind ].NewOrder(aOrder.Account,
+    aOrder.Symbol, aOrder.Side, dOrderQty, pcLimit, dPrice, tmGTC );
+
+  if aNewOrder = nil then
+  begin
+    DoLog( Format('%d.th 재진입 주문 생성 실패 - %s, %.3f', [ FRetry.ReTryCount, dPrice, dOrderQty ]) );
+    Exit;
+  end;
+
+  aNewOrder.StgType := aOrder.StgType;
+  aNewOrder.GroupNo := aOrder.GroupNo;
+  App.Engine.TradeBroker.Send( aNewOrder);
+
+  TAutoKipOrders( Collection ).SetTime;
+
+  FKipOrders.Kip.UpdateOrder( aNewOrder );
+
+  DoLog( Format('%d.th 재진입 주문 - %s', [ FRetry.ReTryCount,
+    aNewOrder.Represent ]  ) );
+end;
+
+function TAutoKipOrderItem.GetLogName: string;
+begin
+  Result := 'KipAuto';
+  if FSymbols[scDomes] <> nil then
+    Result := FSymbols[scDomes].Spec.BaseCode + '_' + Result;
+end;
+
+function TAutoKipOrderItem.GetOrderPrice: boolean;
+var
+  iTick : array [ TSymbolCountryType] of integer;
+  dPrice: array [ TPositionType] of double;
+begin
+
+  FOrdPrice[ptLong] := 0;
+  FOrdPrice[ptShort]:= 0;
+
+//  CalclEstPrice( FSymbols[scDomes]);
+//  CalclEstPrice( FSymbols[scInter]);
+
+  if CheckZero(FEstPrice[ptLong]) or
+    CheckZero(FEstPrice[ptShort]) then
+    Exit ( false );
+
+  if (not TryStrToInt( TFrmKipAutoOrder( FParent ).edtFutOrdTick.Text, iTick[scInter] ) ) or      // 선물 바이낸스
+     (not TryStrToInt( TFrmKipAutoOrder( FParent ).edtSpotOrdTick.Text,iTick[scDomes] ) ) then    // 현물 국내
+    Exit (false);
+
+  if FIsEntry then
+  begin
+    // 국내는 매수  해외는 매도
+    dPrice[ptLong] := FSymbols[scDomes].GetOrderPrice( 1, FEstPrice[ptLong], iTick[scDomes] );
+    dPrice[ptShort]:= FSymbols[scInter].GetHitOrderPrice(-1,
+      FSymbols[scInter].GetOrderPrice( -1, FEstPrice[ptShort], iTick[scInter]));
+  end else
+  begin
+    // 국내는 매도  해외는 매수
+    dPrice[ptShort] := FSymbols[scDomes].GetOrderPrice( -1, FEstPrice[ptShort], iTick[scDomes] );
+    //dPrice[ptLong] := FSymbols[scInter].GetOrderPrice( 1, FEstPrice[ptLong], iTick[scInter] );
+    dPrice[ptLong]  := FSymbols[scInter].GetHitOrderPrice(1,
+      FSymbols[scInter].GetOrderPrice( 1, FEstPrice[ptLong], iTick[scInter] ) );
+  end;
+
+  if (CmpVal(dPrice[ptShort], 0) <= 0) or
+     (CmpVal(dPrice[ptLong], 0) <= 0) then
+    Exit ( false );
+
+  FOrdPrice[ptLong]  := dPrice[ptLong];
+  FOrdPrice[ptShort] := dPrice[ptShort];
+
+  Result := true;
+end;
+
+procedure TAutoKipOrderItem.init;
+begin
+  FSymbols[scDomes]  := nil;
+  FSymbols[scInter]  := nil;
+
+  FAccounts[scDomes]  := nil;
+  FAccounts[scInter]  := nil;
+
+  FOrdPrice[ptLong]   := 0;
+  FOrdPrice[ptShort]  := 0;
+
+  FParent           := nil;
+
+  FKipValue := 0;
+  FEstPrice[ptLong]   := 0;
+  FestPrice[ptShort]  := 0;
+
+  FWorking  := false;
+  //FFirstOrder := false;
+  FCount    := 0;
+end;
+
+function TAutoKipOrderItem.IsRun: boolean;
+begin
+  Result := false;
+  if not FRun then Exit;
+  if FParent = nil then Exit;
+
+  if ( FSymbols[scDomes] = nil ) or ( FSymbols[scInter] = nil ) then Exit;
+  if ( FAccounts[scDomes] = nil ) or ( FAccounts[scInter] = nil ) then Exit;
+
+  if FDone then Exit;
+
+  Result := true;
+end;
+
+procedure TAutoKipOrderItem.OnOrder(aOrder: TOrder; iEventID : integer);
+var
+  aType : TPositionType;
+  aoType: TAutoOrderType;
+begin
+
+  if not IsRun then Exit;
+//  if not (aOrder.StgType in [ stNormal, stkipOrder]) then Exit;
+  CheckOrders( aOrder );
+
+  // kip report
+  if iEventID = ORDER_FILLED then
+  begin
+    if FIsEntry then
+      aoType := aoEntry
+    else
+      aoType := aoExit;
+
+    if aOrder.Side > 0 then
+      aType := ptLong
+    else
+      aType := ptShort;
+
+    with (Collection as TAutoKipOrders) do
+    begin
+      KipReport[aoType].AccFilledQty[aType]  := KipReport[aoType].AccFilledQty[aType] + abs(aOrder.Fills.LastFill.Volume);
+      KipReport[aoType].TradeAmt[aType]   := KipReport[aoType].TradeAmt[aType] + aOrder.Fills.LastFill.Price * abs(aOrder.Fills.LastFill.Volume);
+    end;
+  end;
+end;
+
+procedure TAutoKipOrderItem.OnProc;
+var
+  iGap: integer;
+begin
+
+  if not IsRun then Exit;
+  // 혹시나 이중으로 조건 체크 학 될까봐..
+  if FWorking then Exit;
+
+  // 횟수 카운트 체크
+  if FCount >= FKipData.RepeatCnt then
+  begin
+    // 마지막 횟수 주문이 완료가 됐는지 체크..
+    if not KipOrders.Kip.Done then Exit;
+    FDone := true;
+    DoLog('----- 완료------');
+    if Assigned(FOnKipNotify) then
+      FOnKipNotify(Self, DONE_STR);
+    Exit;
+  end;
+
+  // 인터벌 체크
+  if KipOrders.Kip = nil then
+  else begin
+    iGap := MilliSecondsBetween( now, KipOrders.Kip.MakeTime );
+    if KipData.Config.OrderInterval > iGap then
+      Exit;
+
+    // 완료가 안되면 다음 주문 안나간다.
+    if not KipOrders.Kip.Done then Exit;
+  end;
+
+  try
+
+    CalclEstPrice( FSymbols[scDomes] );
+    CalclEstPrice( FSymbols[scInter] );
+
+    if CheckZero(FEstPrice[ptLong]) or
+      CheckZero(FEstPrice[ptShort]) then
+      Exit;
+
+    if CheckKipValue then
+    begin
+      FWorking := true;
+      DoEntry;
+//      if FIsEntry then
+//        DoEntry
+//      else
+//        DoExit;
+    end;
+
+  finally
+    FWorking := false;
+    inc(FDataCount);
+  end;;
+
+end;
+
+procedure TAutoKipOrderItem.OnReduceOnly(bReduce: boolean);
+begin
+  FKipData.ReduceOnly := bReduce;
+end;
+
+procedure TAutoKipOrderItem.OnTimer(Sender: TObject);
+var
+  aKip : TKipOrder;
+begin
+
+  if FCount <= 0 then Exit;
+
+  aKip := FKipOrders.KipOrders[ FCount-1];
+  if aKip = nil then
+  begin
+    DoLog( Format('Error !! Kip Order Count %d', [ FKipOrders.Count ] ));
+    Exit;
+  end;
+
+  aKip.CheckState;
+
+  if aKip.Done then
+  begin
+    FTimer.Enabled  := false;
+    Exit;
+  end;
+
+  if FRetry.ReTryInterval > FKipData.Config.ReTryInterval then
+  begin
+    FRetry.ReTryInterval := 0;
+    if( FRetry.ReTryCount < FKipData.Config.ReTryCount ) then
+    begin
+      // 미체결 된 주문에 대해서 취소 후 재진입 했었는데
+      // 거부난 주문에 대해서만 재진입 하기로 수정 2023.12.05
+      //DoModifyOrder;
+      DoReOrder;
+      inc( FRetry.ReTryCount );
+    end else
+    begin
+      FTimer.Enabled  := false;
+      Exit;
+    end;
+  end;
+
+  // 1초 타이머니깐 1000 씩 +
+  FRetry.ReTryInterval := FRetry.ReTryInterval + 1000;
+end;
+
+procedure TAutoKipOrderItem.SetSymbol(aObj : TObject; bEntry : boolean; aSymbols: array of Tsymbol);
+begin
+
+  init;
+
+  FSymbols[scDomes]  := aSymbols[0];
+  FSymbols[scInter]  := aSymbols[1];
+
+  FAccounts[scDomes]  := App.Engine.TradeCore.FindAccount( FSymbols[scDomes].Spec.ExchangeType );
+  FAccounts[scInter]  := App.Engine.TradeCore.FindAccount( FSymbols[scInter].Spec.ExchangeType,
+    TAccountMarketType( ifThen( FSymbols[scInter].Spec.FutureType = ftCoin, integer(amFutureCm), integer(amFuture))) );
+
+  FIsEntry := bEntry;
+  FParent  := aObj;
+
+  if FKipOrders = nil then
+    FKipOrders  := TKipOrders.Create( FIsEntry )
+  else begin
+    FKipOrders.Clear;
+    FKipOrders.Count  := 0;
+  end;
+
+//  TAutoKipOrders(Collection).SetPosition(scDomes, FAccounts[scDomes], FSymbols[scDomes] );
+  TAutoKipOrders(Collection).SetPosition(scInter, FAccounts[scInter], FSymbols[scInter] );
+
+  FRetry.Init;
+end;
+
+function TAutoKipOrderItem.Start: boolean;
+begin
+  FRun := true;
+  FDone:= false;
+  FTimer.OnTimer  := OnTimer;
+  FDataCount  := 0;
+  DoLog( 'Start');
+end;
+
+procedure TAutoKipOrderItem.Stop;
+begin
+  FRun := false;
+  FTimer.Enabled  := false;
+  FTimer.OnTimer  := nil;
+  DoLog('Stop');
+end;
+
+{ TAutoKipOrders }
+
+constructor TAutoKipOrders.Create;
+begin
+  inherited Create( TAutoKipOrderItem );
+
+  FLastGetTime := now;
+
+  FPositions[scDomes] := nil;
+  FPositions[scInter]  := nil;
+
+  InitReport;
+end;
+
+destructor TAutoKipOrders.Destroy;
+var
+  I: TSymbolCountryType;
+begin
+
+  for I := scDomes to High(TSymbolCountryType) do
+    if FPositions[i] <> nil then
+      FPositions[i].Free;
+
+  inherited;
+end;
+
+function TAutoKipOrders.Find(stName: string): TAutoKipOrderItem;
+var
+  I: Integer;
+begin
+  Result := nil;
+
+  for I := 0 to Count-1 do
+    if GetKipOrders(i).Name = stName then
+    begin
+      Result := GetKipOrders(i);
+      break;
+    end;
+
+end;
+
+function TAutoKipOrders.GetKipOrders(i: integer): TAutoKipOrderItem;
+begin
+  if (i < 0 ) or ( i >= Count )  then
+    Result := nil
+  else
+    Result := Items[i] as  TAutoKipOrderItem;
+end;
+
+function TAutoKipOrders.GetRunItemCount: integer;
+var
+  I: Integer;
+begin
+  Result := 0;
+  for I := 0 to Count-1 do
+    if GetKipOrders(i).IsRun then
+      inc(Result );
+end;
+
+procedure TAutoKipOrders.GetTradeAmt(var tradeAmt : array of TKipTradeAmt);
+  var
+    I, idx: Integer;
+    aKipItem : TAutoKipOrderItem;
+    dSum : array [TPositionType] of double;
+begin
+
+  for i := 0 to 1 do begin
+    tradeAmt[i].AccFilledQty[ptLong]   := 0;
+    tradeAmt[i].AccFilledQty[ptShort]  := 0;
+    tradeAmt[i].TradeAmt[ptLong]    := 0;
+    tradeAmt[i].TradeAmt[ptShort]   := 0;
+    tradeAmt[i].AvgPrice[ptLong]   := 0;
+    tradeAmt[i].AvgPrice[ptShort]  := 0;
+    tradeAmt[i].TotKipVal[ptLong]   := 0;
+    tradeAmt[i].TotKipVal[ptShort]  := 0;
+  end;
+
+   for I := 0 to Count-1 do
+   begin
+     aKipItem := GetKipOrders(i);
+     aKipItem.CalcTradeAmt;
+
+     idx := ifThen( aKipItem.IsEntry, 0, 1 );
+     //aKipItem.KipData.Kip * tradeAmt[idx].FilledQty[ptLong]
+
+     tradeAmt[idx].TotKipVal[ptLong]  := tradeAmt[idx].TotKipVal[ptLong] + aKipItem.KipData.Kip * aKipItem.FilledQty[ptLong];
+     tradeAmt[idx].TotKipVal[ptShort] := tradeAmt[idx].TotKipVal[ptShort] + aKipItem.KipData.Kip * aKipItem.FilledQty[ptShort];
+
+     dSum[ptLong]  :=  tradeAmt[idx].AccFilledQty[ptLong] + aKipItem.FilledQty[ptLong];
+     dSum[ptShort] :=  tradeAmt[idx].AccFilledQty[ptShort] + aKipItem.FilledQty[ptShort];
+
+     // 체결평균
+     tradeAmt[idx].AvgPrice[ptLong]   :=  CalcDiv( (tradeAmt[idx].AvgPrice[ptLong] * tradeAmt[idx].AccFilledQty[ptLong]
+        + aKipItem.AvgFillPrice[ptLong] * aKipItem.FilledQty[ptLong]), dSum[ptLong] );
+
+     tradeAmt[idx].AvgPrice[ptShort]  :=  CalcDiv( (tradeAmt[idx].AvgPrice[ptShort] * tradeAmt[idx].AccFilledQty[ptShort]
+        + aKipItem.AvgFillPrice[ptShort] * aKipItem.FilledQty[ptShort]), dSum[ptShort] );
+
+     tradeAmt[idx].AccFilledQty[ptLong]  := dSum[ptLong];
+     tradeAmt[idx].AccFilledQty[ptShort] := dSum[ptShort];
+
+     tradeAmt[idx].tradeAmt[ptLong]   := tradeAmt[idx].tradeAmt[ptLong] + aKipItem.tradeAmt[ptLong];
+     tradeAmt[idx].tradeAmt[ptShort]  := tradeAmt[idx].tradeAmt[ptShort] + aKipItem.tradeAmt[ptShort];
+
+   end;
+
+//  for i := 0 to 1 do begin
+//    tradeAmt[i].AvgKipVal[ptLong] := CalcDiv( tradeAmt[i].ToTKipVal[ptLong], tradeAmt[i].FilledQty[ptLong]);
+//    tradeAmt[i].AvgKipVal[ptShort] := CalcDiv( tradeAmt[i].ToTKipVal[ptShort], tradeAmt[i].FilledQty[ptShort]);
+//  end;
+end;
+
+procedure TAutoKipOrders.InitReport;
+begin
+  KipReport[aoEntry].Init;
+  KipReport[aoExit].Init;
+end;
+
+function TAutoKipOrders.IsWaiting: boolean;
+var
+  iTime : integer;
+begin
+  Result := false;
+  EnterCriticalSection(CriticalSection);
+  try
+    iTime := SecondsBetween( now, LastGetTime );
+    if iTime < 5 then
+      Result := true;
+//    FLastGetTime := now;
+  finally
+    LeaveCriticalSection(CriticalSection);
+  end;
+end;
+
+function TAutoKipOrders.New(stName: string): TAutoKipOrderItem;
+begin
+  Result := Find( stName );
+  if Result = nil then
+  begin
+    Result := Add as TAutoKipOrderItem;
+    Result.Name := stName;
+  end;
+end;
+
+procedure TAutoKipOrders.OnConfig(aCfg: TKipConfig);
+var
+  I: Integer;
+begin
+  for I := 0 to Count-1 do
+    if GetKipOrders(i).Run then
+      GetKipOrders(i).KipData.SetConfig(aCfg);
+end;
+
+procedure TAutoKipOrders.OnOrder(aOrder: TOrder; iEventID : integer);
+var
+  aItem : TAutoKipOrderItem;
+begin
+
+  if aOrder.StgType <> stKipOrder then Exit;
+
+  aItem := Find( aOrder.GroupNo );
+  if aItem <> nil then
+    aItem.OnOrder( aOrder, iEventID );
+end;
+
+procedure TAutoKipOrders.OnProc;
+var
+  I: Integer;
+begin
+  for I := 0 to Count-1 do
+    if GetKipOrders(i).Run then
+      GetKipOrders(i).OnProc;
+end;
+
+procedure TAutoKipOrders.OnReduceOnly(bReduce: boolean);
+var
+  I: Integer;
+begin
+  for I := 0 to Count-1 do
+    if not GetKipOrders(i).FIsEntry then
+      GetKipOrders(i).OnReduceOnly( bReduce );
+end;
+
+
+procedure TAutoKipOrders.SetPosition(aType : TSymbolCountryType; aAccount: TAccount; aSymbol: TSymbol);
+begin
+
+  if aSymbol.Spec.Market = mtSpot then Exit;
+
+  FPositions[aType] := App.Engine.TradeCore.FindPosition(aAccount, aSymbol);
+  if FPositions[aType] = nil then
+    FPositions[aType] := App.Engine.TradeCore.NewPosition(aAccount, aSymbol);
+end;
+
+procedure TAutoKipOrders.SetTime;
+begin
+  EnterCriticalSection(CriticalSection);
+  try
+    FLastGetTime := now;
+  finally
+    LeaveCriticalSection(CriticalSection);
+  end;
+end;
+
+initialization
+  InitializeCriticalSection(CriticalSection);
+
+finalization
+  DeleteCriticalSection(CriticalSection);
+
+end.

@@ -1,0 +1,4542 @@
+﻿unit FOrderBoard;
+
+interface
+
+uses
+  Windows, Messages, SysUtils, Classes, Graphics, Controls, Forms, Dialogs,
+  StdCtrls, Grids, ExtCtrls, Buttons, ComCtrls, ImgList,  Menus, Math, Spin,
+  MMSystem,  System.RegularExpressions,
+    // lemon: common
+  UTypes, GLibs, UConsts, UApiTypes, UApiconsts,
+    // lemon: data
+  UFQN, USymbols, UMarkets, UQuoteBroker,
+    // lemon: trade
+  UAccounts, UOrders, UPositions, UTradeBroker,
+    // lemon: utils
+  UDistributor, UStorage,
+    // lemon: import
+  COBTypes,
+    // app: main
+  GApp,
+    // app: orderboard
+  COrderBoard, COrderTablet,
+  DBoardPrefs, DBoardParams
+  ;
+
+const
+  PlRow = 12;
+  FeeRow = 13;
+
+  BoardKey :  array [TBoardKeyType] of word  =
+        ( 0, VK_SPACE, VK_CONTROL, VK_MENU, VK_ESCAPE );
+type
+
+  TBatchParam = record
+//    CancelType : TBatchCancelType;
+    ShiftPrice : double;
+    Board      : TOrderBoard;
+  end;
+
+
+  TOrderBoardForm = class(TForm)
+    PanelLeft: TPanel;
+    PanelMain: TPanel;
+    PanelTop: TPanel;
+    SpeedButtonLeftPanel: TSpeedButton;
+    SpeedButtonRightPanel: TSpeedButton;
+    PopupMenuOrders: TPopupMenu;
+    N6000X11: TMenuItem;
+    N1: TMenuItem;
+    N2: TMenuItem;
+    N3: TMenuItem;
+    N4: TMenuItem;
+    N5: TMenuItem;
+    N6: TMenuItem;
+    N7: TMenuItem;
+    PopQuote: TPopupMenu;
+    N8: TMenuItem;
+    C1: TMenuItem;
+    PanelRight: TPanel;
+    N9: TMenuItem;
+    FlipSide1: TMenuItem;
+    FlipDirection1: TMenuItem;
+    FlipSideDirection1: TMenuItem;
+    PanelUnders: TPanel;
+    ComboBoxUnderlyings: TComboBox;
+    Bevel1: TBevel;
+    PanelSpread: TPanel;
+    PanelOrderList: TPanel;
+    GridInfo: TStringGrid;
+    pcTab: TPageControl;
+    tabCancel: TTabSheet;
+    Panel5: TPanel;
+    LabelSymbol: TLabel;
+    LabelPrice: TLabel;
+    LabelTotalQty: TLabel;
+    ButtonCancel: TButton;
+    EditCancelQty: TEdit;
+    ListViewOrders: TListView;
+    SpeedButtonPrefs: TSpeedButton;
+    ComboBoAccount: TComboBox;
+    udControl: TUpDown;
+    btnLastCancel: TButton;
+    CheckBox1: TCheckBox;
+    btnAllCnl: TButton;
+    cbBack: TCheckBox;
+    batchCnl: TTimer;
+    tmPriceSort: TTimer;
+    tmExpect: TTimer;
+    PageControl1: TPageControl;
+    tabSpot: TTabSheet;
+    tabFutures: TTabSheet;
+    sgSpotSymbols: TStringGrid;
+    sgFutures: TStringGrid;
+    edtCode: TEdit;
+    TabSheet1: TTabSheet;
+    sgCoinm: TStringGrid;
+
+
+
+    procedure StaticTextUnderlyingMouseDown(Sender: TObject;
+      Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+
+
+    procedure SpeedButtonLeftPanelClick(Sender: TObject);
+    procedure SpeedButtonRightPanelClick(Sender: TObject);
+    procedure FormCreate(Sender: TObject);
+
+    procedure ComboBoxUnderlyingsChange(Sender: TObject);
+
+    procedure FormDestroy(Sender: TObject);
+    procedure StringGridOptionsMouseWheelDown(Sender: TObject;
+      Shift: TShiftState; MousePos: TPoint; var Handled: Boolean);
+    procedure StringGridOptionsMouseWheelUp(Sender: TObject; Shift: TShiftState;
+      MousePos: TPoint; var Handled: Boolean);
+
+    procedure FormKeyDown(Sender: TObject; var Key: Word;
+      Shift: TShiftState);
+    procedure SpeedButtonPrefsClick(Sender: TObject);
+    procedure FormResize(Sender: TObject);
+    procedure PopQuoteClick(Sender: TObject);
+    procedure PopupOrdersClick(Sender: TObject);
+    procedure PopupMenuOrdersPopup(Sender: TObject);
+    procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure GridInfoDrawCell(Sender: TObject; ACol, ARow: Integer;
+      Rect: TRect; State: TGridDrawState);
+    procedure FormActivate(Sender: TObject);
+
+    procedure ButtonCancelClick(Sender: TObject);
+    procedure EditCancelQtyKeyPress(Sender: TObject; var Key: Char);
+    procedure EditCancelQtyExit(Sender: TObject);
+    procedure ListViewOrdersMouseUp(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
+    procedure listReadyDblClick(Sender: TObject);
+
+    procedure ComboBoAccountChange(Sender: TObject);
+
+    procedure udControlClick(Sender: TObject; Button: TUDBtnType);
+    procedure ComboBoxUnderlyingsKeyDown(Sender: TObject; var Key: Word;
+      Shift: TShiftState);
+    procedure ComboBoxUnderlyingsKeyPress(Sender: TObject; var Key: Char);
+    procedure FormKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
+    procedure btnLastCancelClick(Sender: TObject);
+    procedure CheckBox1Click(Sender: TObject);
+    procedure btnAllCnlClick(Sender: TObject);
+    procedure batchCnlTimer(Sender: TObject);
+    procedure tmPriceSortTimer(Sender: TObject);
+
+    procedure tmExpectTimer(Sender: TObject);
+
+    procedure FormMouseWheelDown(Sender: TObject; Shift: TShiftState;
+      MousePos: TPoint; var Handled: Boolean);
+    procedure FormMouseWheelUp(Sender: TObject; Shift: TShiftState;
+      MousePos: TPoint; var Handled: Boolean);
+    procedure sgFuturesMouseDown(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
+    procedure edtCodeChange(Sender: TObject);
+    procedure PageControl1Change(Sender: TObject);
+
+
+  private
+      // created objects
+    FBoards: TOrderBoards;
+      // configuration
+    FPrefs: TOrderBoardPrefs;
+    FDefParams: TOrderBoardParams;
+
+      // selection
+    FUnderlying: TSymbol; // selected underlying symbol
+    FFutures: TSymbol;    // selected futures
+
+    FUnderlyingGroup: TMarketGroup; //
+    FFutureMarket: TFutureMarket;   //
+
+      // menu related -- used when executing orders from the popup menu
+    FMenuBoard: TOrderBoard;
+    FMenuPoint: TTabletPoint;
+
+      // last selected -- used in symbol selection, info window, order list
+    FSelectedBoard: TOrderBoard;
+    FCancelPoint: TTabletPoint;
+
+      // temporary order list -- used in sending change and cancel orders
+    FTargetOrders: TOrderList;
+
+      // syntetic futures
+    FSynFutures: TSymbol;
+    FLastSynFutures : Double ;
+
+      // 순서 제어 변수들.
+    FLoadEnd    : boolean;
+    FLeftPos    : integer;
+    FResize     : boolean;
+    FKeyDown    : boolean;
+    //FAccount    : TAccount;
+
+    FBatchP : TBatchParam;
+    FDataIndex : integer;
+
+    FSrchList : TStrings;
+    FRegex: TRegEx;
+
+    {todo:
+    FKeyOrderMap : String;
+    //FKeyOrderMapItem : TKeyOrderItem;
+
+    procedure KeyOrderProc(Sender, Receiver, DataObj: TObject;
+                       iBroadcastKind: Integer; btValue: TBroadcastType);
+    procedure ObserverProc(Sender, Receiver : TObject; DataObj : TObject;
+                        iBroadcastKind : Integer; btValue : TBroadcastType);
+    }
+
+    procedure ReloadSymbols;
+    procedure BoardSetup(Sender: TObject);
+    procedure MakeBoards; overload;
+    procedure MakeBoards( iCount : integer ) ; overload;
+
+    procedure MinPriceProc(Sender : TObject);
+    procedure MaxPriceProc(Sender : TObject);
+
+      // init
+    procedure InitControls;
+    procedure SetAccount;
+    procedure SetSymbol(aSymbol : TSymbol);
+
+
+      // configuration
+    procedure ApplyPrefs;
+    procedure SetWidth;
+    procedure SetDefaultPrefs;
+    procedure SetDefaultParams;
+
+
+       // order tablet events handler
+    procedure BoardNewOrder; overload;
+    procedure BoardNewOrder(Sender: TOrderTablet; aPoint1, aPoint2: TTabletPoint); overload;
+    procedure BoardChangeOrder(Sender: TOrderTablet; aPoint1, aPoint2: TTabletPoint);
+    procedure BoardCancelOrder(Sender: TOrderTablet; aPoint1, aPoint2: TTabletPoint);
+    procedure BoardLastCancelOrder(Sender: TOrderTablet; aPoint1, aPoint2: TTabletPoint);
+    procedure BoardSelectCell(Sender: TOrderTablet; aPoint1, aPoint2: TTabletPoint);
+    procedure BoardSelect(Sender: TObject);
+    procedure BoardAcntSelect( aBoard : TOrderBoard );
+
+    //pricesort
+    procedure PriceSortStartEnd;
+    //procedure
+      // send order
+    function NewOrder(aBoard: TOrderBoard; aPoint: TTabletPoint;
+      dVolume: double; dPrice: Double): TOrder;
+    function ChangeOrder(aBoard: TOrderBoard; aPoint1, aPoint2: TTabletPoint): Integer;
+    function CancelOrders(aBoard: TOrderBoard; aPoint: TTabletPoint;
+      iMaxQty: Integer = 0): Integer; overload;
+    function CancelOrders(aTablet: TOrderTablet; aTypes: TPositionTypes ): Integer; overload;
+    function CancelOrders(aBoard: TOrderBoard; aTypes: TPositionTypes): Integer; overload;
+    function CancelOrders(aBoard: TOrderBoard; aPoint : TTabletPoint; aTypes: TPositionTypes): Integer; overload;
+
+    procedure PartCancelOrder( Sender : TOrderTablet; aPoint : TTabletPoint; aTypes :  TPositionTypes );
+
+
+
+      // board
+    function NewBoard: TOrderBoard;
+
+      // info pane
+    procedure SetInfo(aBoard: TOrderBoard);
+    procedure SetOptionInfo(aBoard: TOrderBoard);
+    procedure SetElwInfo(aBoard: TOrderBoard);
+    procedure SetAccountInfo;
+
+      // engine events
+    procedure TradeBrokerEventHandler(Sender, Receiver: TObject;
+      DataID: Integer; DataObj: TObject; EventID: TDistributorID);
+    procedure DoAccount(aAccount: TAccount; EventID: TDistributorID);
+    procedure DoPosition(aPosition: TPosition; EventID: TDistributorID);
+    procedure DoOrder(aOrder: TOrder; EventID: TDistributorID);
+    procedure QuoteBrokerEventHandler(Sender, Receiver: TObject;
+      DataID: Integer; DataObj: TObject; EventID: TDistributorID);
+
+    procedure BoardEnvEventHander (Sender : TObject; DataObj: TObject;
+      etType: TEventType; vtType : TValueType );
+
+      // left side pane
+    procedure SetPosition(aPosition: TPosition);
+    procedure SetOptionPositions;
+
+    procedure UpdateTotalPl;
+    function BoardsOrientCount(Sender: TOrderTablet) : TOrientationType;
+    procedure CheckOrientation(aBoard: TOrderBoard);
+
+    procedure MatchTablePoint( aBoard : TOrderboard;
+        aPoint1, aPoint2: TTabletPoint);
+    procedure UpdateQtySet(aData: TQtyItem; vtType: TValueType);
+    procedure OtherBoardScrollToLastPrice;
+    procedure SendKeyOrder( keyType :TKeyOrderType );
+    procedure SendKey7to0Order(keyType : TKeyOrderType);
+    procedure GetMarketAccount;
+    function CancelLastOrder(aBoard: TOrderBoard): integer;
+    function CancelNearOrder(aBoard: TOrderBoard; bAsk : boolean): integer;
+    function BatchCancelAll : boolean;
+
+
+    // add by 2012 06 29
+    procedure ShowExpectFillPrice;
+    procedure ShowPositionVolume;
+
+    //
+    function ExKind : TExchangeKind;
+    procedure SearchInList;
+    procedure initSymbolGrid;
+
+  public
+    procedure LoadEnv(aStorage: TStorage);
+    procedure SaveEnv(aStorage: TStorage);
+
+    procedure SetSymbol2(aSymbol : TSymbol; aMarket : TMarketType = mtSpot);
+
+    procedure SymbolSelect( Sender : TObject );
+    procedure StandByClick( Sender, aControl : TObject );
+    procedure ReLoad;
+    procedure CenterAlign;
+
+  end;
+
+var
+  OrderBoardForm: TOrderBoardForm;
+
+const
+  SIDE_LEFT_PANEL_WIDTH = 170;
+  SIDE_RIGHT_PANEL_WIDTH = 154;
+
+implementation
+
+uses UQuoteTimers,
+  USymbolCore
+  ;
+
+//uses ControlObserver ;
+
+{$R *.dfm}
+
+//---------------------------------------------------------------------< init >
+
+procedure TOrderBoardForm.FormCreate(Sender: TObject);
+var
+  I: TExchangeKind;
+begin
+  FResize := false;
+    // create objects
+  FBoards := TOrderBoards.Create(Self, PanelMain);
+  FTargetOrders := TOrderList.Create;
+
+    // init variables
+  FLastSynFutures := 0;
+  FKeyDown        := false;
+    // grid title
+  InitControls;
+
+    // get default
+    // 주문창 전체 환경설정
+  SetDefaultPrefs;
+    // 개별 보드 환경설정
+  SetDefaultParams;
+    // Account 설정
+  //FAccountGroup := nil;
+  //FAccount  := nil;
+  SetAccount;
+
+    // populate underlyings
+  //gEnv.Engine.SymbolCore.Underlyings.GetList(ComboBoxUnderlyings.Items);
+  for I := ekBinance to High(TExchangeKind) do
+    ComboBoxUnderlyings.AddItem( TExchangeKindDesc[i], nil  );
+
+    // subscribe for trade events
+  App.Engine.TradeBroker.Subscribe(Self, TradeBrokerEventHandler);
+
+    // synthetic futures
+  FSynFutures := nil; //gEnv.Engine.SymbolCore.Symbols.FindCode(KOSPI200_SYNTH_FUTURES_CODE);
+
+//  gEnv.Engine.TradeCore.StopOrders.BoardItems.RegistCfg( Self, etStop, BoardEnvEventHander );
+//  gBoardEnv.BroadCast.RegistCfg( Self, etQty, BoardEnvEventHander );
+//  gBoardEnv.BroadCast.RegistCfg( Self, etSpace, BoardEnvEventHander );
+//  gBoardEnv.BroadCast.RegistCfg( Self, etSpace, BoardEnvEventHander );
+
+    // populate underlying combo
+  SetComboIndex(ComboBoxUnderlyings, 0);
+  ComboBoxUnderlyingsChange(ComboBoxUnderlyings);
+
+  batchCnl.Interval := 1000;//gEnv.ConConfig.BatchInterval;
+  batchCnl.Enabled  := false;
+
+    //
+  ApplyPrefs;
+
+    //
+  LoadEnv( nil );
+  FLeftPos := Left;
+
+  FDataIndex  := 0;
+
+  FSrchList := TStringList.Create;
+  {
+  //-- KeyBorad
+  FKeyOrderMapItem:= gKeyOrderAgent.SetKeyOrder(Self, FSymbols[stLeft], FSymbols[stRight], FAccount);
+
+  gCObserver.Broadcaster.Subscribe(CFID_DOORDER, [btNew], Self, ObserverProc);
+  gCObserver.Broadcaster.Subscribe(CFID_EFORDER, [btNew], Self, ObserverProc);
+  }
+end;
+
+procedure TOrderBoardForm.FormActivate(Sender: TObject);
+begin
+  // KeyBoard
+  {
+  if FKeyOrderMapItem <> nil then
+    FKeyOrderMapItem.Active;
+  }
+
+
+end;
+
+procedure TOrderBoardForm.FormDestroy(Sender: TObject);
+var
+  i: Integer;
+  aBoard : TOrderBoard;
+begin
+//  gBoardEnv.BroadCast.UnRegistCfg( Self );
+//  // stop order 등록취소
+//  gEnv.Engine.TradeCore.StopOrders.BoardItems.UnRegistCfg( Self );
+
+  for i := 0 to FBoards.Count - 1 do
+  begin
+//    aBoard := FBoards[i];
+//    if (aBoard.Params.ShowForceDist) and ( aBoard.Quote <> nil) then
+//      aBoard.Quote.ForceDist := false;
+//    if (aBoard.Params.ShowOrderData) and ( aBoard.Quote <> nil) then
+//      aBoard.Quote.ExtrateOrder := false;
+//    if (aBoard.Params.OwnOrderTrace) and ( aBoard.Quote <> nil) then
+//      aBoard.Quote.OwnOrderTrace  := false;
+
+//    gEnv.Engine.QuoteBroker.Cancel(FBoards[i]);
+    App.Engine.QuoteBroker.Cancel(FBoards[i]);
+  end;
+
+  { todo:
+  // KeyBoard
+  FKeyOrderMapItem.Unsubscribe(Self);
+  gKeyOrderAgent.Remove(FKeyOrderMapItem);
+
+  gCObserver.Broadcaster.UnSubscribe(Self);
+  }
+
+    // new coding
+  App.Engine.TradeBroker.Unsubscribe(Self);
+  App.Engine.QuoteBroker.Cancel(Self);
+
+  FTargetOrders.Free;
+  FBoards.Free;
+
+  FSrchList.Free;
+end;
+
+procedure TOrderBoardForm.FormResize(Sender: TObject);
+var
+  iCnt, iSumW, i: Integer;
+begin
+
+  iSumW := 0;
+  iCnt  := 0;
+
+  if FBoards.Count >1 then
+  begin
+    for i := 0 to FBoards.Count - 1 do
+    begin
+      if not FBoards[i].Tablet.ShowForceDist then
+        iSumW := iSumW + FBoards[i].Width
+      else
+        inc( iCnt );
+    end;
+  end;
+
+  if iCnt = 0 then iCnt := 1;
+
+  for i := 0 to FBoards.Count - 1 do
+  begin
+    if not FLoadEnd then
+      FBoards[i].Resize
+    else begin
+      if (FBoards[i].Tablet.ShowForceDist) and (FResize) then
+        FBoards[i].Resize2( (PanelMain.Width - iSumW) div iCnt )
+      else
+        FBoards[i].Resize;
+    end;
+  end;
+end;
+
+procedure TOrderBoardForm.FormClose(Sender: TObject;
+  var Action: TCloseAction);
+begin
+  Action := caFree;
+end;
+
+procedure TOrderBoardForm.InitControls;
+begin
+  with sgSpotSymbols do
+  begin
+    Cells[0,0]  := '자산';
+    Cells[1,0]  := '';
+  end;
+
+  with sgFutures, sgCoinm do
+  begin
+    Cells[0,0]  := '자산';
+    Cells[1,0]  := '';
+  end;
+
+    //
+  with GridInfo do
+  begin
+    Cells[0,0] := '합성선물' ;
+    Cells[0,1] := '종목코드';
+    Cells[0,2] := '시' ;
+    Cells[0,3] := '고' ;
+    Cells[0,4] := '저' ;
+
+    Cells[0,5] := '종' ;
+    Cells[0,6] := '거래량' ;
+    Cells[0,7] := '델타' ;
+    Cells[0,8] := '감마' ;
+    Cells[0,9] := '세타' ;
+
+    Cells[0,10] := '베가' ;
+    Cells[0,11] := 'IV' ;
+    Cells[0,12] := 'Real상한가' ;
+    Cells[0,13] := 'Real하한가' ;
+    Cells[0,14] := '주문시간' ;
+
+    Cells[0,15] := '시세지연';
+    Cells[0,16] := '예상체결가' ;
+
+  end;
+end;
+
+
+
+procedure TOrderBoardForm.listReadyDblClick(Sender: TObject);
+begin
+  // 대기 취소..
+end;
+
+procedure TOrderBoardForm.ReLoad;
+var
+  i : integer;
+  aBoard : TOrderBoard;
+begin
+  for i := 0 to FBoards.Count - 1 do
+  begin
+    FSelectedBoard := FBoards[i];
+
+    if FselectedBoard.Symbol <> nil then
+      SetSymbol( FselectedBoard.Symbol );
+  end;
+
+end;
+
+procedure TOrderBoardForm.ReloadSymbols;
+begin
+    // reload underlyings
+  ComboBoxUnderlyings.Items.Clear;
+//  gEnv.Engine.SymbolCore.Underlyings.GetList(ComboBoxUnderlyings.Items);
+
+    // populate underlying combo and select
+  SetComboIndex(ComboBoxUnderlyings, 0);
+  ComboBoxUnderlyingsChange(ComboBoxUnderlyings);
+end;
+
+//-----------------------------------------------------------------< defaults >
+
+procedure TOrderBoardForm.SetDefaultPrefs;
+begin
+  with FPrefs do
+  begin
+    OrderKey  := ktNone;
+    RangeKey  := ktSpace;
+
+    DbClickOrder := true;
+    MouseSelect := false;
+    LastOrdCnl  := true;
+      // generice
+    BoardCount := 2;
+      // order
+    ConfirmOrder := False;
+    EnableClearOrder := True;
+    EnableEscKey := True;
+      // board
+    AutoScroll := False;
+    TraceMouse := True;
+    OrderByMouseRB := True;
+    ShowZapr := False;
+    ShowQT := False;
+    UseKey1to5 := True;
+    UseKeyOrder := false;
+    UseStandBy  := false;
+    UseShiftCnl := false;
+    UseWithStop := false;
+    FocusOff  := false;
+    UseKey7to0 := false;
+
+     // pricesort
+    PriceSort := false;
+    PriceType := 0;
+    PriceTime := 10;
+    PriceHoga := 10;
+
+    BoardColor  := clBtnFace;
+    SelectedBoardColor  := clYellow;
+
+      // colors
+    Colors[IDX_LONG,  IDX_ORDER, IDX_FONT] := clBlack;
+    Colors[IDX_SHORT, IDX_ORDER, IDX_FONT] := clBlack;
+    Colors[IDX_LONG,  IDX_QUOTE, IDX_FONT] := clBlack;
+    Colors[IDX_SHORT, IDX_QUOTE, IDX_FONT] := clBlack;
+    {
+    Colors[IDX_LONG,  IDX_ORDER, IDX_BACKGROUND] := $E4E2FC;
+    Colors[IDX_SHORT, IDX_ORDER, IDX_BACKGROUND] := $F5E2DA;
+    Colors[IDX_LONG,  IDX_QUOTE, IDX_BACKGROUND] := $E4E2FC;
+    Colors[IDX_SHORT, IDX_QUOTE, IDX_BACKGROUND] := $F5E2DA;
+    }
+    Colors[IDX_LONG,  IDX_ORDER, IDX_BACKGROUND] := clWhite;
+    Colors[IDX_SHORT, IDX_ORDER, IDX_BACKGROUND] := clWhite;
+    Colors[IDX_LONG,  IDX_QUOTE, IDX_BACKGROUND] := $C4C4FF;
+    Colors[IDX_SHORT, IDX_QUOTE, IDX_BACKGROUND] := $FFC4C4;
+
+    UseBullStop := false;
+    NoUseQtySet   := false;
+  end;
+end;
+
+
+
+procedure TOrderBoardForm.SetDefaultParams;
+begin
+  with FDefParams do
+  begin
+      // time & sales
+    ShowTNS := False;
+    TNSOnLeft := False; // default on the right
+    TNSRowCount := 20;
+    UseTNSVolumeFilter := False;
+    TNSVolumeThreshold := 10;
+    TNSPosition := 0;
+      // orientation
+
+    OrientaionType  := otAuto;
+
+    MergeQuoteColumns := False;
+    MergedQuoteOnLeft := True;
+      // show
+    ShowOrderColumn := True;
+    ShowIVColumn := False;
+    ShowStopColumn:= false;
+      // elw option
+    ShowAccumulFillBar  := false;
+
+    ShowLpVolumeColumn  := false;
+
+      // 세력분석
+    ShowOrderData := false;
+    ShowOrderCount := 20;
+    OrderOnLeft := false;
+    ForceOnLeft := false;
+    ShowForceDist := false;
+    ShowForceSum  := false;
+    ForceSumSec   := 1000;
+
+    FillterOrderQty := 0;
+    FillterOrderHoga := 3;
+    FillterForceQty  := 20;
+
+      // 누적체결
+    ShowAccumulFills  := false;
+    AccumulOnLeft     := false;
+    AccumulHoga       := 2;
+
+      // color
+    ColorL  := $0000FF;
+    ColorLx := $FFFF33;
+    ColorLc := clBlack;
+    ColorS  := $993333;
+    ColorSx := $0066FF;
+    ColorSc := clBlack;
+
+    ShowMaxQty := false;
+    MaxQty  := 100;
+
+    OrdHigh := 16;
+    OrdWid  := 58;
+  end;
+end;
+
+
+//----------------------------------------------------------------------< env >
+
+procedure TOrderBoardForm.LoadEnv(aStorage: TStorage);
+var
+  i, j, ii, k, iCol, iRow, iCount: Integer;
+  aBoard: TOrderBoard;
+//  aStop : TSTopORder;
+  stBoard, stTmp, stAcnt : String;
+  aParams: TOrderBoardParams;
+
+  aOrder : TOrder;
+  ColorSave : boolean;
+  exKind : TExchangeKind;
+  aAMType : TAccountMarketType;
+begin
+  if aStorage = nil then begin
+    FLoadEnd := true;
+    //gEnv.OnLog( self, 'load end ');
+    Exit;
+  end;
+
+  ComboBoxUnderlyings.ItemIndex := aStorage.FieldByName('exKind').AsInteger;
+
+  SpeedButtonLeftPanel.Down  := aStorage.FieldByName('ShowLeftPanel').AsBoolean;
+  SpeedButtonRightPanel.Down := aStorage.FieldByName('ShowRightPanel').AsBoolean;
+
+    // preferences
+  FPrefs.BoardCount       := aStorage.FieldByName('Prefs.BoardCount').AsInteger;
+  MakeBoards;
+
+  FPrefs.ConfirmOrder     := aStorage.FieldByName('Prefs.ConfirmOrder').AsBoolean;
+  FPrefs.EnableClearOrder := aStorage.FieldByName('Prefs.EnabledClearOrder').AsBoolean;
+  FPrefs.EnableEscKey     := aStorage.FieldByName('Prefs.EnabledEscKey').AsBoolean;
+  FPrefs.AutoScroll       := aStorage.FieldByName('Prefs.AutoScroll').AsBoolean;
+  FPrefs.TraceMouse       := aStorage.FieldByName('Prefs.TraceMouse').AsBoolean;
+  FPrefs.OrderByMouseRB   := aStorage.FieldByName('Prefs.OrderByMouseRB').AsBoolean;
+  FPrefs.ShowZapr         := aStorage.FieldByName('Prefs.ShowZapr').AsBoolean;
+  FPrefs.ShowQT           := aStorage.FieldByName('Prefs.ShowQT').AsBoolean;
+  FPrefs.UseKey1to5       := aStorage.FieldByName('Prefs.UseKey1to5').AsBoolean;
+  FPrefs.UseKeyOrder      := aStorage.FieldByName('Prefs.UseKeyOrder').AsBoolean;
+  FPrefs.UseStandBy       := aStorage.FieldByName('Prefs.UseStandBy').AsBoolean;
+  FPrefs.UseKey7to0       := aStorage.FieldByName('Prefs.UseKey7to0').AsBoolean;
+
+  FPrefs.UseShiftCnl      := aStorage.FieldByName('Prefs.UseShiftCnl').AsBoolean;
+  FPrefs.FocusOff         := aStorage.FieldByName('Prefs.FocusOff').AsBoolean;
+
+  FPrefs.UseWithStop      := aStorage.FieldByName('Prefs.UseWithStop').AsBoolean;
+  FPrefs.UseBullStop      := aStorage.FieldByName('Prefs.UseBullStop').AsBoolean;
+  FPrefs.NoUseQtySet      := aStorage.FieldByName('Prefs.NoUseQtySet').AsBoolean;
+
+  FPrefs.OrderKey         := TBoardKeyType( aStorage.FieldByName('Prefs.OrderKey').AsInteger );
+  FPrefs.RangeKey         := TBoardKeyType( aStorage.FieldByName('Prefs.RangeKey').AsInteger );
+
+  FPrefs.MouseSelect      := aStorage.FieldByName('Prefs.MouseSelect').AsBoolean;
+  FPrefs.DbClickOrder     := aStorage.FieldByName('Prefs.DbClickOrder').AsBoolean;
+  FPrefs.LastOrdCnl       := aStorage.FieldByName('Prefs.LastOrdCnl').AsBoolean;
+
+  //priceSort
+  FPrefs.PriceSort        := aStorage.FieldByName('Prefs.PriceSort').AsBoolean;
+  FPrefs.PriceType        := aStorage.FieldByName('Prefs.PriceType').AsInteger;
+  FPrefs.PriceTime        := aStorage.FieldByName('Prefs.PriceTime').AsInteger;
+  FPrefs.PriceHoga        := aStorage.FieldByName('Prefs.PriceHoga').AsInteger;
+
+  FPrefs.BoardColor         := TColor( aStorage.FieldByName('Prefs.BoardColor').AsInteger  );
+  FPrefs.SelectedBoardColor := TColor( aStorage.FieldByName('Prefs.SelectedBoardColor').AsInteger );
+  if FPrefs.BoardColor = 0 then  FPrefs.BoardColor := clBtnFace;
+  if FPrefs.SelectedBoardColor = 0 then FPrefs.SelectedBoardColor  := clYellow;
+
+  if FPrefs.PriceTime = 0 then FPrefs.PriceTime := 10;
+  if FPrefs.PriceHoga = 0 then FPrefs.PriceHoga := 10;
+
+  for i := 0 to 1 do
+    for j := 0 to 1 do
+      for k := 0 to 1 do
+         FPrefs.Colors[i,j,k] := aStorage.FieldByName(Format('Prefs.Colors[%d,%d,%d]',[i,j,k])).AsInteger;
+
+    // default params
+  FDefParams.ShowTNS            := aStorage.FieldByName('DefParams.ShowTNS').AsBoolean;
+  FDefParams.TNSOnLeft          := aStorage.FieldByName('DefParams.TNSOnLeft').AsBoolean;
+  FDefParams.TNSRowCount        := aStorage.FieldByName('DefParams.TNSRowCount').AsInteger;
+  FDefParams.UseTNSVolumeFilter := aStorage.FieldByName('DefParams.UseTNSVolumeFilter').AsBoolean;
+  FDefParams.TNSVolumeThreshold := aStorage.FieldByName('DefParams.TNSVolumeThreshold').AsInteger;
+  FDefParams.OrientaionType     := TOrientationType(aStorage.FieldByName('DefParams.OrientationType').AsInteger);
+
+  FDefParams.MergeQuoteColumns  := aStorage.FieldByName('DefParams.MergeQuoteColumns').AsBoolean;
+  FDefParams.MergedQuoteOnLeft  := aStorage.FieldByName('DefParams.MergedQuoteOnLeft').AsBoolean;
+  FDefParams.ShowOrderColumn    := aStorage.FieldByName('DefParams.ShowOrderColumn').AsBoolean;
+  //FDefParams.ShowIVColumn       := aStorage.FieldByName('DefParams.ShowIVColumn').AsBoolean;
+  FDefParams.ShowStopColumn       := aStorage.FieldByName('DefParams.ShowStopColumn').AsBoolean;
+  FDefParams.ShowForceDist      := aStorage.FieldByName('DefParams.ShowForceDist').AsBoolean;
+  FDefParams.FillterOrderQty    := aStorage.FieldByName('DefParams.FillterOrderQty').AsInteger;
+  FDefParams.FillterOrderHoga   := aStorage.FieldByName('DefParams.FillterOrderHoga').AsInteger;
+  FDefParams.OrderOnLeft        := aStorage.FieldByName('DefParams.OrderOnLeft').AsBoolean;
+  FDefParams.ForceOnLeft        := aStorage.FieldByName('DefParams.ForceOnLeft').AsBoolean;
+  FDefParams.ShowForceSum       := aStorage.FieldByName('DefParams.ShowForceSum').AsBoolean;
+  FDefParams.ForceSumSec        := aStorage.FieldByName('DefParams.ForceSumSec').AsInteger;
+  //FDefParams.FillterForceQty    := aStorage.FieldByName('DefParams.FillterForceQty').AsInteger;
+
+
+    // apply preferences
+  ApplyPrefs;
+    // boards
+  for i := 0 to FPrefs.BoardCount-1 do
+  begin
+    if i > FBoards.Count-1 then Break;
+
+    aBoard := FBoards[i];
+    stBoard := Format('Board[%d]', [i]);
+      // symbol
+    exKind := TExchangeKind( aStorage.FieldByName(stBoard + '.exkind').AsInteger );
+    aBoard.Symbol := App.Engine.SymbolCore.FindSymbol(exKind,
+                          aStorage.FieldByName(stBoard + '.symbol').AsString);
+
+    if (aBoard.Symbol <> nil) then
+    begin
+      if aBoard.Symbol.Spec.Market = mtSpot then
+        aAMType := amSpot
+      else if aBoard.Symbol.Spec.Market = mtFutures then
+        if aBoard.Symbol.Spec.FutureType = ftUsdt then
+          aAMType := amFuture
+        else
+          aAMType := amFutureCm;
+
+      aBoard.Account:= App.Engine.TradeCore.FindAccount( aBoard.Symbol.Spec.ExchangeType, aAMType );
+    end;
+
+    if aBoard.Account <> nil then
+      BoardAcntSelect( aBoard );
+
+    if aBoard.Symbol <> nil then begin
+      aBoard.Quote  := App.Engine.QuoteBroker.Brokers[exKind].Subscribe(
+        aBoard, aBoard.Symbol,  QuoteBrokerEventHandler
+      );
+      aBoard.AddSymbol( aBoard.Symbol );
+    end;
+
+    //  qty set
+    aBoard.StopOrderTickVolume.Position := aStorage.FieldByName(stBoard + '.Params.StopOrderTickVolume').AsInteger;
+
+      // parameters
+    aParams.ShowTNS            := aStorage.FieldByName(stBoard + '.Params.ShowTNS').AsBoolean;
+    aParams.TNSOnLeft          := aStorage.FieldByName(stBoard + '.Params.TNSOnLeft').AsBoolean;
+    aParams.TNSRowCount        := aStorage.FieldByName(stBoard + '.Params.TNSRowCount').AsInteger;
+    aParams.UseTNSVolumeFilter := aStorage.FieldByName(stBoard + '.Params.UseTNSVolumeFilter').AsBoolean;
+    aParams.TNSVolumeThreshold := aStorage.FieldByName(stBoard + '.Params.TNSVolumeThreshold').AsInteger;
+    aParams.OrientaionType     := TOrientationType( aStorage.FieldByName(stBoard + '.Params.OrientationType').AsInteger);
+
+    aParams.MergeQuoteColumns  := aStorage.FieldByName(stBoard + '.Params.MergeQuoteColumns').AsBoolean;
+    aParams.MergedQuoteOnLeft  := aStorage.FieldByName(stBoard + '.Params.MergedQuoteOnLeft').AsBoolean;
+    aParams.ShowOrderColumn    := aStorage.FieldByName(stBoard + '.Params.ShowOrderColumn').AsBoolean;
+    //aParams.ShowIVColumn       := aStorage.FieldByName(stBoard + '.Params.ShowIVColumn').AsBoolean;
+    aParams.ShowStopColumn       := aStorage.FieldByName(stBoard + '.Params.ShowStopColumn').AsBoolean;
+    aParams.ShowOrderData      := aStorage.FieldByName(stBoard + '.Params.ShowOrderData').AsBoolean;
+    aParams.ShowOrderCount     := aStorage.FieldByName(stBoard + '.Params.ShowOrderCount').AsInteger;
+    aParams.ShowForceDist      := aStorage.FieldByName(stBoard + '.Params.ShowForceDist').AsBoolean;
+    aParams.ShowForceSum       := aStorage.FieldByName(stBoard + '.Params.ShowForceSum').AsBoolean;
+    aParams.ForceSumSec        := aStorage.FieldByName(stBoard + '.Params.ForceSumSec').AsInteger;
+    aParams.FillterOrderQty    := aStorage.FieldByName(stBoard + '.Params.FillterOrderQty').AsInteger;
+    aParams.FillterOrderHoga   := aStorage.FieldByName(stBoard + '.Params.FillterOrderHoga').AsInteger;
+    aParams.OrderOnLeft        := aStorage.FieldByName(stBoard + '.Params.OrderOnLeft').AsBoolean;
+    aParams.ForceOnLeft        := aStorage.FieldByName(stBoard + '.Params.ForceOnLeft').AsBoolean;
+    aParams.FillterForceQty    := aStorage.FieldByName(stBoard + '.Params.FillterForceQty').AsInteger;
+    //
+    aParams.ShowAccumulFills   := aStorage.FieldByName(stBoard + '.Params.ShowAccumulFills').AsBoolean;
+    aParams.AccumulOnLeft      := aStorage.FieldByName(stBoard + '.Params.AccumulOnLeft').AsBoolean;
+    aParams.AccumulHoga        := aStorage.FieldByName(stBoard + '.Params.AccumulHoga').AsInteger;
+
+    aParams.UseStopCoolTime    := aStorage.FieldByName(stBoard + '.Params.UseStopCoolTime').AsBoolean;
+    aParams.StopCoolTime       := aStorage.FieldByName(stBoard + '.Params.StopCoolTime').AsInteger;
+
+    aParams.ShowMaxQty         := aStorage.FieldByName(stBoard + '.Params.ShowMaxQty').AsBoolean;
+    aParams.MaxQty             := aStorage.FieldByName(stBoard + '.Params.MaxQty').AsInteger;
+
+
+    // 색상
+    ColorSave := aStorage.FieldByName(stBoard + '.Params.ColorSave').AsBoolean;
+    // 주문 추적
+    aParams.OwnOrderTrace      := aStorage.FieldByName(stBoard +'.Params.OwnOrderTrace').AsBoolean;
+    aParams.HideOwnOrderTrace  := aStorage.FieldByName(stBoard +'.Params.HideOwnOrderTrace').AsBoolean;
+    //OwnOrderTrace
+    aParams.OrdHigh        := aStorage.FieldByName(stBoard + '.Params.OrdHigh').AsInteger;
+    aParams.OrdWid         := aStorage.FieldByName(stBoard + '.Params.OrdWid').AsInteger;
+
+    if aParams.OrdHigh <= 0 then
+      aParams.OrdHigh := 16;
+
+    if aParams.OrdWid <= 0 then
+      aParams.OrdWid := 58;
+
+    if ColorSave then
+    begin
+      aParams.ColorL    := TColor( aStorage.FieldByName(stBoard + '.Params.ColorL').AsInteger );
+      aParams.ColorLx   := TColor( aStorage.FieldByName(stBoard + '.Params.ColorLx').AsInteger );
+      aParams.ColorLc   := TColor( aStorage.FieldByName(stBoard + '.Params.ColorLc').AsInteger );
+      aParams.ColorS    := TColor( aStorage.FieldByName(stBoard + '.Params.ColorS').AsInteger );
+      aParams.ColorSx   := TColor( aStorage.FieldByName(stBoard + '.Params.ColorSx').AsInteger );
+      aParams.ColorSc   := TColor( aStorage.FieldByName(stBoard + '.Params.ColorSc').AsInteger );
+    end
+    else begin
+      aParams.ColorL  := $0000FF;
+      aParams.ColorLx := $FFFF33;
+      aParams.ColorLc := clBlack;
+      aParams.ColorS  := $993333;
+      aParams.ColorSx := $0066FF;
+      aParams.ColorSc := clBlack;
+    end;
+
+//    if gBoardEnv <> nil then
+//      with gBoardEnv do
+//      begin
+//        ColorInfo.ColorL  := aParams.ColorL;
+//        ColorInfo.ColorLx := aParams.ColorLx;
+//        ColorInfo.ColorLc := aParams.ColorLc;
+//        ColorInfo.ColorS  := aParams.ColorS;
+//        ColorInfo.ColorSx := aParams.ColorSx;
+//        ColorInfo.ColorSc := aParams.ColorSc;
+//      end;
+
+    // add
+    aParams.TNSPosition        := aStorage.FieldByName(stBoard + 'DefParams.TNSPosition').AsInteger;
+    aParams.ShowAccumulFillBar := aStorage.FieldByName(stBoard + 'DefParams.ShowAccumulFillBar').AsBoolean;
+    aParams.ShowLpVolumeColumn := aStorage.FieldByName(stBoard + 'DefParams.ShowLpVolumeColumn').AsBoolean;
+
+    aBoard.Params := aParams; // apply
+
+    aBoard.UpdatePositionInfo;
+    aBoard.UpdateOrderLimit
+  end;
+    // apply visibilities of panels
+  SpeedButtonLeftPanelClick(SpeedButtonLeftPanel);
+  SpeedButtonRightPanelClick(SpeedButtonRightPanel);
+    // apply account change
+
+
+    // apply orders
+  for i := 0 to FPrefs.BoardCount-1 do
+  begin
+    if i > FBoards.Count-1 then Break;
+    aBoard := FBoards[i];
+
+    aBoard.PanelVolumes.Color := FPrefs.BoardColor;// clBtnFace;
+    aBoard.SymbolPanel.Color  := FPrefs.BoardColor;
+
+    if aBoard = nil  then
+      Continue;
+
+//    for j := 0 to gEnv.Engine.TradeCore.Orders.ActiveOrders.Count - 1 do
+//    begin
+//      aOrder := gEnv.Engine.TradeCore.Orders.ActiveOrders[j];
+//
+//      if (aOrder.State = osActive)
+//         and (aOrder.Account = aBoard.Account)
+//         and (aOrder.Symbol = aBoard.Symbol) then
+//        aBoard.Tablet.DoOrder(aOrder);
+//    end;
+
+  end;
+
+  ComboBoxUnderlyingsChange(nil);
+
+  FLoadEnd := true;
+
+end;
+
+procedure TOrderBoardForm.SaveEnv(aStorage: TStorage);
+var
+  ii,i, j, k, iCol, iRow: Integer;
+  aBoard: TOrderBoard;
+  stBoard: String;
+begin
+  if aStorage = nil then Exit;
+
+  aStorage.FieldByName('exKind').AsInteger  := ComboBoxUnderlyings.ItemIndex;
+    // account
+//  if FAccount <> nil then
+//    aStorage.FieldByName('Account').AsString := FAccount.Code; // account
+    //
+  aStorage.FieldByName('ShowLeftPanel').AsBoolean := SpeedButtonLeftPanel.Down;
+  aStorage.FieldByName('ShowRightPanel').AsBoolean := SpeedButtonRightPanel.Down;
+    // preferences
+  aStorage.FieldByName('Prefs.BoardCount').AsInteger := FPrefs.BoardCount;
+  aStorage.FieldByName('Prefs.ConfirmOrder').AsBoolean := FPrefs.ConfirmOrder;
+  aStorage.FieldByName('Prefs.EnabledClearOrder').AsBoolean := FPrefs.EnableClearOrder;
+  aStorage.FieldByName('Prefs.EnabledEscKey').AsBoolean := FPrefs.EnableEscKey;
+  aStorage.FieldByName('Prefs.AutoScroll').AsBoolean := FPrefs.AutoScroll;
+  aStorage.FieldByName('Prefs.TraceMouse').AsBoolean := FPrefs.TraceMouse;
+  aStorage.FieldByName('Prefs.OrderByMouseRB').AsBoolean := FPrefs.OrderByMouseRB;
+  aStorage.FieldByName('Prefs.ShowZapr').AsBoolean := FPrefs.ShowZapr;
+  aStorage.FieldByName('Prefs.ShowQT').AsBoolean := FPrefs.ShowQT;
+  aStorage.FieldByName('Prefs.UseKey1to5').AsBoolean := FPrefs.UseKey1to5;
+  aStorage.FieldByName('Prefs.UseKeyOrder').AsBoolean := FPrefs.UseKeyOrder;
+  aStorage.FieldByName('Prefs.UseStandBy').AsBoolean := FPrefs.UseStandBy;
+  aStorage.FieldByName('Prefs.UseKey7to0').AsBoolean := FPrefs.UseKey7to0;
+
+
+  aStorage.FieldByName('Prefs.UseShiftCnl').AsBoolean := FPrefs.UseShiftCnl;
+  aStorage.FieldByName('Prefs.FocusOff').AsBoolean := FPrefs.FocusOff;
+  aStorage.FieldByName('Prefs.UseWithStop').AsBoolean := FPrefs.UseWithStop;
+  aStorage.FieldByName('Prefs.UseBullStop').AsBoolean := FPrefs.UseBullStop;
+  aStorage.FieldByName('Prefs.NoUseQtySet').AsBoolean   := FPrefs.NoUseQtySet;
+
+  //priceSort
+  aStorage.FieldByName('Prefs.PriceSort').AsBoolean := FPrefs.PriceSort;
+  aStorage.FieldByName('Prefs.PriceType').AsInteger := FPrefs.PriceType;
+  aStorage.FieldByName('Prefs.PriceTime').AsInteger := FPrefs.PriceTime;
+  aStorage.FieldByName('Prefs.PriceHoga').AsInteger := FPrefs.PriceHoga;
+
+  aStorage.FieldByName('Prefs.OrderKey').AsInteger  := Integer( FPrefs.OrderKey );
+  aStorage.FieldByName('Prefs.RangeKey').AsInteger  := Integer( FPrefs.RangeKey );
+
+  aStorage.FieldByName('Prefs.MouseSelect').AsBoolean   := FPrefs.MouseSelect;
+  aStorage.FieldByName('Prefs.DbClickOrder').AsBoolean  := FPrefs.DbClickOrder;
+  aStorage.FieldByName('Prefs.LastOrdCnl').AsBoolean    := FPrefs.LastOrdCnl;
+
+  aStorage.FieldByName('Prefs.BoardColor').AsInteger         := Integer( FPrefs.BoardColor );
+  aStorage.FieldByName('Prefs.SelectedBoardColor').AsInteger := Integer( FPrefs.SelectedBoardColor );
+
+  for i := 0 to 1 do
+    for j := 0 to 1 do
+      for k := 0 to 1 do
+        aStorage.FieldByName(Format('Prefs.Colors[%d,%d,%d]',[i,j,k])).AsInteger := FPrefs.Colors[i,j,k];
+    // default params
+  aStorage.FieldByName('DefParams.ShowTNS').AsBoolean := FDefParams.ShowTNS;
+  aStorage.FieldByName('DefParams.TNSOnLeft').AsBoolean := FDefParams.TNSOnLeft;
+  aStorage.FieldByName('DefParams.TNSRowCount').AsInteger := FDefParams.TNSRowCount;
+  aStorage.FieldByName('DefParams.UseTNSVolumeFilter').AsBoolean := FDefParams.UseTNSVolumeFilter;
+  aStorage.FieldByName('DefParams.TNSVolumeThreshold').AsInteger := FDefParams.TNSVolumeThreshold;
+  aStorage.FieldByName('DefParams.OrientationType').AsInteger := Integer( FDefParams.OrientaionType );
+
+  aStorage.FieldByName('DefParams.MergeQuoteColumns').AsBoolean := FDefParams.MergeQuoteColumns;
+  aStorage.FieldByName('DefParams.MergedQuoteOnLeft').AsBoolean := FDefParams.MergedQuoteOnLeft;
+  aStorage.FieldByName('DefParams.ShowOrderColumn').AsBoolean := FDefParams.ShowOrderColumn;
+  //aStorage.FieldByName('DefParams.ShowIVColumn').AsBoolean := FDefParams.ShowIVColumn;
+  aStorage.FieldByName('DefParams.ShowStopColumn').AsBoolean := FDefParams.ShowStopColumn;
+  aStorage.FieldByName('DefParams.ShowForceDist').AsBoolean := FDefParams.ShowForceDist;
+  aStorage.FieldByName('DefParams.ShowForceSum').AsBoolean := FDefParams.ShowForceSum;
+  aStorage.FieldByName('DefParams.ForceSumSec').AsInteger := FDefParams.ForceSumSec;
+  aStorage.FieldByName('DefParams.FillterOrderQty').AsInteger := FDefParams.FillterOrderQty;
+  aStorage.FieldByName('DefParams.FillterOrderHoga').AsInteger := FDefParams.FillterOrderHoga;
+  aStorage.FieldByName('DefParams.OrderOnLeft').AsBoolean := FDefParams.OrderOnLeft;
+  aStorage.FieldByName('DefParams.ForceOnLeft').AsBoolean := FDefParams.ForceOnLeft;
+  //aStorage.FieldByName('DefParams.FillterForceQty').AsInteger := FDefParams.FillterForceQty;
+
+   // boards
+  aStorage.FieldByName('boards.count').AsInteger := FBoards.Count; // number of boards
+  for i := 0 to FBoards.Count - 1 do
+  begin
+    aBoard := FBoards[i];
+    stBoard := Format('Board[%d]', [i]);
+
+    if (aBoard <> nil) and (aBoard.Symbol <> nil) then begin
+      aStorage.FieldByName(stBoard + '.symbol').AsString  := aBoard.Symbol.Code;
+      aStorage.FieldByName(stBoard + '.exkind').AsInteger := integer(aBoard.Symbol.Spec.ExchangeType);
+    end
+    else begin
+      aStorage.FieldByName(stBoard + '.symbol').AsString := '';
+      aStorage.FieldByName(stBoard + '.exkind').AsInteger:= 0;
+    end;
+
+//    if (aBoard <> nil) and (aBoard.Account <> nil) then
+//      aStorage.FieldByName(stBoard + '.Account').AsString := aBoard.Account.Code
+//    else
+//      aStorage.FieldByName(stBoard + '.Account').AsString := '';
+
+    aStorage.FieldByName(stBoard + '.Params.StopOrderTickVolume').AsInteger := aBoard.StopOrderTickVolume.Position ;
+      // parameters
+    aStorage.FieldByName(stBoard + '.Params.ShowTNS').AsBoolean            := aBoard.Params.ShowTNS;
+    aStorage.FieldByName(stBoard + '.Params.TNSOnLeft').AsBoolean          := aBoard.Params.TNSOnLeft;
+    aStorage.FieldByName(stBoard + '.Params.TNSRowCount').AsInteger        := aBoard.Params.TNSRowCount;
+    aStorage.FieldByName(stBoard + '.Params.UseTNSVolumeFilter').AsBoolean := aBoard.Params.UseTNSVolumeFilter;
+    aStorage.FieldByName(stBoard + '.Params.TNSVolumeThreshold').AsInteger := aBoard.Params.TNSVolumeThreshold;
+    aStorage.FieldByName(stBoard + '.Params.OrientationType').AsInteger    := Integer( aBoard.Params.OrientaionType );
+
+    aStorage.FieldByName(stBoard + '.Params.MergeQuoteColumns').AsBoolean  := aBoard.Params.MergeQuoteColumns;
+    aStorage.FieldByName(stBoard + '.Params.MergedQuoteOnLeft').AsBoolean  := aBoard.Params.MergedQuoteOnLeft;
+    aStorage.FieldByName(stBoard + '.Params.ShowOrderColumn').AsBoolean    := aBoard.Params.ShowOrderColumn;
+    //aStorage.FieldByName(stBoard + '.Params.ShowIVColumn').AsBoolean       := aBoard.Params.ShowIVColumn;
+    aStorage.FieldByName(stBoard + '.Params.ShowStopColumn').AsBoolean       := aBoard.Params.ShowStopColumn;
+    aStorage.FieldByName(stBoard + '.Params.ShowOrderData').AsBoolean      := aBoard.Params.ShowOrderData;
+    aStorage.FieldByName(stBoard + '.Params.ShowOrderCount').AsInteger     := aBoard.Params.ShowOrderCount;
+    aStorage.FieldByName(stBoard + '.Params.ShowForceDist').AsBoolean      := aBoard.Params.ShowForceDist;
+    aStorage.FieldByName(stBoard + '.Params.ShowForceSum').AsBoolean      := aBoard.Params.ShowForceSum;
+    aStorage.FieldByName(stBoard + '.Params.ForceSumSec').AsInteger      := aBoard.Params.ForceSumSec;
+    aStorage.FieldByName(stBoard + '.Params.FillterOrderQty').AsInteger    := aBoard.Params.FillterOrderQty;
+    aStorage.FieldByName(stBoard + '.Params.FillterOrderHoga').AsInteger   := aBoard.Params.FillterOrderHoga;
+    aStorage.FieldByName(stBoard + '.Params.OrderOnLeft').AsBoolean        := aBoard.Params.OrderOnLeft;
+    aStorage.FieldByName(stBoard + '.Params.ForceOnLeft').AsBoolean        := aBoard.Params.ForceOnLeft;
+    aStorage.FieldByName(stBoard + '.Params.FillterForceQty').AsInteger    := aBoard.Params.FillterForceQty;
+    aStorage.FieldByName(stBoard + '.Params.ShowAccumulFills').AsBoolean   := aBoard.Params.ShowAccumulFills;
+    aStorage.FieldByName(stBoard + '.Params.AccumulOnLeft').AsBoolean      := aBoard.Params.AccumulOnLeft;
+    aStorage.FieldByName(stBoard + '.Params.AccumulHoga').AsInteger        := aBoard.Params.AccumulHoga;
+    aStorage.FieldByName(stBoard + '.Params.OwnOrderTrace').AsBoolean      := aBoard.Params.OwnOrderTrace;
+    aStorage.FieldByName(stBoard + '.Params.HideOwnOrderTrace').AsBoolean      := aBoard.Params.HideOwnOrderTrace;
+
+    // 색상
+    aStorage.FieldByName(stBoard + '.Params.ColorSave').AsBoolean  := true;
+    aStorage.FieldByName(stBoard + '.Params.ColorL').AsInteger  := Integer( aBoard.Params.ColorL );
+    aStorage.FieldByName(stBoard + '.Params.ColorLx').AsInteger := Integer( aBoard.Params.ColorLx );
+    aStorage.FieldByName(stBoard + '.Params.ColorLc').AsInteger := Integer( aBoard.Params.ColorLc );
+    aStorage.FieldByName(stBoard + '.Params.ColorS').AsInteger  := Integer( aBoard.Params.ColorS );
+    aStorage.FieldByName(stBoard + '.Params.ColorSx').AsInteger := Integer( aBoard.Params.ColorSx );
+    aStorage.FieldByName(stBoard + '.Params.ColorSc').AsInteger := Integer( aBoard.Params.ColorSc );
+
+      // add
+    aStorage.FieldByName(stBoard + 'DefParams.TNSPosition').AsInteger       := aBoard.Params.TNSPosition;
+    aStorage.FieldByName(stBoard + 'DefParams.ShowAccumulFillBar').AsBoolean:= aBoard.Params.ShowAccumulFillBar;
+    aStorage.FieldByName(stBoard + 'DefParams.ShowLpVolumeColumn').AsBoolean:= aBoard.Params.ShowLpVolumeColumn ;
+
+    aStorage.FieldByName(stBoard + '.Params.UseStopCoolTime').AsBoolean    := aBoard.Params.UseStopCoolTime;
+    aStorage.FieldByName(stBoard + '.Params.StopCoolTime').AsInteger      := aBoard.Params.StopCoolTime ;
+
+    aStorage.FieldByName(stBoard + '.Params.ShowMaxQty').AsBoolean    := aBoard.Params.ShowMaxQty;
+    aStorage.FieldByName(stBoard + '.Params.MaxQty').AsInteger      := aBoard.Params.MaxQty ;
+
+    aStorage.FieldByName(stBoard + '.Params.OrdHigh').AsInteger := aBoard.Params.OrdHigh;
+    aStorage.FieldByName(stBoard + '.Params.OrdWid').AsInteger := aBoard.Params.OrdWid;          ;
+
+  end;
+end;
+
+//--------------------------------------------------------------< preferences >
+
+//
+// set 'preferences' with a dialog
+//
+procedure TOrderBoardForm.SpeedButtonPrefsClick(Sender: TObject);
+var
+  aDlg: TBoardPrefDialog;
+  i: Integer;
+begin
+  aDlg := TBoardPrefDialog.Create(Self);
+  FLeftPos := Left;
+  try
+    aDlg.Prefs := FPrefs;
+
+    if aDlg.ShowModal = mrOK then
+    begin
+      FPrefs:= aDlg.Prefs;
+
+      // apply
+      ApplyPrefs;
+    end;
+  finally
+    aDlg.Free;
+  end;
+end;
+
+procedure TOrderBoardForm.MakeBoards;
+var
+  i: Integer;
+  aBoard: TOrderBoard;
+begin
+  if FPrefs.BoardCount < FBoards.Count then
+  begin
+    for i := FBoards.Count-1 downto FPrefs.BoardCount do
+      FBoards[i].Free;
+  end else
+  if FPrefs.BoardCount > FBoards.Count then
+    for i := FBoards.Count to FPrefs.BoardCount - 1 do
+    begin
+      aBoard := NewBoard;
+      aBoard.Params := FDefParams;
+    end;
+end;
+
+procedure TOrderBoardForm.MakeBoards(iCount: integer);
+var
+  i: Integer;
+  aBoard: TOrderBoard;
+  bSelectedDel : boolean;
+begin
+  FPrefs.BoardCount := iCount;
+
+  if FPrefs.BoardCount < FBoards.Count then
+  begin
+    bSelectedDel  := false;
+    for i := FBoards.Count-1 downto FPrefs.BoardCount do
+    begin
+      if (FSelectedBoard <> nil) and (FSelectedBoard = FBoards[i]) then
+        bSelectedDel := true;
+      if FBoards[i].Symbol <> nil then
+        App.Engine.QuoteBroker.Brokers[FBoards[i].Symbol.Spec.ExchangeType].Cancel(FBoards[i], FBoards[i].Symbol);
+      FBoards[i].Free;
+    end;
+
+    if (bSelectedDel) and (FBoards.Count > 0) then
+      BoardSelect( FBoards[0] );
+
+  end else
+  if FPrefs.BoardCount > FBoards.Count then
+    for i := FBoards.Count to FPrefs.BoardCount - 1 do
+    begin
+      aBoard := NewBoard;
+      aBoard.Params := FDefParams;
+    end;
+
+end;
+
+//
+// apply 'preferences'
+//
+
+
+procedure TOrderBoardForm.ApplyPrefs;
+var
+  i: Integer;
+  aBoard: TOrderBoard;
+begin
+    // reset selected reference
+  if (FSelectedBoard <> nil)
+     and (FSelectedBoard.Index > FPrefs.BoardCount-1) then
+    FSelectedBoard := nil;
+
+  if (FSelectedBoard <> nil)
+     and (FSelectedBoard.Index > FPrefs.BoardCount-1) then
+  begin
+      // cancel canceling order
+    if FCancelPoint.Tablet = FSelectedBoard.Tablet then
+    begin
+      FCancelPoint.Tablet := nil;
+      ListViewOrders.Items.Clear;
+      CheckBox1.Checked := false;
+    end;
+
+      // cancel board selection
+    FSelectedBoard := nil;
+  end;
+
+    // board count
+  MakeBoards;
+
+  //pricesort
+  PriceSortStartEnd;
+
+    // apply common parameters
+  for i := 0 to FBoards.Count - 1 do
+  begin
+    aBoard := FBoards[i];
+    aBoard.Tablet.AutoScroll := FPrefs.AutoScroll;
+    aBoard.Tablet.TraceMouse := FPrefs.TraceMouse;
+    aBoard.Tablet.ShowQT := FPrefs.ShowQT;
+    aBoard.Tablet.OrderByMouseRB := FPrefs.OrderByMouseRB;
+
+    aBoard.Tablet.FocusOff    := FPrefs.FocusOff;
+
+    aBoard.Tablet.DbClickOrder  := FPrefs.DbClickOrder;
+    aBoard.Tablet.MouseSelect   := FPrefs.MouseSelect;
+    aBoard.Tablet.LastOrdCnl   := FPrefs.LastOrdCnl;
+
+    //pricesort
+    if (FPrefs.PriceSort) and (FPrefs.PriceType = 1) then
+      aBoard.Tablet.PriceSort := true
+    else
+      aBoard.Tablet.PriceSort := false;
+    aBoard.Tablet.PriceHoga := FPrefs.PriceHoga;
+
+    aBoard.Tablet.OrderColors[ptLong, ctFont]  := FPrefs.Colors[IDX_LONG,  IDX_ORDER, IDX_FONT];
+    aBoard.Tablet.OrderColors[ptLong, ctBG]    := FPrefs.Colors[IDX_LONG,  IDX_ORDER, IDX_BACKGROUND];
+    aBoard.Tablet.OrderColors[ptShort, ctFont] := FPrefs.Colors[IDX_SHORT, IDX_ORDER, IDX_FONT];
+    aBoard.Tablet.OrderColors[ptShort, ctBG]   := FPrefs.Colors[IDX_SHORT, IDX_ORDER, IDX_BACKGROUND];
+    aBoard.Tablet.QuoteColors[ptLong, ctFont]  := FPrefs.Colors[IDX_LONG,  IDX_QUOTE, IDX_FONT];
+    aBoard.Tablet.QuoteColors[ptLong, ctBG]    := FPrefs.Colors[IDX_LONG,  IDX_QUOTE, IDX_BACKGROUND];
+    aBoard.Tablet.QuoteColors[ptShort, ctFont] := FPrefs.Colors[IDX_SHORT, IDX_QUOTE, IDX_FONT];
+    aBoard.Tablet.QuoteColors[ptShort, ctBG]   := FPrefs.Colors[IDX_SHORT, IDX_QUOTE, IDX_BACKGROUND];
+
+    aBoard.ShowQtySet( FPrefs.NoUseQtySet );
+    aBoard.Resize;
+    //BoardSelect( aBoard );
+
+  end;
+
+    // adjust the form width
+  SetWidth;
+
+end;
+
+//
+// Set(Readjust) form width
+//
+procedure TOrderBoardForm.SetWidth;
+var
+  i, iWidth: Integer;
+begin
+
+  FResize := false;
+
+  iWidth := 0;
+
+  if SpeedButtonLeftPanel.Down then
+    iWidth := iWidth + SIDE_LEFT_PANEL_WIDTH;
+
+
+  for i := 0 to FBoards.Count - 1 do
+  begin
+    iWidth := iWidth + FBoards[i].Width;
+  end;
+
+  if SpeedButtonRightPanel.Down then
+    iWidth := iWidth + SIDE_RIGHT_PANEL_WIDTH;
+
+
+  ClientWidth := iWidth;
+  Left  := FLeftPos;
+
+  FResize := true;
+
+end;
+
+
+procedure TOrderBoardForm.sgFuturesMouseDown(Sender: TObject;
+  Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+var
+  iCol, iRow: Integer;
+  aSymbol: TSymbol;
+begin
+    // get col & row
+  with Sender as TStringGrid do
+  begin
+    MouseToCell(X,Y, iCol, iRow);
+    if (iCol = -1) or (iRow = -1)
+       or (iCol = 1) or (iRow = 0)
+       or not (Objects[iCol,iRow] is TSymbol) then Exit;
+
+      // set selection on the grid
+    Col := iCol;
+    Row := iRow;
+
+      // get selected option
+    aSymbol := Objects[iCol,iRow] as TSymbol;
+  end;
+  if aSymbol = nil then Exit;
+
+    // set symbol
+  SetSymbol(aSymbol);
+
+end;
+
+procedure TOrderBoardForm.ShowExpectFillPrice;
+//var
+//  i : integer;
+//  aSymbol : TSymbol;
+begin
+
+//  if FDataIndex = 1 then
+//  begin
+//
+//    for i := 1 to StringGridOptions.RowCount - 1 do
+//    begin
+//      aSymbol := StringGridOptions.Objects[0, i] as TSymbol;
+//      if aSymbol = nil then Continue;
+//      StringGridOptions.Cells[0,i]  := Format('%.2f', [ aSymbol.ExpectPrice ] );
+//
+//      aSymbol := StringGridOptions.Objects[2, i] as TSymbol;
+//      if aSymbol = nil then Continue;
+//      StringGridOptions.Cells[2,i]  := Format('%.2f', [ aSymbol.ExpectPrice ] );
+//    end;
+//
+//    aSymbol := gEnv.Engine.SymbolCore.Future;
+//    StaticTextFutures.Caption := Format('%.2f', [ aSymbol.ExpectPrice ] );
+//    StaticTextFutures.Color   := $00EEEEEE;
+//
+//  end
+//  else begin
+//    for i := 1 to StringGridOptions.RowCount - 1 do
+//    begin
+//      aSymbol := StringGridOptions.Objects[0, i] as TSymbol;
+//      if aSymbol = nil then Continue;
+//      StringGridOptions.Cells[0,i]  := Format('%.2f', [ aSymbol.Last ] );
+//
+//      aSymbol := StringGridOptions.Objects[2, i] as TSymbol;
+//      if aSymbol = nil then Continue;
+//      StringGridOptions.Cells[2,i]  := Format('%.2f', [ aSymbol.Last ] );
+//    end;
+//
+//    aSymbol := gEnv.Engine.SymbolCore.Future;
+//    StaticTextFutures.Caption := Format('%.2f', [ aSymbol.Last ] );
+//    StaticTextFutures.Color   := $00EEEEEE;
+//  end;
+end;
+
+procedure TOrderBoardForm.ShowPositionVolume;
+begin
+
+end;
+//----------------------------------------------< TOrderTablet event handlers >
+
+//
+// TOrderTablet.OnNewOrder handler
+//
+procedure TOrderBoardForm.BoardNewOrder(Sender: TOrderTablet;
+  aPoint1, aPoint2: TTabletPoint);
+var
+  aBoard: TOrderBoard;
+  iQty: Integer;
+begin
+    // check
+  if (Sender = nil) or (Sender.Symbol = nil)
+     or (aPoint1.AreaType <> taOrder) then Exit;
+
+    // identify board where the tablet is
+  aBoard := FBoards.Find(Sender);
+  if aBoard = nil then Exit;
+
+    // send order
+
+  NewOrder(aBoard, aPoint1, aBoard.DefQty, aPoint1.Price);
+
+end;
+
+procedure TOrderBoardForm.BoardEnvEventHander(Sender: TObject;
+  DataObj: TObject; etType: TEventType; vtType: TValueType);
+begin
+
+  if DataObj = nil then Exit;
+  case etType of
+    etQty   :  UpdateQtySet( DataObj as TQtyItem, vtType );
+    etSpace :  OtherBoardScrollToLastPrice;
+    etStop  :
+      begin
+        //BoardEventStopOrder( vtType, DataObj );
+      end;
+  end;
+end;
+
+procedure TOrderBoardForm.BoardLastCancelOrder(Sender: TOrderTablet; aPoint1,
+  aPoint2: TTabletPoint);
+var
+  aBoard: TOrderBOard;
+begin
+  if (Sender = nil) or (Sender.Symbol = nil) then Exit;
+    // identify board where the tablet is
+  aBoard := FBoards.Find(Sender);
+  if aBoard = nil then Exit;
+
+  CancelLastOrder( aBoard );
+end;
+
+procedure TOrderBoardForm.BoardNewOrder;
+begin
+  if FSelectedBoard = nil then Exit;
+
+  FSelectedBoard.Tablet.NewOrder;
+end;
+
+procedure TOrderBoardForm.OtherBoardScrollToLastPrice;
+var
+  i : integer;
+begin
+  for i := 0 to FBoards.Count - 1 do
+    FBoards[i].Tablet.ScrollToLastPrice;
+end;
+
+
+procedure TOrderBoardForm.UpdateQtySet( aData : TQtyItem; vtType : TValueType );
+var
+  i : integer;
+  aBoard : TOrderBoard;
+  aItem  : TQtyItem;
+begin
+
+  for i := 0 to FBoards.Count - 1 do
+  begin
+    aBoard  := FBoards[i];
+    if aBoard = nil then Continue;
+
+    if aBoard.QtyItem = nil then Continue;
+
+    aItem := aBoard.QtyItem;
+
+    case vtType of
+      vtAdd, vtUpdate:
+        begin
+          //aBoard.UpdateQtyCombo( aItem );
+          aBoard.SetQtySet( aItem );
+        end;
+      vtDelete:
+        begin
+          //aBoard.DeleteQtySet( aData );
+        end;
+    end;
+  end;
+
+
+end;
+//
+// TOrderTablet.OnCancelOrder handler
+//
+procedure TOrderBoardForm.batchCnlTimer(Sender: TObject);
+var
+  bRes : boolean;
+begin
+  //
+  bRes := false;
+
+//  if not gEnv.ConConfig.UseBatch then
+//  begin
+//    batchCnl.Enabled  := false;
+//    Exit;
+//  end;
+//
+//  case FBatchP.CancelType of
+//    bctAll : bRes := BatchCancelAll;
+//    bctAskAll,
+//    bctBidAll:
+//      begin
+//        if FBatchP.Board <> nil then
+//          bRes := gEnv.Engine.FormManager.BatchCancel( FBatchP.Board.Account,
+//            FBatchP.Board.Symbol, FBatchP.CancelType );
+//      end;
+//    bctAskShift,
+//    bctBidShift:
+//      begin
+//        if FBatchP.Board <> nil then
+//          bRes := gEnv.Engine.FormManager.BatchCancel( FBatchP.Board.Account,
+//            FBatchP.Board.Symbol, FBatchP.CancelType, FBatchP.ShiftPrice );
+//      end;
+//  end;
+
+  if not bRes then
+    batchCnl.Enabled  := false;
+end;
+
+function TOrderBoardForm.BatchCancelAll : boolean;
+var
+  I: Integer;
+  bRes : array of Boolean;
+begin
+
+  SetLength( bRes, FBoards.Count );
+
+//  for I := 0 to FBoards.Count - 1 do
+//    bRes[i] := gEnv.Engine.FormManager.BatchCancel( FBoards[i].Account,
+//                                                    FBoards[i].Symbol,
+//                                                    bctAll);
+  Result := false;
+
+  for i := 0 to High( bRes ) do
+    if bRes[i] then
+      Result := true;
+end;
+
+
+procedure TOrderBoardForm.BoardAcntSelect(aBoard : TOrderBoard);
+var
+//  i: Integer;
+  aAccount : TAccount;
+  aOrder   : TOrder;
+  bSend    : boolean;
+begin
+
+  if aBoard.Account = nil then Exit;
+
+  aBoard.Tablet.RefreshDraw;
+
+  bSend := false;
+//  for i := 0 to gEnv.Engine.TradeCore.Orders.ActiveOrders.Count - 1 do
+//  begin
+//    aOrder := gEnv.Engine.TradeCore.Orders.ActiveOrders[i];
+//
+//    if (aOrder.State = osActive)
+//       and (aOrder.Account = aBoard.Account)
+//       and (aOrder.Symbol = aBoard.Symbol) then
+//       begin
+//         aBoard.Tablet.DoOrder2(aOrder);
+//         bSend := true;
+//       end;
+//  end;
+
+  if bSend then
+    aBoard.Tablet.RefreshTable;
+
+  aBoard.UpdatePositionInfo;
+  aBoard.UpdateOrderLimit;
+
+end;
+
+procedure TOrderBoardForm.BoardCancelOrder(Sender: TOrderTablet; aPoint1,
+  aPoint2: TTabletPoint);
+var
+  aBoard: TOrderBOard;
+begin
+  if (Sender = nil) or (Sender.Symbol = nil) then Exit;
+
+    // identify board where the tablet is
+  aBoard := FBoards.Find(Sender);
+  if aBoard = nil then Exit;
+
+    // send order
+  CancelOrders(aBoard, aPoint1)
+  //    DoEnvLog(Self, '[OrderBoard] change order(s) sent by <Mouse Move>');
+end;
+
+procedure TOrderBoardForm.BoardChangeOrder(Sender: TOrderTablet; aPoint1,
+  aPoint2: TTabletPoint);
+var
+  aBoard: TOrderBOard;
+begin
+  if (Sender = nil) or (Sender.Symbol = nil) then Exit;
+
+    // identify board where the tablet is
+  aBoard := FBoards.Find(Sender);
+  if aBoard = nil then Exit;
+
+    // send order
+  ChangeOrder(aBoard, aPoint1, aPoint2)
+
+end;
+
+//
+// TOrderTablet.OnSelect handler
+//
+procedure TOrderBoardForm.MatchTablePoint( aBoard : TOrderboard;
+  aPoint1, aPoint2: TTabletPoint);
+var
+  i: Integer;
+  aItem: TListItem;
+  aOrder: TOrder;
+  dSum: double;
+  stPosition: String;
+  aTablet : TOrderTablet;
+  theOrders: TOrderList;
+
+  stTmp : string;
+  is1, is2, is3, is4 : int64;
+
+begin
+
+
+  aTablet := aBoard.Tablet;
+    // set order list
+  if (aPoint1.AreaType = taInfo) and ( aPoint1.RowType = trInfo ) and
+     (aPoint1.ColType = tcQuote ) then
+  begin
+    aBoard.SetPositionVolume;
+  end;
+
+  if aPoint1.AreaType <> taOrder then Exit;
+
+  theOrders := nil;
+
+  try
+    theOrders := TOrderList.Create;
+
+      // save the point
+    FCancelPoint := aPoint1;
+
+      // get order list
+    aTablet.GetOrders(aPoint1, theOrders);
+
+      // sort order list
+    theOrders.SortByAcptTime;
+
+      // change label
+    if aTablet.Symbol <> nil then
+      LabelSymbol.Caption := aTablet.Symbol.Code;
+    if aPoint1.PositionType = ptLong then
+      stPosition := 'L'
+    else
+      stPosition := 'S' ;
+    LabelPrice.Caption := stPosition + ' ' + Format('%.2f', [FCancelPoint.Price]) ;
+    LabelPrice.Font.Color := clRed;
+
+      // populate list view on the right side pane
+    dSum := 0.0;
+    ListViewOrders.Items.Clear;
+    CheckBox1.Checked := false;
+
+
+
+    for i := 0 to theOrders.Count-1 do
+    begin
+      aOrder := theOrders[i];
+      aItem := ListViewOrders.Items.Add;
+
+      aItem.Data := aOrder;
+      // 'Caption' is saved for 'check' mark
+
+      aItem.Checked := false;
+      aItem.SubItems.Add(FloatToStr(aOrder.Side * aOrder.ActiveQty));
+      aItem.SubItems.Add(FloatToStr(i));
+
+        // add
+      dSum := dSum + aOrder.ActiveQty;
+    end;
+
+      // set default volumes
+    EditCancelQty.Text := FloatToStr(dSum);
+    LabelTotalQty.Caption := '/ ' + FloatToStr(dSum);
+
+      // todo: reset click?
+    for i := 0 to FBoards.Count - 1 do
+      if FBoards[i].Tablet <> aTablet then
+        FBoards[i].Tablet.ResetClick;
+  finally
+    theOrders.Free;
+  end;
+
+end;
+
+
+procedure TOrderBoardForm.BoardSelectCell(Sender: TOrderTablet;
+  aPoint1, aPoint2: TTabletPoint);
+var
+  i: Integer;
+  aItem: TListItem;
+  aOrder: TOrder;
+  dSum: double;
+  stPosition: String;
+  aBoard: TOrderBoard;
+  theOrders: TOrderList;
+
+begin
+
+    // check
+  if Sender = nil then Exit;
+
+    // get board
+  aBoard := FBoards.Find(Sender);
+  if aBoard = nil then Exit;
+
+    // select board
+  BoardSelect(aBoard);
+
+    // set order list
+  if (aPoint1.AreaType = taInfo) and ( aPoint1.RowType = trInfo ) and
+     (aPoint1.ColType = tcQuote ) then
+  begin
+    aBoard.SetPositionVolume;
+  end;
+
+  if aPoint1.AreaType <> taOrder then Exit;
+  theOrders := nil;
+
+  try
+    theOrders := TOrderList.Create;
+
+      // save the point
+    FCancelPoint := aPoint1;
+
+      // get order list
+    Sender.GetOrders(aPoint1, theOrders);
+
+      // sort order list
+    theOrders.SortByAcptTime;
+
+      // change label
+    if Sender.Symbol <> nil then
+      LabelSymbol.Caption := Sender.Symbol.Code;
+    if aPoint1.PositionType = ptLong then
+      stPosition := 'L'
+    else
+      stPosition := 'S' ;
+    LabelPrice.Caption := stPosition + ' ' + Format('%.2f', [FCancelPoint.Price]) ;
+    LabelPrice.Font.Color := clRed;
+
+      // populate list view on the right side pane
+    dSum := 0;
+    ListViewOrders.Items.Clear;
+    CheckBox1.Checked := false;
+
+
+    for i := 0 to theOrders.Count-1 do
+    begin
+      aOrder := theOrders[i];
+      aItem := ListViewOrders.Items.Add;
+
+      aItem.Data := aOrder;
+      // 'Caption' is saved for 'check' mark
+
+      aItem.Checked := false;
+      aItem.SubItems.Add(FloatToStr(aOrder.Side * aOrder.ActiveQty));
+      aItem.SubItems.Add(FloatToStr(i));
+
+        // add
+      dSum := dSum + aOrder.ActiveQty;
+    end;
+
+      // set default volumes
+    EditCancelQty.Text := FloatToStr(dSum);
+    LabelTotalQty.Caption := '/ ' + FloatToStr(dSum);
+
+      // todo: reset click?
+    for i := 0 to FBoards.Count - 1 do
+      if FBoards[i].Tablet <> Sender then
+        FBoards[i].Tablet.ResetClick;
+  finally
+    theOrders.Free;
+  end;
+
+end;
+
+//--------------------------------------------------------------< send orders >
+
+//
+// send a new order
+// here, iVolume is signed integer
+//
+
+function TOrderBoardForm.NewOrder(aBoard: TOrderBoard; aPoint: TTabletPoint;
+  dVolume: double; dPrice: Double): TOrder;
+var
+  iRes, iSide  : integer;
+begin
+  Result := nil;
+
+  if FPrefs.NoUseQtySet then
+  begin
+    ShowMessage('수량셋 숨김 상태에서는 신규 주문 불가');
+    exit;
+  end;
+
+    // check
+  if (aBoard.Account = nil) or (aBoard = nil) or (aBoard.Tablet.Symbol = nil)
+      or CheckZero(dVolume ) then
+  begin
+    Beep;
+    Exit;
+  end;
+
+    //
+  Application.ProcessMessages;
+
+    // confirm
+  if FPrefs.ConfirmOrder then
+    if  MessageDlg(Format('(%s,%f,%.2f',
+        [aBoard.Tablet.Symbol.Code, dVolume, dPrice]) + ')을 전송하시겠습니까?',
+      mtConfirmation, [mbOK, mbCancel], 0) = mrCancel then Exit;
+
+    // check if 'clearorder' flag set
+  if aBoard.ClearOrder and (aBoard.OrderType = aPoint.PositionType) then
+  begin
+    Beep;
+    Exit;
+  end;
+
+  iSide := ifThen( aPoint.PositionType = ptLong, 1, -1);
+
+  if not App.Engine.TradeCore.CheckLimitOrder( aBoard.Account, aBoard.Symbol, iSide, dPrice, dVolume, ORD_NORMAL) then
+  begin
+    ShowMessage('주문 제한에 걸림');
+    Exit;
+  end;
+
+  Result  := App.Engine.TradeCore.Orders[aBoard.Symbol.Spec.ExchangeType].NewOrder(
+    aBoard.Account, aBoard.Symbol,
+    iSide, dVolume, pcLimit, dPrice, tmGTC );
+
+  if Result <> nil then
+  begin
+    //aOrder.ReduceOnly := cbReduce.Checked;
+    App.Engine.TradeBroker.Send( Result );
+  end;
+
+end;
+
+function TOrderBoardForm.ChangeOrder(aBoard: TOrderBoard; aPoint1,
+  aPoint2: TTabletPoint): Integer;
+var
+  i: Integer;
+  pOrder, aOrder: TOrder;
+  //iMaxQty, iQty: Integer ;
+  aList : TList;
+
+  //stTmp : string;
+  //iSave : integer;
+begin
+
+  Result := 0;
+    // check
+  if  (aBoard = nil) or (aBoard.Tablet.Symbol = nil) then Exit;
+  if (aBoard.Tablet.Symbol.Spec.ExchangeType <> ekBinance) or
+    (aBoard.Tablet.Symbol.Spec.ExApiType <> eaFutUsdt) then Exit;
+
+  if aBoard.Account = nil then Exit;
+
+ FTargetOrders.Clear;
+
+    // get target orders to change
+  if aBoard.Tablet.GetOrders(aPoint1, FTargetOrders) = 0 then Exit;
+
+  try
+    // send changed orders for selected orders
+  if (aBoard.Tablet.Symbol = FCancelPoint.Tablet.Symbol)
+     and (aPoint1.Tablet = FCancelPoint.Tablet)
+     and (aPoint1.Index = FCancelPoint.Index)
+     and (aPoint1.PositionType = FCancelPoint.PositionType) then
+  begin
+
+//    iMaxQty := Max(0, StrToIntDef(EditCancelQty.Text, 0));
+//
+//    if iMaxQty = 0 then Exit;
+//
+//    iQty := 0;
+//
+//    iSave := ListViewOrders.Items.Count;
+
+    try
+      aList := TList.Create;
+
+      for I := 0 to ListViewOrders.Items.Count - 1 do
+      begin
+        aOrder := TOrder(ListViewOrders.Items[i].Data);
+          // check
+        if (aOrder = nil) or (aOrder.OrderType <> otNormal) or ( aOrder.Modify )
+           or (aOrder.ActiveQty = 0) then Continue;
+        aList.Add( aORder);
+      end;
+
+      for i := 0 to aList.Count-1 do
+      begin
+          aOrder := TOrder(aList.Items[i]);
+          // check
+          if (aOrder = nil) or (aOrder.OrderType <> otNormal)
+             or (CheckZero(aOrder.ActiveQty)) then Continue;
+
+          App.Engine.TradeCore.Orders[ aOrder.Account.ExchangeKind].NewChangeOrder(aOrder, aPoint2.Price);
+          App.Engine.TradeBroker.Send( aOrder );
+      end;
+    finally
+      aList.Free;
+    end;
+
+  end else
+    // -- 선택셀이 아닐 경우는 전체 정정
+  begin
+    for i := 0 to FTargetOrders.Count-1 do
+    begin
+      aOrder := FTargetOrders[i];
+
+      if (aOrder.OrderType = otNormal) and (aOrder.State = osActive) then
+      begin
+          App.Engine.TradeCore.Orders[ aOrder.Account.ExchangeKind].NewChangeOrder(aOrder, aPoint2.Price);
+          App.Engine.TradeBroker.Send( aOrder );
+      end;
+    end;
+  end;
+
+  except
+//    stTmp := Format('%d, %d, %d', [ i, ListViewOrders.Items.Count, iSAve]);
+//    gEnv.EnvLog( WIN_ERR, stTmp );
+  end;
+
+end;
+
+procedure TOrderBoardForm.CheckBox1Click(Sender: TObject);
+var
+  i: Integer;
+  dSum : double;
+  aOrder: TOrder;
+begin
+  dSum := 0;
+
+  for i:=0 to ListViewOrders.Items.Count-1 do
+  begin
+    ListViewOrders.Items[i].Checked := CheckBox1.Checked;
+
+    if ListViewOrders.Items[i].Checked  then
+    begin
+      aOrder := TOrder(ListViewOrders.Items[i].Data);
+      dSum := dSum + aOrder.ActiveQty;
+    end;
+  end;
+    //
+  EditCancelQty.Text := FloatToStr(dSum);
+
+end;
+
+procedure TOrderBoardForm.CheckOrientation(aBoard: TOrderBoard);
+var
+  i : integer;
+
+begin
+  for i := 0 to FBoards.Count- 1 do
+  begin
+    if FBoards[i] = aBoard then Continue;
+    FBoards[i].Params := FBoards[i].Params;
+  end;
+end;
+
+//
+// send cancel order, called from TOrderTablet event handler
+//
+
+function TOrderBoardForm.CancelLastOrder( aBoard : TOrderBoard ) : integer;
+var
+  i, iQty, iOrderQty: Integer;
+//  aTicket: TOrderTicket;
+  aOrder, pOrder: TOrder;
+begin
+  Result := 0;
+
+  if FPrefs.NoUseQtySet then
+  begin
+    ShowMessage('수량셋 숨김 상태에서는 취소 주문 불가');
+    exit;
+  end;
+
+  if (aBoard = nil) or (aBoard.Tablet.Symbol = nil) then Exit;
+
+  if aBoard.Account = nil then Exit;
+
+    // confirm
+  if FPrefs.ConfirmOrder then
+    if MessageDlg('주문을 취소하시겠습니까?',
+      mtConfirmation, [mbOK, mbCancel], 0) = mrCancel then Exit;
+
+    // init
+  iQty := 0;
+  aOrder := nil;
+
+//  for i := gEnv.Engine.TradeCore.Orders.ActiveOrders.Count-1 downto 0 do
+//  begin
+//    aOrder := gEnv.Engine.TradeCore.Orders.ActiveOrders.Orders[i];
+//    if aOrder = nil then Continue;
+//
+//    if ( aOrder.Symbol = aBoard.Tablet.Symbol) and
+//     ( aOrder.Account = aBoard.Account ) and
+//     ( aOrder.State = osActive ) then
+//     begin
+//      if (aOrder = nil) or (aOrder.OrderType <> otNormal)
+//        or (aOrder.ActiveQty = 0) then  begin
+//        aOrder := nil;
+//        Continue      ;
+//      end
+//      else
+//        break;
+//     end;
+//  end;
+//
+//
+//  if aORder <> nil then begin
+//    aTicket := gEnv.Engine.TradeCore.OrderTickets.New(Self);
+//    pOrder  := gEnv.Engine.TradeCore.Orders.NewCancelOrderEx(aOrder, aOrder.ActiveQty, aTicket);
+//    if pOrder <> nil then
+//      Result := gEnv.Engine.TradeBroker.Send(aTicket);
+//  end;
+
+
+end;
+
+function TOrderBoardForm.CancelNearOrder(aBoard: TOrderBoard; bAsk : boolean): integer;
+var
+  aType: TPositionType;
+  aOrder: TOrder;
+//  aTicket: TOrderTicket;
+begin
+  Result := 0;
+    // check
+  if (aBoard = nil) or (aBoard.Tablet.Symbol = nil) then Exit;
+
+  if aBoard.Account = nil then Exit;
+
+  if bAsk then
+    aType := ptShort
+  else
+    aType := ptLong;
+
+  aOrder := aBoard.Tablet.GetOrders( aType );
+
+  if (aOrder <> nil) and ( aOrder.ActiveQty > 0) then
+  begin
+    if bAsk then
+      aType := ptLong
+    else
+      aType := ptShort;
+
+//
+//    aTicket := gEnv.Engine.TradeCore.OrderTickets.New(Self);
+//    gEnv.Engine.TradeCore.Orders.NewCancelOrderEx(aOrder, aOrder.ActiveQty, aTicket);
+//    gEnv.Engine.TradeBroker.Send(aTicket);
+  end;
+
+end;
+
+function TOrderBoardForm.CancelOrders(aBoard: TOrderBoard; aPoint: TTabletPoint;
+  iMaxQty: Integer): Integer;
+var
+  i : integer;
+  dQty, dOrderQty, dMaxQty: double;
+
+  aOrder: TOrder;
+  aDummy: TTabletPoint ;
+begin
+  Result := 0;
+
+  if FPrefs.NoUseQtySet then
+  begin
+    ShowMessage('수량셋 숨김 상태에서는 취소 주문 불가');
+    exit;
+  end;
+
+    // check
+  if (aBoard = nil) or (aBoard.Tablet.Symbol = nil) then Exit;
+
+  if aBoard.Account = nil then Exit;
+
+    // confirm
+  if FPrefs.ConfirmOrder then
+    if MessageDlg('주문을 취소하시겠습니까?',
+      mtConfirmation, [mbOK, mbCancel], 0) = mrCancel then Exit;
+
+    // init
+  dQty := 0;
+
+    // clear order list
+  FTargetOrders.Clear;
+
+    // get order list
+  if aBoard.Tablet.GetOrders(aPoint, FTargetOrders) = 0 then Exit;
+
+    // get a order ticket
+
+  if FCancelPoint.Tablet = nil then
+    BoardSelectCell( aBoard.Tablet,  aPoint, aDummy );
+    //FCancelPoint  := aPoint;
+    // if canceling for the selected cell, send cancel orders for
+    // only selected orders
+  if (aBoard.Tablet.Symbol = FCancelPoint.Tablet.Symbol)
+     and (aPoint.Tablet = FCancelPoint.Tablet)
+     and (aPoint.Index = FCancelPoint.Index)
+     and (aPoint.PositionType = FCancelPoint.PositionType) then
+  begin
+    dMaxQty := Max(0, StrToFloatDef(EditCancelQty.Text, 0));
+    if dMaxQty = 0 then Exit;
+
+    for i := 0 to ListViewOrders.Items.Count-1 do
+    begin
+     // if ListViewOrders.Items[i].Checked then
+     // begin
+        aOrder := TOrder(ListViewOrders.Items[i].Data);
+
+          // check
+        if (aOrder = nil) or (aOrder.OrderType <> otNormal)
+           or (CheckZero(aOrder.ActiveQty)) then Continue;
+
+        App.Engine.TradeCore.Orders[ aOrder.Account.ExchangeKind].NewCancelOrder( aOrder, aOrder.ActiveQty);
+        App.Engine.TradeBroker.Send( aOrder );
+
+     // end;
+    end;
+  end else
+    // cancel all if it not a selected cell
+  begin
+    for i := 0 to FTargetOrders.Count-1 do
+    begin
+      aOrder := FTargetOrders[i];
+
+      if (aOrder.OrderType = otNormal) and (aOrder.State = osActive) and (not aOrder.Modify) then
+      begin
+        App.Engine.TradeCore.Orders[ aOrder.Account.ExchangeKind].NewCancelOrder( aOrder, aOrder.ActiveQty);
+        App.Engine.TradeBroker.Send( aOrder );
+      end;
+    end;
+  end;
+    // send the order
+end;
+
+//
+// send cancel orders, called from the Popup menu
+//
+function TOrderBoardForm.CancelOrders(aBoard: TOrderBoard;
+  aTypes: TPositionTypes): Integer;
+var
+  i, iQty: Integer;
+//  aTicket: TOrderTicket;
+  aOrder: TOrder;
+begin
+  Result := 0;
+
+  if FPrefs.NoUseQtySet then
+  begin
+    ShowMessage('수량셋 숨김 상태에서는 취소 주문 불가');
+    exit;
+  end;
+
+    // check
+  if (aBoard = nil) or (aBoard.Tablet.Symbol = nil) then Exit;
+
+  if aBoard.Account = nil then Exit;
+
+    // init
+  iQty := 0;
+
+    // clear list
+  FTargetOrders.Clear;
+
+    // get orders from the tablet
+  if aBoard.Tablet.GetOrders(aTypes, FTargetOrders) = 0 then Exit;
+
+    // generate orders
+  for i := 0 to FTargetOrders.Count - 1 do
+  begin
+    aOrder := FTargetOrders[i];
+
+//    if (aOrder.OrderType = otNormal) and (aOrder.State = osActive) then begin
+//        // get a ticket
+//      aTicket := gEnv.Engine.TradeCore.OrderTickets.New(Self);
+//      gEnv.Engine.TradeCore.Orders.NewCancelOrderEx(aOrder, aOrder.ActiveQty, aTicket);
+//      gEnv.Engine.TradeBroker.Send(aTicket);
+//    end;
+  end;
+
+    // send
+  //Result := gEnv.Engine.TradeBroker.Send(aTicket);
+end;
+
+function TOrderBoardForm.CancelOrders(aTablet: TOrderTablet;
+  aTypes: TPositionTypes): Integer;
+  var
+    aBoard : TOrderBoard;
+begin
+
+  result := -1;
+
+  if FPrefs.NoUseQtySet then
+  begin
+    ShowMessage('수량셋 숨김 상태에서는 취소 주문 불가');
+    exit;
+  end;
+
+  aBoard := FBoards.Find(aTablet);
+  if aBoard = nil then Exit;
+
+//  if gEnv.ConConfig.UseBatch then
+//  begin
+//    if ptLong in aTypes then
+//      FBatchP.CancelType  := bctBidAll
+//    else
+//      FBatchP.CancelType  := bctAskAll;
+//
+//    FBatchP.ShiftPrice  := 0;
+//    FBatchP.Board       := aBoard;
+//
+//    batchCnlTimer( nil );
+//    batchCnl.Enabled  := true;
+//  end
+//  else
+    CancelOrders( aBoard, aTypes );
+
+  result := 1;
+end;
+
+procedure TOrderBoardForm.CenterAlign;
+var
+  i : integer;
+begin
+  for i := 0 to FBoards.Count - 1 do
+    FBoards[i].Tablet.ScrollToLastPrice;
+end;
+
+//------------------------------------------------------------< trade events >
+
+procedure TOrderBoardForm.TradeBrokerEventHandler(Sender, Receiver: TObject;
+  DataID: Integer; DataObj: TObject; EventID: TDistributorID);
+var
+  iID: Integer;
+begin
+  if (Receiver <> Self) or (DataID <> TRD_DATA) then Exit;
+
+  case Integer(EventID) of
+      // order events
+    ORDER_NEW,
+    ORDER_ACCEPTED,
+    ORDER_REJECTED,
+//    ORDER_CHANGED,
+//    ORDER_CONFIRMED,
+//    ORDER_CONFIRMFAILED,
+    ORDER_CANCELED,
+    ORDER_FILLED: DoOrder(DataObj as TOrder, EventID);
+      // fill events
+    FILL_NEW: ;
+      // position events
+    POSITION_NEW,
+    POSITION_UPDATE: DoPosition(DataObj as TPosition, EventID);
+  end;
+end;
+
+
+
+procedure TOrderBoardForm.udControlClick(Sender: TObject; Button: TUDBtnType);
+var
+  i,iCount : Integer;
+  aBoard : TOrderBoard;
+begin
+  FLeftPos  := Left;
+  iCount := FBoards.Count;
+
+  case Button of
+    btNext: inc( iCount );
+    btPrev:
+      begin
+        if FBoards.Count = 1 then
+          Exit;
+        dec( iCount );
+      end;
+  end;
+
+  MakeBoards( iCount );
+
+    // apply common parameters
+  for i := 0 to FBoards.Count - 1 do
+  begin
+    aBoard := FBoards[i];
+    aBoard.Tablet.AutoScroll := FPrefs.AutoScroll;
+    aBoard.Tablet.TraceMouse := FPrefs.TraceMouse;
+    aBoard.Tablet.ShowQT := FPrefs.ShowQT;
+    aBoard.Tablet.OrderByMouseRB := FPrefs.OrderByMouseRB;
+
+    if (FPrefs.PriceSort) and (FPrefs.PriceType = 1) then
+      aBoard.Tablet.PriceSort := true
+    else
+      aBoard.Tablet.PriceSort := false;
+    aBoard.Tablet.PriceHoga := FPrefs.PriceHoga;
+
+    aBoard.Tablet.OrderColors[ptLong, ctFont]  := FPrefs.Colors[IDX_LONG,  IDX_ORDER, IDX_FONT];
+    aBoard.Tablet.OrderColors[ptLong, ctBG]    := FPrefs.Colors[IDX_LONG,  IDX_ORDER, IDX_BACKGROUND];
+    aBoard.Tablet.OrderColors[ptShort, ctFont] := FPrefs.Colors[IDX_SHORT, IDX_ORDER, IDX_FONT];
+    aBoard.Tablet.OrderColors[ptShort, ctBG]   := FPrefs.Colors[IDX_SHORT, IDX_ORDER, IDX_BACKGROUND];
+    aBoard.Tablet.QuoteColors[ptLong, ctFont]  := FPrefs.Colors[IDX_LONG,  IDX_QUOTE, IDX_FONT];
+    aBoard.Tablet.QuoteColors[ptLong, ctBG]    := FPrefs.Colors[IDX_LONG,  IDX_QUOTE, IDX_BACKGROUND];
+    aBoard.Tablet.QuoteColors[ptShort, ctFont] := FPrefs.Colors[IDX_SHORT, IDX_QUOTE, IDX_FONT];
+    aBoard.Tablet.QuoteColors[ptShort, ctBG]   := FPrefs.Colors[IDX_SHORT, IDX_QUOTE, IDX_BACKGROUND];
+  end;
+
+  SetWidth;
+
+end;
+
+procedure TOrderBoardForm.DoAccount(aAccount: TAccount; EventID: TDistributorID);
+begin
+
+    // set account information
+  SetAccountInfo;
+end;
+
+procedure TOrderBoardForm.DoOrder(aOrder: TOrder; EventID: TDistributorID);
+var
+  i: Integer;
+  aBoard: TOrderBoard;
+  aDummy: TTabletPoint;
+  stSpeed: String;
+  iSpeed: Integer;
+
+  OrderSpeed : Integer;
+  bLeft, bRight : Boolean ;
+
+  stTmp : string;
+  is1, is2, is3, is4 : int64;
+
+begin
+
+
+  if {(FAccount = nil) or} (aOrder = nil)
+     //or (aOrder.Account <> FAccount)
+     or (aOrder.PriceControl in [pcMarket]) then Exit;
+
+
+    // apply this order the every board
+  for i := 0 to FBoards.Count - 1 do
+  begin
+    aBoard := FBoards[i];
+
+    if aBoard.Symbol <> aOrder.Symbol then Continue;
+    if aBoard.Account<> aOrder.Account then Continue;
+
+      // apply to the tablet
+    aBoard.Tablet.DoOrder(aOrder);
+
+      // order speed
+    if (EventID in [ORDER_NEW, ORDER_ACCEPTED])
+      and (aOrder.OrderType = otNormal)
+      and (aOrder.State = osActive) then
+    begin
+      stSpeed := aBoard.OrderSpeed;
+
+      iSpeed := timeGetTime - aBoard.SentTime;
+
+      if iSpeed < 2000 then
+        stSpeed := Format('%d', [iSpeed])
+      else
+        stSpeed := aBoard.OrderSpeed;
+        //
+      aBoard.OrderSpeed := stSpeed;
+        //
+      if aBoard = FSelectedBoard then
+        GridInfo.Cells[1, 14] := stSpeed;
+    end;
+      // update order limit
+    aBoard.UpdateOrderLimit;
+
+      // update order list if required
+    if aBoard.Tablet = FCancelPoint.Tablet then
+    begin
+      MatchTablePoint( aBoard, FCancelPoint, aDummy);
+
+    end;
+
+  end;
+
+
+end;
+
+procedure TOrderBoardForm.DoPosition(aPosition: TPosition; EventID: TDistributorID);
+var
+  aBoard: TOrderBoard;
+  i: Integer;
+begin
+  //if (FAccount = nil) or (aPosition.Account <> FAccount) then Exit;
+
+    // update position volume on symbol list area
+  SetPosition(aPosition);
+
+    // update position info for the board
+  for i := 0 to FBoards.Count - 1 do
+  begin
+    aBoard := FBoards[i];
+
+    if (aBoard.Symbol = aPosition.Symbol) and (aBoard.Account = aPosition.Account )  then
+    begin
+      aBoard.Position := aPosition;
+      aBoard.UpdatePositionInfo;
+      aBoard.UpdateOrderLimit;
+      //break;
+    end;
+  end;
+
+  UpdateTotalPl;
+end;
+
+//-------------------------------------------------------------< quote evnets >
+
+
+
+procedure TOrderBoardForm.QuoteBrokerEventHandler(Sender, Receiver: TObject;
+      DataID: Integer; DataObj: TObject; EventID: TDistributorID);
+var
+  i: Integer;
+  aBoard: TOrderBoard;
+  stTime: String;
+  aQuote: TQuote;
+begin
+  if DataObj = nil then Exit;
+
+  aQuote := DataObj as TQuote;
+
+  for i := 0 to FBoards.Count - 1 do
+  begin
+    aBoard := FBoards[i];
+
+    if aBoard.Quote <> aQuote then Continue;
+
+    //aBoard.CheckJackPotOrder( aQuote );
+
+    case aQuote.LastEvent of
+      qtTimeNSale, qtCustom:
+        begin
+            // if it's the first feed, initialize tablet
+          if not aBoard.Tablet.Ready then
+            aBoard.Tablet.Ready := True;
+
+            //
+          aBoard.TNSCount := aBoard.TNSCount + 1;
+
+            // apply to the tablet
+          aBoard.Tablet.UpdateQuote;
+          aBoard.Tablet.UpdatePrice;
+          if aQuote.LastEvent = qtTimeNSale then
+            aBoard.TickPainter.Update;
+
+          if aBoard.Position <> nil then begin
+            //aBoard.Position.DoQuote( aBoard.Quote );
+            aBoard.UpdateEvalPL;
+            UpdateTotalPl;
+          end;
+
+          if aBoard.TNSCount <= 1 then
+            aBoard.Tablet.ScrollToLastPrice;
+
+            // display info
+//          if (aBoard = FSelectedBoard) and ( SpeedButtonRightPanel.Down )then
+//          begin
+//              // O,H,L
+//            if (aQuote.Symbol <> nil) and (aQuote.Symbol.Spec <> nil) then
+//            begin
+//              GridInfo.Cells[1,2] := Format('%.*n', [aQuote.Symbol.Spec.Precision, aQuote.Symbol.DayOpen]);
+//              GridInfo.Cells[1,3] := Format('%.*n', [aQuote.Symbol.Spec.Precision, aQuote.Symbol.DayHigh]);
+//              GridInfo.Cells[1,4] := Format('%.*n', [aQuote.Symbol.Spec.Precision, aQuote.Symbol.DayLow]);
+//              GridInfo.Cells[1,5] := Format('%.*n', [aQuote.Symbol.Spec.Precision, aQuote.Symbol.Last]);
+//
+//              GridInfo.Cells[1,15] := Format('%.1f', [aQuote.Symbol.DelayMS / 1000.0]);
+//            end;
+//              // time & sale
+//            if aQuote.Symbol.Sales.Last <> nil then
+//              GridInfo.Cells[1, 6] := Format('%.0n',[aQuote.Symbol.Sales.Last.DayVolume*1.0]);
+//          end;
+
+        end;
+      qtMarketDepth:
+        begin
+          aBoard.Tablet.UpdateQuote;
+          aBoard.TickPainter.Update2;
+//          aBoard.HogaPainter.Update;
+        end;
+    end;
+
+    if (aBoard = FSelectedBoard) and ( SpeedButtonRightPanel.Down ) then
+    begin
+//      if aQuote.Symbol.Spec.Market = mtElw then
+//        SetInfo( aBoard )
+//      else if aQuote.Symbol.Spec.Market = mtOption then
+//        SetOptionInfo(aBoard)
+//      else if aQuote.Symbol.Spec.Market = mtFutures then
+        SetInfo( aBoard );
+
+    end;
+  end;
+end;
+
+//--------------------------------------------------------------< ZAPR events >
+
+procedure TOrderBoardForm.MinPriceProc(Sender: TObject);
+var
+  bLeft, bRight : Boolean ;
+begin
+{todo:
+  // 2007.06.19
+  exit ;
+
+
+  bLeft := false ;
+  bRight := false ;
+  if  FZaprServices[stLeft].Symbol = FSymbols[stLeft] then bLeft := true ;
+  if  FZaprServices[stRight].Symbol = FSymbols[stRight] then bRight := true ;
+  //
+  if bLeft = true then
+  begin
+    if (not FPrefs.VisibleZapr) or (not FZaprServices[stLeft].Ready) then
+    begin
+      FOrderTablets[stLeft].MinPrice := -1 ;    // reset min
+    end else
+    begin
+      FOrderTablets[stLeft].MinPrice := FZaprServices[stLeft].MinPrice;
+    end;
+  end ;
+  //
+  if bRight = true then
+  begin
+    if (not FPrefs.VisibleZapr) or (not FZaprServices[stRight].Ready) then
+    begin
+      FOrderTablets[stRight].MinPrice := -1 ;    // reset min
+    end else
+    begin
+      FOrderTablets[stRight].MinPrice := FZaprServices[stRight].MinPrice;
+    end;
+  end ;
+}
+end;
+
+
+
+procedure TOrderBoardForm.MaxPriceProc(Sender: TObject);
+var
+  bLeft, bRight : Boolean ;
+begin
+{todo:
+  // 2007.06.19
+  exit ;
+
+  bLeft := false ;
+  bRight := false ;
+  if  FZaprServices[stLeft].Symbol = FSymbols[stLeft] then bLeft := true ;
+  if  FZaprServices[stRight].Symbol = FSymbols[stRight] then bRight := true ;
+  //
+    if bLeft = true then
+  begin
+    if (not FPrefs.VisibleZapr) or (not FZaprServices[stLeft].Ready) then
+    begin
+      FOrderTablets[stLeft].MaxPrice := -1 ;    // reset min
+    end else
+    begin
+      FOrderTablets[stLeft].MaxPrice := FZaprServices[stLeft].MaxPrice;
+    end;
+  end ;
+  //
+  if bRight = true then
+  begin
+    if (not FPrefs.VisibleZapr) or (not FZaprServices[stRight].Ready) then
+    begin
+      FOrderTablets[stRight].MaxPrice := -1 ;    // reset min
+    end else
+    begin
+      FOrderTablets[stRight].MaxPrice := FZaprServices[stRight].MaxPrice;
+    end;
+  end ;
+}
+end;
+
+//----------------------------------------------------------< observer events >
+  {todo:
+
+procedure TOrderBoardForm.ObserverProc(Sender, Receiver, DataObj: TObject;
+  iBroadcastKind: Integer; btValue: TBroadcastType);
+//var
+//  aItem : TObserverItem;
+begin
+  if (Receiver <> Self) or (DataObj = nil) then
+  begin
+    gLog.Add(lkError, '더블주문창', '옵저버 컨트롤', 'Data Integrity Failure');
+    Exit;
+  end;
+
+  // 더블 주문과 관련 있는 정보
+  if (iBroadcastKind = CFID_DOORDER) or
+     (iBroadcastKind = CFID_EFORDER) then
+  begin
+    aItem := DataObj as TObserverItem;
+
+    case aItem.ActionID of
+      ACID_CENTER :
+        begin
+          FOrderTablets[stLeft].MoveToPrice;
+          FOrderTablets[stRight].MoveToPrice;
+        end;
+    end;
+
+  end;
+end;
+  }
+
+//-------------------------------------------------------------< set position >
+
+//
+// set an individual position
+//
+procedure TOrderBoardForm.SetPosition(aPosition: TPosition);
+var
+  aFuture: TFuture;
+//  aOptionTree: TOptionTree;
+  i: Integer;
+begin
+
+//  if FDataIndex <> 0 then Exit;
+//
+//  if (aPosition = nil)
+//     or (aPosition.Symbol = nil)
+//     or (aPosition.Symbol.Spec = nil)
+//     {or (aPosition.Account <> FAccount)} then Exit;
+//
+////  if aPosition.Account <> FAccount then Exit;
+//
+//  case aPosition.Symbol.Spec.Market of
+//    mtSpot:
+//      if (FUnderlying <> nil) and (FUnderlying = aPosition.Symbol) then
+//      begin
+//        StaticTextUnderlying.Caption := FloatToStr(aPosition.Volume);
+//      end;
+//    mtFutures:
+//      if (FFutures <> nil) and (FFutures = aPosition.Symbol) then
+//      begin
+//        StaticTextFutures.Caption := FloatToStr(aPosition.Volume);
+//
+//        if (aPosition.ActiveBuyOrderVolume + aPosition.ActiveSellOrderVolume) > 0 then
+//          StaticTextFutures.Color := $00FFE7B3
+//        else
+//          StaticTextFutures.Color := $00EEEEEE;
+//      end;
+//  end;
+end;
+
+//
+// set option grid position  --
+// do not use
+procedure TOrderBoardForm.SetOptionPositions;
+var
+  i: Integer;
+  aPosition: TPosition;
+begin         {
+  for i:=1 to StringGridOptions.RowCount-1 do
+  begin
+      // init
+    StringGridOptions.Cells[0,i]:= '';
+    StringGridOptions.Cells[2,i]:= '';
+
+      // set call
+    aPosition := gEnv.Engine.TradeCore.Positions.Find(FAccount,
+                                            TSymbol(StringGridOptions.Objects[0,i]));
+    if aPosition <> nil then
+      StringGridOptions.Cells[0,i]:= IntToStr(aPosition.Volume);
+
+      // set put
+    aPosition := gEnv.Engine.TradeCore.Positions.Find(FAccount,
+                                            TSymbol(StringGridOptions.Objects[2,i]));
+    if aPosition <> nil then
+      StringGridOptions.Cells[2,i]:=  IntToStr(aPosition.Volume);
+  end;   }
+end;
+
+procedure TOrderBoardForm.UpdateTotalPl;
+var
+  i , j : integer;
+  aAccount : TAccount ;
+  aPosition : TPosition;
+  dFut , dOpt , dS, dTot : double;  // 평가손익
+  dFPl, dOPl, dSPl , dTPl : double; // 실현손익
+
+  stFee, stPl, stTpl : string;
+begin
+  dFut := 0.0;
+  dOpt := 0.0;
+  dTot := 0.0;
+  dS   := 0.0;
+  dFPl := 0.0;
+  dOPl := 0.0;
+  dSPl := 0.0;
+  dTPl := 0.0;
+
+//  aAccount := FAccount;
+//  dTot := dTot
+//      + gEnv.Engine.TradeCore.Positions.GetMarketPl( aAccount, dFut, dOpt, dS  );
+//
+//
+//  stPl  := Format( '%10.0n', [ dTot / 1000 ]);// - aAccount.GetFee ]);
+//  stFee := Format( '%5.0n', [ aAccount.GetFee / 1000]);
+//  stTpl := Format( '%10.n', [ ( dTot / 1000) - ( aAccount.GetFee / 1000 )]);
+//  Caption := 'MO  PL : ' + stPl +'    Fee : ' + stFee + '  : ' + stTpl;
+
+
+  if FSelectedBoard <> nil then
+  begin
+    if FSelectedBoard.Symbol <> nil then
+    begin
+//      if FSelectedBoard.Symbol.Spec <> nil then
+//        if FSelectedBoard.Symbol.Spec.Market <> mtElw then
+//        begin
+//          //GridInfo.Cells[1,PlRow] := Format('%.0n', [dTot / 1000]);
+//          //GridInfo.Cells[1,FeeRow] := Format('%.0n', [aAccount.GetFee / 1000]);
+//        end;
+    end;
+  end;
+end;
+
+
+//-------------------------------------------------------------------< tablet >
+
+function TOrderBoardForm.NewBoard: TOrderBoard;
+begin
+  Result := FBoards.New;
+  Result.ShowQtySet( FPrefs.NoUseQtySet );
+
+  if Result <> nil then
+  begin
+    Result.OnSelect := BoardSelect;
+    Result.OnSetup := BoardSetup;
+    Result.OnSymbolSelect := SymbolSelect;
+
+      // popup menu for order tablet
+    Result.Tablet.PopOrders := PopupMenuOrders;
+
+      // assign event handlers
+    Result.Tablet.OnNewOrder := BoardNewOrder;
+    Result.Tablet.OnChangeOrder := BoardChangeOrder;
+    Result.Tablet.OnCancelOrder := BoardCancelOrder;
+    Result.Tablet.OnLastCancelOrder := BoardLastCancelOrder;
+    Result.Tablet.OnSelectCell := BoardSelectCell;
+    Result.Tablet.OnOrientCount := BoardsOrientCount;
+    Result.Tablet.OnCancelOrders  := CancelOrders;
+
+    Result.Tablet.TabletColor := $00EFD2B4;
+
+    { todo:
+    Result.ZaprService.OnMinPriceChanged := MinPriceProc;
+    Result.ZaprService.OnMaxPriceChanged := MaxPriceProc;
+    }
+    Result.Tablet.ColWidths[tcOrder]  := Result.Tablet.ORDER_WIDTH;
+    Result.Tablet.ColWidths[tcQuote]  := QTY_WIDTH;
+    Result.Tablet.ColWidths[tcPrice]  := PRICE_WIDTH;
+    Result.Tablet.ColWidths[tcAdded]  := ADDED_WIDTH;
+    Result.Tablet.ColWidths[tcGutter] := GUT_WIDTH;
+    Result.Tablet.ColWidths[tcStop]   := STOP_WIDTH;
+    Result.Tablet.ColWidths[tcFill]   := ACF_WIDTH;
+
+    Result.Tablet.OrderByMouseRB := FPrefs.OrderByMouseRB;
+    Result.Tablet.AutoScroll := FPrefs.AutoScroll;
+    Result.Tablet.OrientationType := FDefParams.OrientaionType;
+
+    Result.SpeedButtonPrefs.Glyph := SpeedButtonPrefs.Glyph;
+      // board: set default order volume
+//    Result.SetOrderVolume(StrToIntDef(Result.StringGridVolumes.Cells[0,0], 0), True);
+      // set dimension
+    Result.Resize;
+  end;
+end;
+
+function TOrderBoardForm.BoardsOrientCount( Sender : TOrderTablet ) : TOrientationType;
+var
+  i : integer;
+  oBoard, aBoard : TOrderBoard;
+  aType  : TOrientationType;
+  iAuto, iAsc, iDesc : integer;
+  bPut   : boolean;
+begin
+    // check
+  Result  := otAuto;
+
+  if Sender = nil then Exit;
+
+    // get board
+  aBoard := FBoards.Find(Sender);
+  if aBoard = nil then Exit;
+
+  if aBoard.Symbol = nil then
+    Exit;
+
+  iAuto := 0; iAsc := 0;  iDesc := 0;
+
+  for i := 0 to FBoards.Count - 1 do
+  begin
+    oBoard  := FBoards.Boards[i];
+    if oBoard = aBoard then Continue;
+    if oBoard.Symbol = nil then Continue;
+
+    aType := oBoard.Tablet.OrientationType;
+
+    bPut  := false;
+//    if oBoard.Symbol.Spec.Market = mtOption then
+//      if oBoard.Symbol.ShortCode[1] = '3' then
+//        bPut := true;
+
+    case aType of
+      otAuto: inc(iAuto);
+      otAsc : if bPut then inc( iDesc ) else inc(iAsc);
+      otDesc: if bPut then inc( iAsc ) else inc(iDesc);
+    end;
+  end;
+
+  if (iAuto > 0) and (iAsc = 0) and (iDesc =0)  then
+    Result  := otAuto
+  else if (iAsc > 0) and (iDesc > 0) then
+    Result  := otAuto
+  else if (iAsc > 0) and (iDesc = 0) then
+    Result  := otAsc
+  else if (iAsc = 0) and (iDesc > 0) then
+    Result  := otDesc
+  else
+    Result  := otAuto;
+
+end;
+
+
+procedure TOrderBoardForm.BoardSelect(Sender: TObject);
+var
+  i: Integer;
+  aBoard: TOrderBoard;
+begin
+  if Sender = nil then Exit;
+
+  if FSelectedBoard = Sender then Exit;
+
+  for i := 0 to FBoards.Count - 1 do
+  begin
+    aBoard := FBoards[i];
+
+    if aBoard = Sender then
+    begin
+      FSelectedBoard := aBoard;
+      FSelectedBoard.PanelVolumes.Color := FPrefs.SelectedBoardColor;//clYellow;
+      FSelectedBoard.SymbolPanel.Color  := FPrefs.SelectedBoardColor;// clYellow;
+      FSelectedBoard.Tablet.Selected  := true;
+    end else
+    begin
+      aBoard.PanelVolumes.Color := FPrefs.BoardColor;// clBtnFace;
+      aBoard.SymbolPanel.Color  := FPrefs.BoardColor;
+      aBoard.Tablet.Selected  := false;
+    end;
+  end;
+
+    // set info
+  SetInfo(FSelectedBoard);
+  {
+  if (pcTab.ActivePage = tabReady) then
+    DisplayReadyOrder( FSelectedBoard );
+    }
+
+end;
+
+procedure TOrderBoardForm.BoardSetup(Sender: TObject);
+var
+  aDlg: TBoardParamDialog;
+  aBoard: TOrderBoard;
+  i: Integer;
+  bChange : boolean;
+begin
+  if (Sender = nil) or not (Sender is TOrderBoard) then Exit;
+
+    // select this board
+  BoardSelect(Sender);
+
+    //
+  aBoard := Sender as TOrderBoard;
+
+  bChange := false;
+
+    //
+  FLeftPos := Left;
+  aDlg := TBoardParamDialog.Create(Self);
+  try
+    aDlg.Params := aBoard.Params;
+    if aDlg.ShowModal = mrOK then
+    begin
+        // apply
+      if aDlg.ApplyToAll then
+        for i := 0 to FBoards.Count - 1 do
+          FBoards[i].Params := aDlg.Params
+      else begin
+        if aBoard.Params.OrientaionType <> aDlg.Params.OrientaionType then
+          bChange := true;
+        aBoard.Params := aDlg.Params;
+      end;
+
+        // default
+      if aDlg.SaveAsDefault then
+        FDefParams := aDlg.Params;
+    end;
+      // adjust width
+    SetWidth;
+
+    if bChange then begin
+      for i := 0 to FBoards.Count- 1 do
+      begin
+        if FBoards[i] = aBoard then Continue;
+        FBoards[i].Params := FBoards[i].Params;
+      end;
+
+    end;
+  finally
+    aDlg.Free;
+  end;
+end;
+
+//------------------------------------------------------------------< select >
+
+procedure TOrderBoardForm.SetAccount;
+begin
+  //gEnv.Engine.TradeCore.AccountGroups.GetList( ComboBoAccount.Items );
+  //gEnv.Engine.TradeCore.Accounts.GetList( ComboBoAccount.Items );
+  //ComboBoAccount.AddItem( gEnv.Engine.TradeCore.Accounts.PresentName, nil );
+  if ComboBoAccount.Items.Count > 0 then
+  begin
+    ComboBoAccount.ItemIndex  := 0;
+    ComboBoAccountChange( nil );
+  end;
+end;
+
+procedure TOrderBoardForm.SetSymbol(aSymbol: TSymbol);
+var
+  iRow, iCol, i: Integer;
+  aOrder: TOrder;
+  bSend , CanSelected : Boolean;
+  aGrid : TStringGrid ;
+  stLeftDesc, stRightDesc : String ;
+  aTmp : TSymbol;
+
+begin
+
+  FLeftPos := Left;
+  if (aSymbol = nil) or (FBoards.Count = 0) then Exit;
+
+  if FSelectedBoard = nil then
+    BoardSelect(FBoards[0]);
+
+    // check still
+  if FSelectedBoard = nil then Exit;
+
+    // unsubscribe
+  if FSelectedBoard.Symbol <> nil then
+    App.Engine.QuoteBroker.Brokers[FSelectedBoard.Symbol.Spec.ExchangeType].Cancel(FSelectedBoard, FSelectedBoard.Symbol);
+    //
+  FSelectedBoard.Tablet.Ready := False;
+  FSelectedBoard.DeliveryTime := '';
+
+  var aAMType : TAccountMarketType;
+  if aSymbol.Spec.Market = mtSpot then
+    aAMType := amSpot
+  else
+    if aSymbol.Spec.FutureType = ftUsdt then
+      aAMType := amFuture
+    else
+      aAMType := amFutureCm;
+    // 계좌 처리 먼저 한다...
+  FSelectedBoard.Account  := App.Engine.TradeCore.FindAccount( aSymbol.Spec.ExchangeType, aAMType );
+    // set symbol and subscribe
+  aTmp := FSelectedBoard.Symbol;
+  FSelectedBoard.Symbol := aSymbol;
+  FSelectedBoard.Quote :=  App.Engine.QuoteBroker.Brokers[ExKind].Subscribe(FSelectedBoard, aSymbol,
+                            QuoteBrokerEventHandler);
+  FSelectedBoard.AddSymbol( aSymbol );
+
+  if (aTmp <> aSymbol) then
+    SetWidth;
+
+  if FSelectedBoard.Account = nil then Exit;
+    // assign position
+//  FSelectedBoard.Position := gEnv.Engine.TradeCore.Positions.Find(FSelectedBoard.Account , aSymbol);
+  FSelectedBoard.Position :=App.Engine.TradeCore.Positions[ExKind].Find(FSelectedBoard.Account , aSymbol);
+    // apply orders
+
+  bSEnd := false;
+  for i := 0 to App.Engine.TradeCore.Orders[ExKind].ActiveOrders.Count - 1 do
+  begin
+    aOrder := App.Engine.TradeCore.Orders[ExKind].ActiveOrders[i];
+
+    if (aOrder.State = osActive)
+       and (aOrder.Account = FSelectedBoard.Account)
+       and (aOrder.Symbol = FSelectedBoard.Symbol) then
+       begin
+        FSelectedBoard.Tablet.DoOrder2(aOrder);
+        bSend := true;
+       end;
+  end;
+
+  if bSend then
+    FSelectedBoard.Tablet.RefreshTable;
+
+    // update order limite
+  FSelectedBoard.UpdatePositionInfo;
+  FSelectedBoard.UpdateOrderLimit;
+
+    // fill count
+  FSelectedBoard.TNSCount := 0;
+
+    // clear info window
+  for i := 0 to GridInfo.RowCount - 1 do
+  begin
+    GridInfo.Cells[1,i] := '' ;
+  end;
+
+    //
+  FLastSynFutures := 0;
+
+    //
+  FSelectedBoard.Resize;
+
+    // if quote has been subscribed somewhere else
+  if (FSelectedBoard.Quote <> nil) then
+//     and (FSelectedBoard.Quote.EventCount > 0) then
+    QuoteBrokerEventHandler(FSelectedBoard.Quote, Self, 0, FSelectedBoard.Quote, 0);
+
+  {todo:
+  case aSide of
+    stLeft  : gKeyOrderAgent.SetSymbolA(Self, aSymbol);
+    stRight : gKeyOrderAgent.SetSymbolB(Self, aSymbol);
+  end;
+  }
+
+//  aStop := gEnv.Engine.TradeCore.StopOrders.Find( FSelectedBoard.Account, aSymbol );
+//  //if FSelectedBoard.StopOrder = nil then
+//  if aStop = nil then
+//  begin
+//    aStop := gEnv.Engine.TradeCore.StopOrders.New( FSelectedBoard.Account, aSymbol );
+//  end;
+//  FSelectedBoard.StopOrder  := aStop;
+//  FSelectedBoard.ShowStopOrder;
+
+  CheckOrientation( FSelectedBoard );
+end;
+
+
+procedure TOrderBoardForm.SetSymbol2(aSymbol: TSymbol; aMarket: TMarketType);
+var
+  iRow, iCol, i: Integer;
+  aOrder: TOrder;
+  CanSelected : Boolean;
+  aGrid : TStringGrid ;
+  stLeftDesc, stRightDesc : String ;
+begin
+  if (aSymbol = nil) or (FBoards.Count = 0) then Exit;
+
+  if FSelectedBoard = nil then
+    BoardSelect(FBoards[0]);
+
+    // check still
+  if FSelectedBoard = nil then Exit;
+
+    // unsubscribe
+  if FSelectedBoard.Symbol <> nil then
+    App.Engine.QuoteBroker.Brokers[ExKind].Cancel(FSelectedBoard);
+
+    //
+  FSelectedBoard.Tablet.Ready := False;
+  FSelectedBoard.DeliveryTime := '';
+
+    // 계좌 처리 먼저 한다...
+  var aAMType : TAccountMarketType;
+  if aSymbol.Spec.Market = mtSpot then
+    aAMType := amSpot
+  else
+    if aSymbol.Spec.FutureType = ftUsdt then
+      aAMType := amFuture
+    else
+      aAMType := amFutureCm;
+    // 계좌 처리 먼저 한다...
+  FSelectedBoard.Account  := App.Engine.TradeCore.FindAccount( aSymbol.Spec.ExchangeType, aAMType );
+
+    // set symbol and subscribe
+  FSelectedBoard.Symbol := aSymbol;
+  FSelectedBoard.Quote := App.Engine.QuoteBroker.Brokers[ExKind].Subscribe(FSelectedBoard, aSymbol,
+                            QuoteBrokerEventHandler);
+  FSelectedBoard.AddSymbol( aSymbol );
+
+  if FSelectedBoard.Account = nil then Exit;
+
+    // assign position
+  FSelectedBoard.Position := App.Engine.TradeCore.Positions[ExKind].Find(FSelectedBoard.Account , aSymbol);
+
+    // apply orders
+  for i := 0 to App.Engine.TradeCore.Orders[ExKind].ActiveOrders.Count - 1 do
+  begin
+    aOrder := App.Engine.TradeCore.Orders[ExKind].ActiveOrders[i];
+
+    if (aOrder.State = osActive)
+       and (aOrder.Account = FSelectedBoard.Account)
+       and (aOrder.Symbol = FSelectedBoard.Symbol) then
+      FSelectedBoard.Tablet.DoOrder(aOrder);
+  end;
+
+    // update order limite
+  FSelectedBoard.UpdatePositionInfo;
+  FSelectedBoard.UpdateOrderLimit;
+
+    // fill count
+  FSelectedBoard.TNSCount := 0;
+
+    // clear info window
+  for i := 0 to GridInfo.RowCount - 1 do
+  begin
+    GridInfo.Cells[1,i] := '' ;
+  end;
+
+    //
+  FLastSynFutures := 0;
+
+    //
+  FSelectedBoard.Resize;
+
+    // if quote has been subscribed somewhere else
+  if (FSelectedBoard.Quote <> nil) then
+     //and (FSelectedBoard.Quote.EventCount > 0) then
+    QuoteBrokerEventHandler(FSelectedBoard.Quote, Self, 0, FSelectedBoard.Quote, 0);
+
+  CheckOrientation( FSelectedBoard );
+
+end;
+
+procedure TOrderBoardForm.SetAccountInfo;
+var
+  aDailyPL, aFee, aNetPL : Double;
+begin     {
+  if (FAccount = nil) then
+  begin        {
+    StatusInfo.Panels[3].Text := '';
+    StatusInfo.Panels[5].Text := '';
+    StatusInfo.Panels[7].Text := '';
+    }   {
+  end else
+  begin
+    {todo:
+    if gUseB then
+      aDailyPL := FAccount.DailyPLB[dtFutures]+FAccount.DailyPLB[dtOptions]
+    else
+      aDailyPL := FAccount.DailyPL[dtFutures]+FAccount.DailyPL[dtOptions];
+    //
+    aFee := FAccount.Fees[utKospi200,dtFutures] + FAccount.Fees[utKospi200,dtOptions];
+    aNetPL := aDailyPL-aFee;
+
+    StatusInfo.Panels[3].Text := IntToStrComma(Round(aDailyPL/1000));
+    StatusInfo.Panels[5].Text := IntToStrComma(Round(aFee/1000));
+    StatusInfo.Panels[7].Text := IntToStrComma(Round(aNetPL/1000));
+    }
+ // end;
+
+  {
+  // 당일손익
+  GridInfo.Cells[1, 10] := IntToStrComma(Round(aDailyPL/1000));
+
+  // 추정수수료
+  GridInfo.Cells[1, 11] := IntToStrComma(Round(aFee/1000));
+  }
+end;
+
+
+//-----------------------------------------------------------< select account >
+
+//
+// select account
+//
+procedure TOrderBoardForm.ComboBoAccountChange(Sender: TObject);
+begin
+  //
+  Exit;
+
+end;
+
+procedure TOrderBoardForm.GetMarketAccount;
+begin
+
+end;
+
+//--------------------------------------------------------< populates symbols >
+
+//
+// select underlying
+//
+procedure TOrderBoardForm.ComboBoxUnderlyingsChange(Sender: TObject);
+//var
+//  aULGroup: TMarketGroup;
+//  aMarket: TMarket;
+//  aPosition: TPosition;
+//  iCnt, i: Integer;
+//  bFutures : boolean;
+begin
+  SearchInList;
+
+//  bFutures := false;
+//  if ComboBoxUnderlyings.ItemIndex = 0 then begin
+//    PageControl1.ActivePageIndex  := 1;
+//    bFutures  := true;
+//  end
+//  else
+//    PageControl1.ActivePageIndex  := 0;
+//
+//  InitGrid(sgFutures, true, 1);
+//  InitGrid(sgSpotSymbols, true, 1);
+//  InitGrid(sgCoinm, true, 1);
+//
+//  sgSpotSymbols.RowCount := App.Engine.SymbolCore.Spots[ExKind].Count+1;
+//  for I := 0 to App.Engine.SymbolCore.Spots[ExKind].Count-1 do begin
+//    sgSpotSymbols.Cells[0,i+1]  := App.Engine.SymbolCore.Spots[ExKind].Spots[i].Code;
+//    sgSpotSymbols.Objects[0,i+1]:= App.Engine.SymbolCore.Spots[ExKind].Spots[i];
+//  end;
+//
+//  if sgSpotSymbols.RowCount > 1 then
+//    sgSpotSymbols.FixedRows := 1;
+//
+//  sgFutures.RowCount := App.Engine.SymbolCore.FutureType[ExKind][ftUsdt].Count+1;
+//  for I := 0 to App.Engine.SymbolCore.FutureType[ExKind][ftUsdt].Count-1 do begin
+//    sgFutures.Cells[0,i+1]  := App.Engine.SymbolCore.FutureType[ExKind][ftUsdt].Symbols[i].Code;
+//    sgFutures.Objects[0,i+1]:= App.Engine.SymbolCore.FutureType[ExKind][ftUsdt].Symbols[i];
+//  end;
+//
+//  sgCoinm.RowCount := App.Engine.SymbolCore.FutureType[ExKind][ftCoin].Count+1;
+//  for I := 0 to App.Engine.SymbolCore.FutureType[ExKind][ftCoin].Count-1 do begin
+//    sgCoinm.Cells[0,i+1]  := App.Engine.SymbolCore.FutureType[ExKind][ftCoin].Symbols[i].Code;
+//    sgCoinm.Objects[0,i+1]:= App.Engine.SymbolCore.FutureType[ExKind][ftCoin].Symbols[i];
+//  end;
+//
+//  if sgFutures.RowCount > 1 then
+//    sgFutures.FixedRows := 1;
+//
+//  if sgCoinm.RowCount > 1 then
+//    sgCoinm.FixedRows := 1;
+end;
+
+
+procedure TOrderBoardForm.initSymbolGrid;
+var
+  i : integer;
+begin
+  if PageControl1.ActivePageIndex = 0 then
+  begin
+    InitGrid(sgSpotSymbols, true, 1);
+
+    sgSpotSymbols.RowCount := App.Engine.SymbolCore.Spots[ExKind].Count+1;
+    for I := 0 to App.Engine.SymbolCore.Spots[ExKind].Count-1 do begin
+      sgSpotSymbols.Cells[0,i+1]  := App.Engine.SymbolCore.Spots[ExKind].Spots[i].Code;
+      sgSpotSymbols.Objects[0,i+1]:= App.Engine.SymbolCore.Spots[ExKind].Spots[i];
+    end;
+
+    if sgSpotSymbols.RowCount > 1 then
+      sgSpotSymbols.FixedRows := 1;
+
+  end else
+  if PageControl1.ActivePageIndex = 1 then
+  begin
+
+    InitGrid(sgFutures, true, 1);
+
+    sgFutures.RowCount := App.Engine.SymbolCore.FutureType[ExKind][ftUsdt].Count+1;
+    for I := 0 to App.Engine.SymbolCore.FutureType[ExKind][ftUsdt].Count-1 do begin
+      sgFutures.Cells[0,i+1]  := App.Engine.SymbolCore.FutureType[ExKind][ftUsdt].Symbols[i].Code;
+      sgFutures.Objects[0,i+1]:= App.Engine.SymbolCore.FutureType[ExKind][ftUsdt].Symbols[i];
+    end;
+
+    if sgFutures.RowCount > 1 then
+      sgFutures.FixedRows := 1;
+
+  end else
+  if PageControl1.ActivePageIndex = 2 then
+  begin
+
+    InitGrid(sgCoinm, true, 1);
+
+    sgCoinm.RowCount := App.Engine.SymbolCore.FutureType[ExKind][ftCoin].Count+1;
+    for I := 0 to App.Engine.SymbolCore.FutureType[ExKind][ftCoin].Count-1 do begin
+      sgCoinm.Cells[0,i+1]  := App.Engine.SymbolCore.FutureType[ExKind][ftCoin].Symbols[i].Code;
+      sgCoinm.Objects[0,i+1]:= App.Engine.SymbolCore.FutureType[ExKind][ftCoin].Symbols[i];
+    end;
+
+    if sgCoinm.RowCount > 1 then
+      sgCoinm.FixedRows := 1;
+  end;
+
+end;
+
+procedure TOrderBoardForm.ComboBoxUnderlyingsKeyDown(Sender: TObject;
+  var Key: Word; Shift: TShiftState);
+begin
+  Exit;
+end;
+
+procedure TOrderBoardForm.ComboBoxUnderlyingsKeyPress(Sender: TObject;
+  var Key: Char);
+begin
+  Key := #0;
+end;
+
+
+
+procedure TOrderBoardForm.StringGridOptionsMouseWheelDown(Sender: TObject;
+  Shift: TShiftState; MousePos: TPoint; var Handled: Boolean);
+begin
+  Handled:= True;
+end;
+
+procedure TOrderBoardForm.StringGridOptionsMouseWheelUp(Sender: TObject;
+  Shift: TShiftState; MousePos: TPoint; var Handled: Boolean);
+begin
+  Handled:= True;
+end;
+
+procedure TOrderBoardForm.SymbolSelect(Sender: TObject);
+var
+  i: Integer;
+  aBoard: TOrderBOard;
+  aSymbol : TSymbol;
+  aOrder   : TOrder;
+begin
+  aBoard  := Sender as TOrderBoard;
+  if aBoard = nil then Exit;
+
+  aSymbol := GetComboObject( aBoard.GetSymbolCombo ) as TSymbol;
+  if aSymbol = nil then Exit;
+
+  SetSymbol( aSymbol );
+end;
+
+procedure TOrderBoardForm.tmPriceSortTimer(Sender: TObject);
+begin
+  OtherBoardScrollToLastPrice;
+end;
+
+
+//
+// select a underlying(stock only)
+//
+procedure TOrderBoardForm.StaticTextUnderlyingMouseDown(Sender: TObject;
+  Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+var
+  aULGroup: TMarketGroup;
+begin
+    // get the selected group
+  aULGroup := GetComboObject(ComboBoxUnderlyings) as TMarketGroup;
+  if aULGroup = nil then Exit;
+
+    // set
+  if (aULGroup.Ref <> nil) and (aULGroup.Ref.Spec <> nil)
+     and (aULGroup.Ref.Spec.Market = mtSpot) then
+    SetSymbol(aULGroup.Ref);
+end;
+
+//
+// select a futures
+//
+procedure TOrderBoardForm.StandByClick(Sender, aControl : TObject);
+var
+  aBoard : TOrderBoard;
+  iLS : integer;
+begin
+  aBoard  := Sender as TOrderBoard;
+  if aBoard = nil then Exit;
+
+  iLS :=  TSpeedButton( aControl ).GroupIndex;
+
+end;
+
+
+
+//
+// select an option
+//
+
+
+//-----------------------------------------------------< symbol panel drawing >
+
+
+//------------------------------------------------------< sid panel visiblity >
+
+
+procedure TOrderBoardForm.SpeedButtonLeftPanelClick(Sender: TObject);
+begin
+
+    // control size
+  if SpeedButtonLeftPanel.Down then begin
+    PanelLeft.Width := SIDE_LEFT_PANEL_WIDTH ;
+    if FLoadEnd then
+      FLeftPos  := Left - SIDE_LEFT_PANEL_WIDTH
+    else
+      FLeftPos  := Left;
+  end
+  else begin
+    PanelLeft.Width := 0;
+    if FLoadEnd then
+      FLeftPos  := Left + SIDE_LEFT_PANEL_WIDTH
+    else
+      FLeftPos  := Left;
+  end;
+
+
+    // set form width
+  SetWidth;
+end;
+
+procedure TOrderBoardForm.SpeedButtonRightPanelClick(Sender: TObject);
+begin
+    // control size
+  FLeftPos  := Left;
+  if SpeedButtonRightPanel.Down then
+    PanelRight.Width := SIDE_RIGHT_PANEL_WIDTH
+  else
+    PanelRight.Width := 0;
+
+    // set form width
+  SetWidth;
+end;
+
+//-----------------------------------------------------------------------<?
+
+
+procedure TOrderBoardForm.FormKeyDown(Sender: TObject; var Key: Word;
+  Shift: TShiftState);
+var
+  i: Integer;
+  stTmp : string;
+begin
+    // scroll
+  if Key in [VK_UP, VK_DOWN, VK_PRIOR, VK_NEXT  ] then
+  begin
+    case Key of
+      VK_UP:
+        if FSelectedBoard <> nil then
+          FSelectedBoard.Tablet.ScrollLine(1,1);
+      VK_DOWN:
+        if FSelectedBoard <> nil then
+          FSelectedBoard.Tablet.ScrollLine(1,-1);
+      VK_PRIOR:
+        if FSelectedBoard <> nil then
+          FSelectedBoard.Tablet.ScrollPage(1);
+      VK_NEXT:
+        if FSelectedBoard <> nil then
+          FSelectedBoard.Tablet.ScrollPage(-1);
+      {
+      VK_LEFT, VK_RIGHT :
+        if FSelectedBoard <> nil then
+          CancelNearOrder( FSelectedBoard, Key = VK_LEFT );
+
+      VK_HOME, VK_SPACE:
+      begin
+        gBoardEnv.BroadCast.BroadCast( Self, Self, etSpace, vtUpdate);
+      end;
+      }
+
+
+    end;    //
+
+    Key := 0;
+  end else
+    // escape key
+  if Key = VK_ESCAPE then
+  begin
+    if FPrefs.EnableEscKey then
+    begin
+        // confirm
+      if FPrefs.ConfirmOrder and
+       (MessageDlg('모두 주문을 취소하시겠습니까?',
+          mtConfirmation, [mbOK, mbCancel], 0) <> mrOK) then
+      begin
+        Key := 0;
+        Exit;
+      end;
+        // cancel all orders (todo: duplicate symbols)
+      {
+      if ssShift in Shift then
+        for i := 0 to FBoards.Count-1 do
+        begin
+          CancelOrders(FBoards[i], [ptLong, ptShort]);
+          FBoards[i].ClearJackPotOrder;
+        end
+      else
+      }
+      CancelLastOrder( FSelectedBoard );
+        //
+      Key := 0;
+    end;
+  end
+  else if Key =VK_F5 then
+    //ReloadSymbols
+  else if Key = VK_RETURN then
+  begin    {
+    if FSelectedBoard = nil then Exit;
+    if not FSelectedBoard.Tablet.EnterOrder then Exit;
+    SendReadyOrder;
+    }
+  end
+  else if Key = VK_SPACE then
+  begin
+    OtherBoardScrollToLastPrice;
+  end
+  else if Key = VK_DELETE then
+  begin
+  {
+    if FSelectedBoard = nil then Exit;
+    FSelectedBoard.ReadyOrder.Clear;
+    DisplayReadyOrder( FSelectedBoard );
+    }
+  end;
+    {
+  if FPrefs.UseBullStop then
+    if Key = VK_F1 then
+    begin
+      gEnv.Engine.FormBroker.SendBullMessage( false );
+      gLog.Add( lkKeyORder, 'TOrderBoardForm','FormKeyDown' ,'Bull Stop');
+    end;
+  //todo: clarify later!!!
+   }
+
+
+
+  if FPrefs.UseKey1to5 then
+  begin
+    if FSelectedBoard = nil then Exit;
+
+    if FSelectedBoard.CheckFocus then
+      Exit;
+
+
+    case Key of
+      Ord('Q'): FSelectedBoard.SetPositionVolume;       // 포지션 수량
+      Ord('W'): FSelectedBoard.SetPositionVolume(2);    // 포지션 수량 / 2
+      Ord('E'): FSelectedBoard.SetPositionVolume(3);    // 포지션 수량 / 3
+      Ord('R'): FSelectedBoard.SetPositionVolume(4);    // 포지션 수량 / 4
+      Ord('T'): FSelectedBoard.SetPositionVolume(5);    // 포지션 수량 / 5
+      {
+      Ord('1'): FSelectedBoard.SetOrderVolumeToKeyBoard(1);   // 청상수량  / ..n
+      Ord('2'): FSelectedBoard.SetOrderVolumeToKeyBoard(2);
+      Ord('3'): FSelectedBoard.SetOrderVolumeToKeyBoard(3);
+      Ord('4'): FSelectedBoard.SetOrderVolumeToKeyBoard(4);
+      Ord('5'): FSelectedBoard.SetOrderVolumeToKeyBoard(5);
+      }
+    end;
+  end;
+
+  if FPrefs.UseKeyOrder then
+  begin
+    if FSelectedBoard = nil then Exit;
+
+    if FKeyDown then Exit;
+    FKeyDown  := true;
+
+    if Key = BoardKey[FPrefs.OrderKey]  then
+    begin
+      //if not FKeyDown then
+      BoardNewOrder;
+    end
+
+    {
+    case Key of
+      Ord('A') :
+        begin
+          SendKeyOrder( kotNewShort1 );
+          stTmp := Format('%s', ['A : 매수호가보다 한틱 높게 ']);
+        end;
+      Ord('S') :
+        begin
+          SendKeyOrder( kotNewShort );
+          stTmp := Format('%s', ['S : 매수호가에 치기 ']);
+        end;
+      Ord('D') :
+        begin
+          SendKeyOrder( kotNewLong );
+          stTmp := Format('%s', ['D : 매도호가에 치기  ']);
+        end;
+      Ord('F') :
+        begin
+          SendKeyOrder( kotNewLong1 );
+          stTmp := Format('%s', ['F : 매도호가보다 한틱 낮게']);
+        end;
+      else
+        Exit;
+    end;
+    }
+
+    //gEnv.OnLog( self, stTmp );
+    //gLog.Add( lkKeyOrder, '',IntToStr( key ) , sttmp);
+  end;
+
+
+  if FPrefs.UseKey7to0 then
+  begin
+    if FSelectedBoard = nil then Exit;
+    if FKeyDown then Exit;
+    FKeyDown  := true;
+    case Key of
+      Ord('7'): SendKey7to0Order(kot2BidAsk);
+      Ord('8'): SendKey7to0Order(kot3BidAsk);
+      Ord('9'): SendKey7to0Order(kot4BidAsk);
+      Ord('0'): SendKey7to0Order(kot5BidAsk);
+    end;
+  end;
+
+  key := 0;
+end;
+
+procedure TOrderBoardForm.FormKeyUp(Sender: TObject; var Key: Word;
+  Shift: TShiftState);
+begin
+  FKeyDown := false;
+end;
+
+procedure TOrderBoardForm.FormMouseWheelDown(Sender: TObject;
+  Shift: TShiftState; MousePos: TPoint; var Handled: Boolean);
+begin
+        if FSelectedBoard <> nil then
+          FSelectedBoard.Tablet.ScrollLine(1,-1);
+end;
+
+procedure TOrderBoardForm.FormMouseWheelUp(Sender: TObject; Shift: TShiftState;
+  MousePos: TPoint; var Handled: Boolean);
+begin
+       if FSelectedBoard <> nil then
+         FSelectedBoard.Tablet.ScrollLine(1,1);
+end;
+
+procedure TOrderBoardForm.SendKey7to0Order(keyType: TKeyOrderType);
+var
+
+  aOrder  : TOrder;
+  iRes, iSide    : integer;
+  dQty : double;
+  aBoard  : TOrderBoard;
+  dAskPrice, dBidPrice  : double;
+begin
+
+  if FSelectedBoard = nil then Exit;
+
+  if (FSelectedBoard.Symbol = nil) or (FselectedBoard.Quote = nil) or
+    ( FSelectedBoard.Account = nil) or ( FSelectedBoard.DefQty = 0 ) then
+  begin
+    Beep;
+//    gLog.Add( lkKeyOrder, 'TOrderBoardForm', 'SendKey7to0Order', 'Object is nil ');
+    Exit;
+  end;
+
+  dQty  :=  FselectedBoard.DefQty;
+
+  case keyType of
+    kot2BidAsk:
+      begin
+        dAskPrice  := FSelectedBoard.Quote.Asks[1].Price;
+        dBidPrice  := FSelectedBoard.Quote.Bids[1].Price;
+      end ;
+    kot3BidAsk:
+      begin
+        dAskPrice  := FSelectedBoard.Quote.Asks[2].Price;
+        dBidPrice  := FSelectedBoard.Quote.Bids[2].Price;
+      end ;
+    kot4BidAsk:
+      begin
+        dAskPrice  := FSelectedBoard.Quote.Asks[3].Price;
+        dBidPrice  := FSelectedBoard.Quote.Bids[3].Price;
+      end;
+    kot5BidAsk:
+      begin
+        dAskPrice  := FSelectedBoard.Quote.Asks[4].Price;
+        dBidPrice  := FSelectedBoard.Quote.Bids[4].Price;
+      end ;
+  end;
+
+//  if (FSelectedBoard.Symbol.LimitHigh < dAskPrice) or
+//      (FSelectedBoard.Symbol.LimitLow > dBidPrice) then
+//      exit;
+
+  //매수주문
+//  aTicket := gEnv.Engine.TradeCore.OrderTickets.New(Self);
+//    // create normal order
+//  aOrder  := gEnv.Engine.TradeCore.Orders.NewNormalOrderEx(
+//                gEnv.ConConfig.UserID, FselectedBoard.Account, FselectedBoard.Tablet.Symbol,
+//                iQty , pcLimit, dBidPrice, tmGTC, aTicket);  //
+//
+//
+//  iRes := -1;
+//  if aOrder <> nil then
+//    iRes := gEnv.Engine.TradeBroker.Send(aTicket);
+//  if iRes > 0 then
+//    FSelectedBoard.SentTime := timeGetTime;
+//
+//
+//  //매도주문
+//  aTicket := nil;
+//  aOrder := nil;
+//  aTicket := gEnv.Engine.TradeCore.OrderTickets.New(Self);
+//    // create normal order
+//  aOrder  := gEnv.Engine.TradeCore.Orders.NewNormalOrderEx(
+//                gEnv.ConConfig.UserID, FselectedBoard.Account, FselectedBoard.Tablet.Symbol,
+//                iQty * -1, pcLimit, dAskPrice, tmGTC, aTicket);  //
+//  iRes := -1;
+//  if aOrder <> nil then
+//    iRes := gEnv.Engine.TradeBroker.Send(aTicket);
+//  if iRes > 0 then
+//    FSelectedBoard.SentTime := timeGetTime;
+end;
+
+procedure TOrderBoardForm.SendKeyOrder( keyType :TKeyOrderType );
+var
+
+  aOrder  : TOrder;
+  iRes, iSide    : integer;
+  dQty : double;
+  aBoard  : TOrderBoard;
+  dPrice  : double;
+begin
+
+  if FSelectedBoard = nil then Exit;
+
+  if (FSelectedBoard.Symbol = nil) or (FselectedBoard.Quote = nil) or
+    ( FSelectedBoard.Account = nil) or ( FSelectedBoard.DefQty = 0 ) then
+  begin
+    Beep;
+    //gLog.Add( lkKeyOrder, 'TOrderBoardForm', 'SendKeyOrder', 'Object is nil ');
+    Exit;
+  end;
+
+  dQty  :=  FselectedBoard.DefQty;
+
+  case keyType of
+    kotNewLong:
+      begin
+        iSide := 1;
+        dPrice  := FSelectedBoard.Quote.Asks[0].Price;
+      end ;
+    kotNewLong1:
+      begin
+        iSide := 1;
+        dPrice  := TicksFromPrice( FselectedBoard.Symbol, FSelectedBoard.Quote.Asks[0].Price, -1 );
+      end ;
+    kotNewShort:
+      begin
+        iSide := -1;
+        dPrice  := FSelectedBoard.Quote.Bids[0].Price;
+      end;
+    kotNewShort1:
+      begin
+        iSide := -1;
+        dPrice  := TicksFromPrice( FselectedBoard.Symbol, FSelectedBoard.Quote.Bids[0].Price, 1 );
+      end ;
+  end;
+
+
+//  aTicket := gEnv.Engine.TradeCore.OrderTickets.New(Self);
+//    // create normal order
+//  aOrder  := gEnv.Engine.TradeCore.Orders.NewNormalOrder(
+//                gEnv.ConConfig.UserID, FselectedBoard.Account, FselectedBoard.Tablet.Symbol,
+//                iQty * iSide, pcLimit, dPrice, tmGTC, aTicket);  //
+//
+//    // send the order
+//  iRes := -1;
+//  if aOrder <> nil then
+//    iRes := gEnv.Engine.TradeBroker.Send(aTicket);
+//
+//    //
+//  if iRes > 0 then
+//  begin
+//    FSelectedBoard.SentTime := timeGetTime;
+//  end;
+
+end;
+
+//---------------------------------------------------------------< popup menu >
+
+//
+procedure TOrderBoardForm.PageControl1Change(Sender: TObject);
+begin
+  //
+  SearchInList;
+end;
+
+procedure TOrderBoardForm.PartCancelOrder(Sender: TOrderTablet;
+  aPoint: TTabletPoint; aTypes: TPositionTypes);
+  var
+    aBoard : TOrderBoard;
+begin
+
+  if FPrefs.NoUseQtySet then
+  begin
+    ShowMessage('수량셋 숨김 상태에서는 취소 주문 불가');
+    exit;
+  end;
+
+  aBoard := FBoards.Find(Sender);
+  if aBoard = nil then Exit;
+
+//  if gEnv.ConConfig.UseBatch then
+//  begin
+//    if aPoint.PositionType = ptLong then
+//      FBatchP.CancelType  := bctBidShift
+//    else
+//      FBatchP.CancelType  := bctAskShift;
+//
+//    FBatchP.ShiftPrice  := aPoint.Price;
+//    FBatchP.Board       := aBoard;
+//
+//    batchCnlTimer( nil );
+//    batchCnl.Enabled  := true;
+//  end
+//  else
+    CancelOrders( aBoard, aPoint, aTypes );
+end;
+
+procedure TOrderBoardForm.PopQuoteClick(Sender: TObject);
+begin
+{
+end;
+var
+  aParams : TWorkFormParams;
+begin
+  if FSelectedOptions = nil then Exit;
+  case (Sender as TMenuItem).Tag of
+    110:
+    begin
+      with aParams do
+      begin
+        Object1 := FSelectedOptions;
+        LongValue1 := 3;
+      end;
+      gWin.OpenForm(Self, ID_Price, aParams); // 현재가창
+      //aForm:= gWin.OpenForm(ID_Price, nil, FSElectedOption); // 현재가
+      //(aForm as TPriceForm).StatusIndex:= 3;
+    end;
+    120:  gWin.OpenForm(ID_Chart,nil,FSelectedOptions);   // 차트창
+  end;
+}
+end;
+
+
+procedure TOrderBoardForm.PopupOrdersClick(Sender: TObject);
+//var
+//  aDlg : TBoardOrderDialog;
+begin
+{
+  if (FMenuBoard = nil) or (FMenuBoard.Tablet.Symbol = nil) then Exit;
+    //
+  case (Sender as TMenuItem).Tag of
+    100 : // order same as double click on the tablet
+      NewOrder(FMenuBoard, FMenuPoint, FMenuBoard.DefQty, FMenuPoint.Price);
+    200 : // order by dialog
+      begin
+        aDlg := TBoardOrderDialog.Create(Self);
+        try
+          if aDlg.Open(FAccount, FMenuBoard.Tablet.Symbol, FMenuPoint.PositionType,
+                otNormal, 0, FMenuPoint.Price ) then
+            NewOrder(FMenuBoard, FMenuPoint, aDlg.Qty, aDlg.Price);
+        finally
+          aDlg.Free;
+        end;
+      end;
+    300 : // change order
+      begin
+        aDlg := TBoardOrderDialog.Create(Self);
+        try
+          if aDlg.Open(FAccount, FMenuBoard.Tablet.Symbol, FMenuPoint.PositionType,
+                otChange, FMenuPoint.Qty, FMenuPoint.Price) then
+            ChangeOrder(FMenuBoard, FMenuPoint, aDlg.Qty, aDlg.Price);
+        finally
+          aDlg.Free;
+        end;
+      end;
+    400 : // cancel an order partly
+      begin
+        try
+          aDlg := TBoardOrderDialog.Create(Self);
+          if aDlg.Open(FAccount, FMenuBoard.Tablet.Symbol, FMenuPoint.PositionType,
+                otCancel, FMenuPoint.Qty, FMenuPoint.Price ) then
+            CancelOrders(FMenuBoard, FMenuPoint, aDlg.Qty);
+        finally
+          aDlg.Free;
+        end;
+      end;
+    500 : // cancel all an order
+       CancelOrders(FMenuBoard, FMenuPoint);
+    900 : // one side cancel all
+       CancelOrders(FMenuBoard, [FMenuPoint.PositionType]);
+    1000 : // cancel all orders
+       CancelOrders(FMenuBoard, [ptLong, ptShort]);
+  end;
+   }
+end;
+
+procedure TOrderBoardForm.PriceSortStartEnd;
+begin
+  if (FPrefs.PriceSort) and (FPrefs.PriceType = 0) then
+  begin
+    tmPriceSort.Interval := FPrefs.PriceTime * 1000;
+    tmPriceSort.Enabled := true;
+  end else
+    tmPriceSort.Enabled := false;
+end;
+
+procedure TOrderBoardForm.PopupMenuOrdersPopup(Sender: TObject);
+var
+  aBoard: TOrderBoard;
+  aPopupMenu: TPopupMenu;
+  aPoint: TPoint;
+  aOrderPoint: TTabletPoint;
+  stLS: String;
+begin
+    // check 1
+  if (Sender = nil) or not (Sender is TPopupMenu) then Abort;
+
+    // get TPopupMenu reference
+  aPopupMenu := Sender as TPopupMenu;
+
+    // check 2
+  if (aPopupMenu.PopupComponent = nil) or
+      not (aPopupMenu.PopupComponent is TPaintBox) then Exit;
+
+    // find board
+  aBoard := FBoards.FindPaintBox(aPopupMenu.PopupComponent as TPaintBox);
+  if aBoard = nil then Exit;
+
+    // get tablet point
+  GetCursorPos(aPoint);
+  aPoint := aBoard.PaintBoxTablet.ScreenToClient(aPoint);
+  aOrderPoint := aBoard.Tablet.GetPoint(aPoint.X, aPoint.Y);
+  if aOrderPoint.AreaType <> taOrder then Abort;
+
+    // save the point
+  FMenuBoard := aBoard;
+  FMenuPoint := aOrderPoint;
+
+    // change menu caption
+  stLS := ifThenStr( aOrderPoint.PositionType = ptLong, 'Long', 'Short');
+
+    //
+  PopupMenuOrders.Items[0].Caption := stLS
+               + Format('%.2f X %d(&1)',[aOrderPoint.Price, aBoard.DefQty]);
+  PopupMenuOrders.Items[0].Enabled := True;    // 잠시 멈춤 없어짐
+    //
+  PopupMenuOrders.Items[1].Caption := stLS + '주문(&2)...';
+  PopupMenuOrders.Items[1].Enabled := True ;    // 잠시 멈춤 없어짐
+  PopupMenuOrders.Items[2].Caption := '정정(&3)...';
+  PopupMenuOrders.Items[2].Enabled := FMenuPoint.Qty > 0;
+  PopupMenuOrders.Items[3].Caption := '일부취소(&4)...';
+  PopupMenuOrders.Items[3].Enabled := FMenuPoint.Qty > 0;
+  PopupMenuOrders.Items[4].Caption := '전부취소(&5)...';
+  PopupMenuOrders.Items[4].Enabled := FMenuPoint.Qty > 0;
+  PopupMenuOrders.Items[6].Caption := stLS + '주문 전부취소(&S)...';
+  PopupMenuOrders.Items[7].Caption := '주문 전부취소(&A)...';
+end;
+
+{
+procedure TOrderBoardForm.KeyOrderProc(Sender, Receiver, DataObj: TObject;
+  iBroadcastKind: Integer; btValue: TBroadcastType);
+var
+  aKeyOrderItem : TKeyOrderItem;
+begin
+  if (Receiver <> Self) or (DataObj = nil) then
+  begin
+    gLog.Add(lkError, '더블주문창', 'KeyOrder Proc', 'Data Integrity Failure');
+    Exit;
+  end;
+
+  aKeyOrderItem := DataObj as TKeyOrderItem;
+
+  if iBroadcastKind = PID_KEYORDER then
+  begin
+    SetOrderQty( IntToStr( aKeyOrderItem.SymbolAQty ), False, stLeft );
+    SetOrderQty( IntToStr( aKeyOrderItem.SymbolBQty ), False, stRight );
+  end;
+end;
+}
+
+//--------------------------------------------------------------------< info >
+
+//
+// set symbol information on the right side window
+//
+procedure TOrderBoardForm.SetInfo(aBoard: TOrderBoard);
+var
+  i: Integer;
+begin
+//    // synthetic futures
+//  if (aBoard.Tablet.Symbol <> nil) and (  aBoard.Tablet.Symbol.Spec.Market in [mtElw, mtStock] ) then
+//  begin
+//    if aBoard.Tablet.Symbol.Spec.Market = mtElw then begin
+//      GridInfo.Cells[0,0] := '기초자산';
+//      GridInfo.Cells[1,0] := (aBoard.Tablet.Symbol as TElw).Underlying.Name;
+//      GridInfo.Cells[1,1] := aBoard.Tablet.Symbol.ShortCode;
+//    end
+//    else begin
+//      GridInfo.Cells[0,0] := '종목명';
+//      GridInfo.Cells[1,0] := aBoard.Tablet.Symbol.Name;
+//      GridInfo.Cells[1,1] := aBoard.Tablet.Symbol.ShortCode;
+//    end;
+//  end
+//  else begin
+//    GridInfo.Cells[0,0] := '합성선물';
+//    if FSynFutures <> nil then
+//      GridInfo.Cells[1,0] := Format('%.2f', [FSynFutures.Last])
+//    else
+//      GridInfo.Cells[1,0] := '';
+//
+//    if (aBoard.Tablet.Symbol <> nil) then
+//      GridInfo.Cells[1,1] := aBoard.Tablet.Symbol.ShortCode
+//    else
+//      GridInfo.Cells[1,1] := '';
+//  end;
+
+  with GridInfo do
+  begin
+    Cells[0,7] := '델타' ;
+    Cells[0,8] := '감마' ;
+    Cells[0,9] := '세타' ;
+    Cells[0,10] := '베가' ;
+    Cells[0,11] := 'IV' ;
+    //
+    Cells[0,12] := 'Real상한가' ;
+    Cells[0,13] := 'Real하한가' ;
+    Cells[0,14] := '주문시간' ;
+    Cells[0,15] := '시세지연' ;
+    Cells[0,16] := '예상체결가';
+
+    Cells[1,7] := '';
+    Cells[1,8] := '';
+    Cells[1,9] := '';
+    Cells[1,10] :='';
+    Cells[1,11] := '';
+  end;
+
+    // price range
+  if (aBoard <> nil) and (aBoard.Tablet.Symbol <> nil)
+      and (aBoard.Tablet.Symbol.Spec <> nil) then
+  begin
+    with aBoard.Tablet.Symbol do
+    begin
+      GridInfo.Cells[1,2] := Format('%.*n', [Spec.Precision, DayOpen]);
+      GridInfo.Cells[1,3] := Format('%.*n', [Spec.Precision, DayHigh]);
+      GridInfo.Cells[1,4] := Format('%.*n', [Spec.Precision, DayLow]);
+      GridInfo.Cells[1,5] := Format('%.*n', [Spec.Precision, Last]);
+//      GridInfo.Cells[1,16] := Format('%.*n', [Spec.Precision, ExpectPrice]);
+//      GridInfo.Cells[1,12] := Format('%.*n', [Spec.Precision, RealUpperLimit]);
+//      GridInfo.Cells[1,13] := Format('%.*n', [Spec.Precision, RealLowerLimit]);
+    end;
+
+      // if it's option
+//    if aBoard.Tablet.Symbol.Spec.Market = mtOption then
+//      SetOptionInfo(aBoard)
+//    else if aBoard.Tablet.Symbol.Spec.Market = mtElw then
+//      SetElwInfo( aBoard)
+//    else if (aBoard.Tablet.Symbol.Spec.Market = mtFutures) and
+//      ( not aBoard.Tablet.Symbol.IsStockF ) then
+//      GridInfo.Cells[1,0] := Format('%.2f', [FSynFutures.Last])
+//    else begin
+//      for i := 6 to GridInfo.RowCount-2 do
+//        GridInfo.Cells[1,i] := '';
+//    end;
+    //GridInfo.Cells[1,15] := '';
+  end else
+  begin
+    GridInfo.Cells[1,2] := '';
+    GridInfo.Cells[1,3] := '';
+    GridInfo.Cells[1,4] := '';
+  end;
+
+    // trade volume
+  if (aBoard <> nil) and (aBoard.Tablet.Quote <> nil)
+     and (aBoard.Tablet.Quote.symbol.Sales.Last <> nil) then
+    GridInfo.Cells[1, 6] := Format('%.0n',[aBoard.Tablet.Quote.Symbol.Sales.Last.DayVolume*1.0])
+  else
+    GridInfo.Cells[1, 6] := '';
+
+end;
+
+//
+// set elw info
+//
+procedure TOrderBoardForm.SetElwInfo(aBoard: TOrderBoard);
+begin
+
+end;
+//
+// set option info
+//
+procedure TOrderBoardForm.SetOptionInfo(aBoard: TOrderBoard);
+begin
+
+end;
+
+//
+// TStringGrid.OnDrawCell event handler
+//
+procedure TOrderBoardForm.GridInfoDrawCell(Sender: TObject; ACol,
+  ARow: Integer; Rect: TRect; State: TGridDrawState);
+var
+  aAlignment : TAlignment;
+  iX, iY : Integer;
+  aSize : TSize;
+  stText : String;
+  Grid: TStringGrid;
+begin
+  Grid := Sender as TStringGrid;
+
+  with Grid.Canvas do
+  begin
+    Font.Name := Grid.Font.Name;
+    Font.Size := Grid.Font.Size;
+
+      // get text
+    stText := Grid.Cells[ACol, ARow];
+
+      // set colors & text alignment
+    case ACol of
+      0 :  // Fixed
+        begin
+          Brush.Color := NODATA_COLOR;
+          Font.Color := clBlack;
+          aAlignment := taLeftJustify;
+        end;
+      1 :  // Value
+        begin
+          Brush.Color := clWhite;
+          Font.Color := clBlack;
+          aAlignment := taRightJustify;
+        end;
+    end;
+
+      // background
+    FillRect(Rect);
+
+      // check
+    if stText = '' then Exit;
+
+      // calc position
+    aSize := TextExtent(stText);
+    iY := Rect.Top + (Rect.Bottom - Rect.Top - aSize.cy) div 2;
+    iX := Rect.Left + (Rect.Right-Rect.Left-aSize.cx) div 2;
+
+      // x-axis position based on text alignment
+    case aAlignment of
+      taLeftJustify :  iX := Rect.Left + 2;
+      taCenter :       iX := Rect.Left + (Rect.Right-Rect.Left-aSize.cx) div 2;
+      taRightJustify : iX := Rect.Left + Rect.Right-Rect.Left - 2 - aSize.cx;
+    end;
+
+      // draw text
+    TextRect(Rect, iX, iY, stText);
+  end;
+
+end;
+
+//--------------------------------------------------------------< order list >
+
+//
+// constraints number inputs for canceling volume
+//
+procedure TOrderBoardForm.EditCancelQtyKeyPress(Sender: TObject; var Key: Char);
+begin
+  if not (CharInSet(Key , ['0'..'9', #13, #8])) then
+//  if not (Key in ['0'..'9', #13, #8]) then
+     Key := #0;
+
+     // 'Entry' key call OnExti event handler
+  if Key = #13 then
+    EditCancelQtyExit(EditCancelQty);
+end;
+
+procedure TOrderBoardForm.edtCodeChange(Sender: TObject);
+begin
+  //
+  SearchInList;
+end;
+
+procedure TOrderBoardForm.SearchInList;
+var
+//  Regex: TRegEx;
+  i: Integer;
+  sCode : string;
+  sg : TStringGrid;
+  bFut: boolean;
+  ftType : TFuturesType;
+begin
+
+  sCode := edtCode.Text;
+
+  if sCode = '' then
+  begin
+//    ComboBoxUnderlyingsChange(nil);
+    initSymbolGrid;
+  end else
+  begin
+    FSrchList.Clear;
+    FRegex := TRegEx.Create(UpperCase(sCode));
+
+//    bFut := false;
+//    if (ExKind = ekBinance) and (PageControl1.ActivePageIndex > 0) then
+//      bFut := true;
+
+    case PageControl1.ActivePageIndex of
+      0 : begin sg := sgSpotSymbols; bFut := false; end;
+      1 : begin sg := sgFutures; ftType := ftUsdt; bFut := true; end;
+      2 : begin sg := sgCoinm; ftType := ftCoin; bFut := true; end;
+    end;
+
+    if bFut then begin
+      for i := 0 to App.Engine.SymbolCore.FutureType[ExKind][ftType].Count-1 do
+      begin
+        if FRegex.IsMatch( App.Engine.SymbolCore.FutureType[ExKind][ftType].Symbols[i].Code ) then
+          FSrchList.AddObject(App.Engine.SymbolCore.FutureType[ExKind][ftType].Symbols[i].Code,
+            App.Engine.SymbolCore.FutureType[ExKind][ftType].Symbols[i] );
+      end;
+    end else
+    begin
+      for i := 0 to App.Engine.SymbolCore.Spots[ExKind].Count-1 do
+      begin
+        if FRegex.IsMatch( App.Engine.SymbolCore.Spots[ExKind].Spots[i].Code ) then
+          FSrchList.AddObject(App.Engine.SymbolCore.Spots[ExKind].Spots[i].Code,
+            App.Engine.SymbolCore.Spots[ExKind].Spots[i] );
+      end;
+    end;
+
+    InitGrid(sg, true, 1 );
+    sg.RowCount := FSrchList.Count+1;
+    for I := 0 to FSrchList.Count-1 do begin
+      sg.Cells[0,i+1]  := FSrchList[i];
+      sg.Objects[0,i+1]:= FSrchList.Objects[i];
+    end;
+
+    if sg.RowCount > 1 then
+      sg.FixedRows := 1;
+  end;
+end;
+
+function TOrderBoardForm.ExKind: TExchangeKind;
+begin
+  Result := TExchangeKind( ComboBoxUnderlyings.ItemIndex );
+end;
+
+//
+// If the Edit for canceling order volume lose its focus,
+//
+procedure TOrderBoardForm.EditCancelQtyExit(Sender: TObject);
+var
+  i, iCancelQty: Integer ;
+  dSumQty : double;
+  aOrder: TOrder ;
+begin
+    // if no input, set it to '0'
+  if Length(Trim(EditCancelQty.Text)) = 0 then
+     EditCancelQty.text := '0' ;
+
+     // get canceling order volume
+  iCancelQty := StrToIntDef(EditCancelQty.Text, 0);
+  dSumQty := 0;
+
+    // if the input value is zero, uncheck all orders
+
+  if cbBack.Checked then
+  begin
+    if iCancelQty = 0 then
+    begin
+      for i := ListViewOrders.Items.Count - 1 downto 0 do
+        ListViewOrders.Items[i].Checked := False;
+    end else
+      for i := ListViewOrders.Items.Count - 1 downto 0 do
+      begin
+        aOrder := TOrder(ListViewOrders.Items[i].Data);
+        if aOrder = nil then Continue;
+
+        dSumQty := dSumQty + aOrder.ActiveQty;
+          //
+        if ((dSumQty -  aOrder.ActiveQty < iCancelQty ) and  (dSumQty >= iCancelQty) )
+           or (dSumQty <= iCancelQty) then
+          ListViewOrders.Items[i].Checked := True
+        else
+          ListViewOrders.Items[i].Checked := False;
+      end;
+  end
+  else begin
+
+    if iCancelQty = 0 then
+    begin
+      for i := 0 to ListViewOrders.Items.Count - 1 do
+        ListViewOrders.Items[i].Checked := False;
+    end else
+      for i := 0 to ListViewOrders.Items.Count - 1 do
+      begin
+        aOrder := TOrder(ListViewOrders.Items[i].Data);
+        if aOrder = nil then Continue;
+
+        dSumQty := dSumQty + aOrder.ActiveQty;
+          //
+        if ((dSumQty -  aOrder.ActiveQty < iCancelQty ) and  (dSumQty >= iCancelQty) )
+           or (dSumQty <= iCancelQty) then
+          ListViewOrders.Items[i].Checked := True
+        else
+          ListViewOrders.Items[i].Checked := False;
+      end;
+  end;
+end;
+
+//
+// send cancel order by button click
+//
+
+procedure TOrderBoardForm.ButtonCancelClick(Sender: TObject);
+var
+  aBoard: TOrderBoard;
+  aOrder: TOrder;
+  i, iMaxQty, iQty, iOrderQty: Integer;
+  aList : TList;
+begin
+
+
+  if FCancelPoint.Tablet = nil then Exit;
+
+    // get max qty
+  iMaxQty := StrToIntDef(EditCancelQty.Text, 0);
+  if iMaxQty <= 0 then Exit;
+
+    // find board
+  aBoard := FBoards.Find(FCancelPoint.Tablet);
+  if aBoard = nil then Exit;
+
+    // init
+  iQty := 0;
+
+    // ticket
+  //aTicket := gEnv.Engine.TradeCore.OrderTickets.New(Self);
+
+  aList := TList.Create;
+  try
+    //
+    for i := 0 to ListViewOrders.Items.Count - 1 do
+      if ListViewOrders.Items[i].Checked then
+      begin
+        aOrder := TOrder(ListViewOrders.Items[i].Data);
+        if aOrder <> nil then
+          aList.Add( aOrder );
+      end;
+
+
+    for i := 0 to aList.Count - 1 do
+    begin
+      aOrder  := TOrder( aList.Items[i]) ;
+      if (aOrder.OrderType = otNormal) and (aOrder.State = osActive) then
+      begin
+//        iOrderQty := Min(iMaxQty - iQty, aOrder.ActiveQty);
+//          // generage cancel order
+//        if iOrderQty > 0 then  begin
+//          aTicket := gEnv.Engine.TradeCore.OrderTickets.New(Self);
+//          gEnv.Engine.TradeCore.Orders.NewCancelOrder(aOrder, iOrderQty, aTicket);
+//          gEnv.Engine.TradeBroker.Send(aTicket);
+//        end;
+      end;
+    end;
+
+  finally
+    aList.Free;
+  end;
+
+    // send
+  //gEnv.Engine.TradeBroker.Send(aTicket);
+end;
+
+procedure TOrderBoardForm.btnAllCnlClick(Sender: TObject);
+var
+  i : integer;
+begin
+
+  //gLog.Add( lkKeyOrder, 'TOrderBoardForm', 'btnAllCnlClick', '전체취소' ) ;
+
+  if FPrefs.NoUseQtySet then
+  begin
+    ShowMessage('수량셋 숨김 상태에서는 취소 주문 불가');
+    exit;
+  end;
+
+  for i := 0 to FBoards.Count-1 do
+    FBoards[i].AllCancels;
+end;
+
+procedure TOrderBoardForm.btnLastCancelClick(Sender: TObject);
+var
+  aBoard: TOrderBoard;
+
+  aOrder: TOrder;
+  i: Integer;
+  dMaxQty, dQty, dOrderQty : double;
+  aList : TList;
+begin
+
+  if FPrefs.NoUseQtySet then
+  begin
+    ShowMessage('수량셋 숨김 상태에서는 취소 주문 불가');
+    exit;
+  end;
+
+  if FCancelPoint.Tablet = nil then Exit;
+
+    // find board
+  aBoard := FBoards.Find(FCancelPoint.Tablet);
+  if aBoard = nil then Exit;
+    // init
+  dQty := 0;
+
+  aList := TList.Create;
+  try
+    //
+    for i := ListViewOrders.Items.Count - 1 downto 0 do
+    begin
+      aOrder := TOrder(ListViewOrders.Items[i].Data);
+      if aOrder <> nil then
+        aList.Add( aOrder );
+      if aList.Count > 0 then
+        break;
+    end;
+
+    dMaxQty := 0;
+
+    for i := 0 to aList.Count - 1 do
+    begin
+      aOrder  := TOrder( aList.Items[i]) ;
+      if (aOrder.OrderType = otNormal) and (aOrder.State = osActive) then
+      begin
+        dOrderQty := Min(dMaxQty - dQty, aOrder.ActiveQty);
+          // generage cancel order
+//        if iOrderQty > 0 then  begin
+//          aTicket := gEnv.Engine.TradeCore.OrderTickets.New(Self);
+//          gEnv.Engine.TradeCore.Orders.NewCancelOrder(aOrder, iOrderQty, aTicket);
+//          gEnv.Engine.TradeBroker.Send(aTicket);
+//        end;
+      end;
+    end;
+
+  finally
+    aList.Free;
+  end;
+
+end;
+
+
+//
+// selection
+//
+procedure TOrderBoardForm.ListViewOrdersMouseUp(Sender: TObject;
+  Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+var
+  i: Integer;
+  dSum : double;
+  aOrder: TOrder;
+begin
+  dSum := 0;
+
+  for i:=0 to ListViewOrders.Items.Count-1 do
+  begin
+    if ListViewOrders.Items[i].Checked  then
+    begin
+      aOrder := TOrder(ListViewOrders.Items[i].Data);
+      dSum := dSum + aOrder.ActiveQty;
+    end;
+  end;
+    //
+  EditCancelQty.Text := FloatToStr(dSum);
+end;
+
+
+
+function TOrderBoardForm.CancelOrders(aBoard: TOrderBoard; aPoint: TTabletPoint;
+  aTypes: TPositionTypes): Integer;
+var
+  i, iQty: Integer;
+  aOrder: TOrder;
+begin
+  Result := 0;
+
+  if FPrefs.NoUseQtySet then
+  begin
+    ShowMessage('수량셋 숨김 상태에서는 취소 주문 불가');
+    exit;
+  end;
+    // check
+  if (aBoard = nil) or (aBoard.Tablet.Symbol = nil) then Exit;
+
+  if aBoard.Account = nil then Exit;
+
+    // init
+  iQty := 0;
+
+    // clear list
+  FTargetOrders.Clear;
+
+    // get orders from the tablet
+  if aBoard.Tablet.GetOrders(aPoint, aTypes, FTargetOrders) = 0 then Exit;
+
+    // generate orders
+  for i := 0 to FTargetOrders.Count - 1 do
+  begin
+    aOrder := FTargetOrders[i];
+
+    if (aOrder.OrderType = otNormal) and (aOrder.State = osActive) then begin
+        // get a ticket
+//      aTicket := gEnv.Engine.TradeCore.OrderTickets.New(Self);
+//      gEnv.Engine.TradeCore.Orders.NewCancelOrder(aOrder, aOrder.ActiveQty, aTicket);
+//      gEnv.Engine.TradeBroker.Send(aTicket);
+    end;
+  end;
+
+end;
+
+
+procedure TOrderBoardForm.tmExpectTimer(Sender: TObject);
+begin
+  ShowExpectFillPrice;
+end;
+
+end.

@@ -1,0 +1,17 @@
+program KeyMngr;
+
+uses
+  Vcl.Forms,
+  FApiKeyMngr in 'FApiKeyMngr.pas' {FrmApiKeyMngr},
+  USecureString in '..\engine\utils\USecureString.pas',
+  FInputEntropy in 'FInputEntropy.pas' {FrmInputEntropy},
+  UEncrypts in '..\engine\common\UEncrypts.pas';
+
+{$R *.res}
+
+begin
+  Application.Initialize;
+  Application.MainFormOnTaskbar := True;
+  Application.CreateForm(TFrmApiKeyMngr, FrmApiKeyMngr);
+  Application.Run;
+end.

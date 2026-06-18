@@ -1,0 +1,172 @@
+object Frame2: TFrame2
+  Left = 0
+  Top = 0
+  Width = 920
+  Height = 88
+  Margins.Left = 5
+  Margins.Top = 5
+  Margins.Right = 5
+  Margins.Bottom = 5
+  ParentBackground = False
+  TabOrder = 0
+  PixelsPerInch = 144
+  object CheckBox1: TCheckBox
+    Left = 5
+    Top = 13
+    Width = 80
+    Height = 17
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = #51652#51077
+    TabOrder = 0
+  end
+  object CheckBox2: TCheckBox
+    Left = 219
+    Top = 13
+    Width = 80
+    Height = 17
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = #52397#49328
+    TabOrder = 1
+  end
+  object Edit8: TEdit
+    Left = 809
+    Top = 7
+    Width = 98
+    Height = 33
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    TabOrder = 7
+    Text = 'Edit1'
+  end
+  object Edit7: TEdit
+    Left = 708
+    Top = 7
+    Width = 98
+    Height = 33
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    TabOrder = 6
+    Text = 'Edit1'
+  end
+  object Edit6: TEdit
+    Left = 607
+    Top = 7
+    Width = 98
+    Height = 33
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    TabOrder = 5
+    Text = 'Edit1'
+  end
+  object Edit5: TEdit
+    Left = 506
+    Top = 7
+    Width = 98
+    Height = 33
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    TabOrder = 4
+    Text = 'Edit1'
+  end
+  object Edit4: TEdit
+    Left = 405
+    Top = 7
+    Width = 98
+    Height = 33
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    TabOrder = 3
+    Text = 'Edit1'
+  end
+  object Edit3: TEdit
+    Left = 296
+    Top = 7
+    Width = 104
+    Height = 33
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    TabOrder = 2
+    Text = '300.0001'
+  end
+  object Edit2: TEdit
+    Left = 149
+    Top = 5
+    Width = 65
+    Height = 33
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = clWindowText
+    Font.Height = -18
+    Font.Name = 'Segoe UI'
+    Font.Style = [fsBold]
+    ParentFont = False
+    TabOrder = 8
+    Text = '-0.25'
+  end
+  object Edit1: TEdit
+    Left = 74
+    Top = 5
+    Width = 65
+    Height = 33
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = clWindowText
+    Font.Height = -18
+    Font.Name = 'Segoe UI'
+    Font.Style = [fsBold]
+    ParentFont = False
+    TabOrder = 9
+    Text = '-0.25'
+  end
+  object LabeledEdit1: TLabeledEdit
+    Left = 73
+    Top = 40
+    Width = 66
+    Height = 39
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Alignment = taRightJustify
+    EditLabel.Width = 5
+    EditLabel.Height = 39
+    EditLabel.Margins.Left = 18
+    EditLabel.Margins.Top = 18
+    EditLabel.Margins.Right = 18
+    EditLabel.Margins.Bottom = 18
+    EditLabel.Caption = ' '
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = clWindowText
+    Font.Height = -23
+    Font.Name = 'Segoe UI'
+    Font.Style = [fsBold]
+    LabelPosition = lpLeft
+    ParentFont = False
+    TabOrder = 10
+    Text = '-0.15'
+  end
+end

@@ -1,0 +1,355 @@
+unit UTradeBroker;
+
+interface
+uses
+  System.Classes, System.SysUtils,
+  UDistributor,
+  USymbols, UOrders, UAccounts, UPositions, UFills,
+  UApiTypes
+  ;
+type
+  TTradeBroker = class
+  private
+    FDistributor: TDistributor;
+    function GetOrderAmt(aOrder: TOrder; dQty, dFee : double): double;
+    procedure OnCancel(aOrder: TOrder; dQty : double);
+  public
+    constructor Create;
+    destructor Destroy; override;
+
+    procedure Subscribe(Sender: TObject; aHandler: TDistributorEvent); overload;
+    procedure Subscribe(Sender: TObject; iDataID : integer; aHandler: TDistributorEvent); overload;
+
+    procedure Unsubscribe(Sender: TObject);
+
+    procedure Accept( aOrder : TOrder;  dtTime : TDateTime;
+      bAccepted: boolean; sRjtCode : string = '' );
+    procedure Cancel( aOrder : TOrder; dQty : double ); overload;
+    procedure Cancel( aOrder : TOrder; bConfirmed: boolean; sRjtCode : string = '' ); overload;
+    procedure Change(aOrder  : TOrder; bConfirmed: boolean; dtTime : TDatetime; sRjtCode : string = '' );
+    // api 상 체결 완료 flag bDone 추가..
+    procedure Fill( aOrder : TOrder; aFill : TFill; bDone : boolean = false );
+
+    procedure Reject( aORder : TOrder; sCode : string );
+    procedure Send( aOrder : TOrder );
+
+    procedure PositionEvent( aPos : TPosition ;  iDataID : integer );
+    procedure AccountEvent( aAcnt : TAccount ;   iDataID : integer = 220 );
+    procedure AssetEvent( aAsset  : TAsset;   iDataID : integer );
+  end;
+
+implementation
+uses
+  GApp , UTypes , GLibs
+  , UConsts
+  ;
+{ TSymbolBroker }
+
+
+function TTradeBroker.GetOrderAmt( aOrder : TOrder; dQty , dFee: double ) : double;
+begin
+  case aOrder.Symbol.Spec.ExchangeType of
+    ekBinance: ;
+    ekUpbit: Result := dQty * aOrder.Price + dFee;
+    ekBithumb: ;
+  end;
+end;
+
+
+procedure TTradeBroker.Accept(aOrder: TOrder; dtTime : TDateTime;
+  bAccepted: boolean; sRjtCode : string);
+var
+  aPos : TPosition;
+  dAmt : double;
+  aAsset, aAsset2 : TAsset;
+begin
+  if bAccepted then
+  begin
+    if aOrder.IsAccept then Exit;
+
+    aOrder.Accept( dtTime );
+
+    if aOrder.Symbol.Spec.Market = mtSpot then
+    begin
+      {
+      if aOrder.Side > 0  then
+      begin
+        aAsset  := aOrder.Account.Asset;
+        aAsset.Locked  := aAsset.Locked + aOrder.OrderAmt;
+        aAsset2  := aOrder.Account.Assets.Find( aOrder.Symbol.Spec.BaseCode );
+        if aAsset2 = nil then
+        begin
+          aAsset2  := aOrder.Account.Assets.New( aOrder.Symbol.Spec.BaseCode, aOrder.Account);
+          App.Engine.TradeBroker.AssetEvent(aAsset2, ASSET_NEW);
+        end;
+
+      end else
+      begin
+        aAsset  := aOrder.Account.Assets.Find( aOrder.Symbol.Spec.BaseCode );
+        if aAsset = nil then
+        begin
+          aAsset  := aOrder.Account.Assets.New( aOrder.Symbol.Spec.BaseCode, aOrder.Account);
+          App.Engine.TradeBroker.AssetEvent(aAsset, ASSET_NEW);
+        end;
+//        aAsset.Balance  := aAsset.Balance - aOrder.OrderQty ;
+        aAsset.Locked   := aAsset.Locked  + aOrder.OrderQty;
+      end;
+      }
+
+      App.DebugLog('Accept - %s',[aOrder.Represent] );
+
+      FDistributor.Distribute(Self, TRD_DATA, aOrder, ORDER_ACCEPTED);
+
+    end else
+    if aOrder.Symbol.Spec.Market = mtFutures then
+    begin
+
+      aPos  := App.Engine.TradeCore.FindPosition( aOrder.Account, aOrder.Symbol );
+      if aPos = nil then begin
+        aPos := App.Engine.TradeCore.NewPosition( aOrder.Account, aOrder.Symbol );
+        FDistributor.Distribute(Self, TRD_DATA, aPos, POSITION_NEW);
+      end;
+
+      if aOrder.OrderType = otNormal then begin
+        aPos.DoOrder( aOrder.Side, aOrder.OrderQty);
+        aPos.DoOrder( aOrder.Side, aOrder.Price, aOrder.OrderQty  );
+      end;
+
+      App.DebugLog('Accept - %s',[aOrder.Represent] );
+
+      FDistributor.Distribute(Self, TRD_DATA, aOrder, ORDER_ACCEPTED);
+      FDistributor.Distribute(Self, TRD_DATA, aPos, POSITION_UPDATE);
+    end;
+  end else
+  begin
+    aOrder.Reject(sRjtCode, dtTime);
+    FDistributor.Distribute(Self, TRD_DATA, aOrder, ORDER_REJECTED);
+  end;
+end;
+
+
+procedure TTradeBroker.OnCancel(aOrder : TOrder; dQty : double );
+var
+  aAsset : TAsset;
+  aPos   : TPosition;
+begin
+  if aOrder.Symbol.Spec.Market = mtSpot then
+  begin
+         {
+    if aOrder.Side > 0  then
+    begin
+      aAsset  := aOrder.Account.Asset;
+      aAsset.Locked := aAsset.Locked - aOrder.OrderAmt;
+    end else
+    begin
+      aAsset  := aOrder.Account.Assets.Find( aOrder.Symbol.Spec.BaseCode);
+      if aAsset = nil then
+        aAsset  := aOrder.Account.Assets.New( aOrder.Symbol.Spec.BaseCode, aOrder.Account );
+      aAsset.Locked := aAsset.Locked - dQty;
+    end;
+
+    App.DebugLog( '취소 %s - %s,%.4f, %.4f',[ aOrder.Represent,
+      aAsset.Currency, aAsset.Balance, aAsset.Locked ] )
+          }
+  end else
+  begin
+
+    aPos  := App.Engine.TradeCore.FindPosition(aOrder.Account, aOrder.Symbol );
+    if aPos = nil then begin
+      aPos := App.Engine.TradeCore.NewPosition( aOrder.Account, aOrder.Symbol );
+      FDistributor.Distribute(Self, TRD_DATA, aPos, POSITION_NEW);
+    end else
+    begin
+      aPos.DoOrder( aoRder.Side, -dQty);
+      aPos.DoOrder( aOrder.Side, aOrder.Price, -dQty );
+    end;
+  end;
+end;
+
+procedure TTradeBroker.Cancel(aOrder: TOrder; dQty : double);
+begin
+
+  if aOrder.State = osCanceled then
+  begin
+    App.Log(llInfo, '취소 확인 중복 수신 : %s', [ aOrder.Represent ]);
+    Exit;
+  end;
+
+  if dQty > 0 then
+  begin
+    OnCancel(aOrder, dQty);
+    aOrder.Cancel( dQty );
+    FDistributor.Distribute(Self, TRD_DATA, aOrder, ORDER_CANCELED);
+  end;
+end;
+
+procedure TTradeBroker.Cancel(aOrder: TOrder; bConfirmed: boolean;
+  sRjtCode: string);
+  var
+    aPos : TPosition;
+    bPosUp : boolean;
+    aAsset : TAsset;
+begin
+	if bConfirmed then
+  begin
+
+    if aOrder.State = osCanceled then
+    begin
+      App.Log(llInfo, '취소 확인 중복 수신 : %s', [ aOrder.Represent ]);
+      Exit;
+    end;
+
+    OnCancel(aOrder, aOrder.ActiveQty);
+
+    aOrder.Cancel( aOrder.ActiveQty);
+    FDistributor.Distribute(Self, TRD_DATA, aOrder, ORDER_CANCELED);
+//    FDistributor.Distribute(Self, TRD_DATA, aPos, POSITION_UPDATE);
+  end else
+  begin
+  	aOrder.Reject( sRjtCode, now);
+    FDistributor.Distribute(Self, TRD_DATA, aOrder, ORDER_REJECTED);
+  end;
+end;
+
+procedure TTradeBroker.Change(aOrder: TOrder; bConfirmed: boolean;
+  dtTime: TDatetime; sRjtCode : string);
+  var
+    aPos : TPosition;
+    bPosUp : boolean;
+    aAsset : TAsset;
+begin
+	if bConfirmed then
+  begin
+
+    if aOrder.OrderType = otNormal then
+    begin
+      App.Log(llInfo, '정정 중복 수신 : %s', [ aOrder.Represent ]);
+      Exit;
+    end;
+
+    aOrder.Change(dtTime);
+
+    FDistributor.Distribute(Self, TRD_DATA, aOrder, ORDER_CHANGED);
+  end else
+  begin
+  	aOrder.Reject(sRjtCode, dtTime);
+    FDistributor.Distribute(Self, TRD_DATA, aOrder, ORDER_REJECTED);
+  end;
+end;
+
+procedure TTradeBroker.Reject(aORder: TOrder; sCode: string);
+begin
+  case aOrder.OrderType of
+    otNormal: begin aOrder.RejectReason := 'Order Limit'; Accept(aOrder, now, false, sCode); end;
+    otChange: Change(aOrder, false, now, sCode);
+    otCancel: Cancel(aOrder, false, sCode );
+  end;
+end;
+
+constructor TTradeBroker.Create;
+begin
+  FDistributor:= TDistributor.Create;
+end;
+
+destructor TTradeBroker.Destroy;
+begin
+  FDistributor.Free;
+  inherited;
+
+  App.Log(llInfo, 'TTradeBroker Destroy' );
+end;
+
+
+
+procedure TTradeBroker.Fill(aOrder: TOrder; aFill: TFill; bDone : boolean);
+var
+  aPos : TPosition;
+  aAsset : TAsset;
+
+begin
+  if not aOrder.IsAccept then
+  begin
+    Accept( aOrder, aFill.FillTime, true );
+    App.Log( llInfo, 'Forward Accept Process : %s', [ aOrder.Represent ] );
+  end;
+
+  aOrder.Fill( aFill, bDone );
+
+  if aOrder.Symbol.Spec.Market = mtSpot then
+  begin
+
+    App.DebugLog( '%s: %s, %s, 체결, %s, %s, %s (A:%.8n, F:%.8n, %s)',[ aOrder.Symbol.Code,
+      ExKindToStr( aOrder.Symbol.Spec.ExchangeType),
+      aOrder.SideToStr, aOrder.Symbol.PriceToStr( aFill.Price),
+      aOrder.Symbol.QtyToStr( aFill.Volume), aOrder.OrderNo,
+      aOrder.ActiveQty, aOrder.FilledQty, aOrder.StateToStr
+       ] );
+
+    FDistributor.Distribute(Self, TRD_DATA, aOrder, ORDER_FILLED);
+
+  end else
+  begin
+
+    aPos := App.Engine.TradeCore.FindPosition( aOrder.Account, aOrder.Symbol);
+    if aPos = nil then
+    begin
+      aPos  := App.Engine.TradeCore.NewPosition( aOrder.Account, aOrder.Symbol);
+      FDistributor.Distribute(Self, TRD_DATA, aPos, POSITION_NEW);
+    end;
+
+    aPos.DoOrder( aOrder.Side, -abs(aFill.Volume) );
+    aPos.DoOrder( aOrder.Side, aOrder.Price, -abs(aFill.Volume)  );
+
+    aPos.AddFill( aFill );
+    aPos.Account.ApplyFill( aFill );
+
+    FDistributor.Distribute(Self, TRD_DATA, aOrder, ORDER_FILLED);
+    FDistributor.Distribute(Self, TRD_DATA, aPos,   POSITION_UPDATE);
+  end;
+
+end;
+
+procedure TTradeBroker.PositionEvent(aPos: TPosition;  iDataID: integer);
+begin
+	if aPos = nil then Exit;
+ 	FDistributor.Distribute(Self, TRD_DATA, aPos, iDataID);
+end;
+
+procedure TTradeBroker.AccountEvent(aAcnt: TAccount; iDataID: integer);
+begin
+	if aAcnt = nil then Exit;
+ 	FDistributor.Distribute(Self, TRD_DATA, aAcnt, iDataID);
+end;
+
+
+procedure TTradeBroker.AssetEvent(aAsset: TAsset; iDataID: integer);
+begin
+  if aAsset = nil then Exit;
+  FDistributor.Distribute(Self, TRD_DATA, aAsset, iDataID);
+end;
+
+procedure TTradeBroker.Send(aOrder: TOrder);
+begin
+  App.Engine.ApiManager.ExManagers[aOrder.Account.ExchangeKind].SendOrder( aOrder );
+end;
+
+
+procedure TTradeBroker.Subscribe(Sender: TObject; iDataID: integer;
+  aHandler: TDistributorEvent);
+begin
+  if Sender = nil then Exit;
+  FDistributor.Subscribe(Sender, iDataID, ANY_OBJECT, ANY_EVENT, aHandler);
+end;
+
+procedure TTradeBroker.Subscribe(Sender: TObject; aHandler: TDistributorEvent);
+begin
+  if Sender = nil then Exit;
+  FDistributor.Subscribe(Sender, TRD_DATA, ANY_OBJECT, ANY_EVENT, aHandler);
+end;
+
+
+procedure TTradeBroker.Unsubscribe(Sender: TObject);
+begin
+  FDistributor.Cancel(Sender);
+end;
+end.

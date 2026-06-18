@@ -1,0 +1,182 @@
+unit UExchangeThread;
+
+interface
+
+uses
+  System.Classes, System.SysUtils, System.SyncObjs, System.DateUtils,
+  System.Generics.Collections,
+
+  Windows,
+
+  UOrders, URestItems,
+
+  UApiTypes, UApiConsts
+
+  ;
+
+const
+  BALANCE = 'balance';
+  ORD_DETAIL  = 'detail';
+  ORD_LIST = 'orderList';
+
+type
+
+  TResData = record
+    OutJson : string;
+    Order   : TOrder;
+    Name    : string;
+    procedure Clear;
+  end;
+
+  TExchangeThread = class(TThread)
+  private
+    FEvent  : TEvent;
+    FExKind: TExchangeKind;
+    FCount, FIndex: integer;
+    FData : TResData;
+    FRest : TReqeustItem;
+    FLastBalTime: TDateTime;
+    { Private declarations }
+  protected
+    procedure Execute; override;
+    procedure TerminatedSet; override;
+    procedure SyncProc;
+  public
+    constructor Create(eKind : TExchangeKind);
+    destructor Destroy; override;
+
+    procedure DoResume;
+
+    property ExKind : TExchangeKind read FExKind write FExKind;
+    property LastBalTime : TDateTime read FLastBalTime write FLastBalTime;
+
+  end;
+
+implementation
+
+uses
+  GApp, GLibs, UTypes
+  , Rest.Types
+  , UEncrypts
+  , IdCoderMIME, IdGlobal
+  , UBithManager , UUpbitManager, UBinanceManager
+  , UUpbitSpot, UBithSpot
+
+  ;
+
+{
+  Important: Methods and properties of objects in visual components can only be
+  used in a method called using Synchronize, for example,
+
+      Synchronize(UpdateCaption);
+
+  and UpdateCaption could look like,
+
+    procedure TExchangeThread.UpdateCaption;
+    begin
+      Form1.Caption := 'Updated in a thread';
+    end;
+
+    or
+
+    Synchronize(
+      procedure
+      begin
+        Form1.Caption := 'Updated in thread via an anonymous method'
+      end
+      )
+    );
+
+  where an anonymous method is passed.
+
+  Similarly, the developer can call the Queue method with similar parameters as
+  above, instead passing another TThread class as the first parameter, putting
+  the calling thread in a queue with the other thread.
+
+}
+
+{ TExchangeThread }
+
+constructor TExchangeThread.Create(eKind : TExchangeKind);
+begin
+  inherited Create(true);
+  FreeOnTerminate := false;
+  Priority  := tpNormal;
+
+  FEvent  := TEvent.Create( nil, False, False, PChar( ExKindToStr(eKind)+'_Ex_Event') );
+  FExKind := eKind;
+
+  FRest   := TReqeustItem.Create;
+  FRest.ExKind  :=  eKind;
+
+  FIndex  := 0;
+  FCount  := 0;
+
+  FLastBalTime  := 0;
+end;
+
+destructor TExchangeThread.Destroy;
+begin
+  FEvent.Free;
+  FRest.Free;
+  inherited;
+end;
+
+procedure TExchangeThread.DoResume;
+begin
+  if Suspended then
+    Resume;
+end;
+
+procedure TExchangeThread.Execute;
+var
+  idx, i, iGap : integer;
+  aOrder, aTmp : TOrder;
+  sTime, sVal, sSig, sBody : string;
+
+  wr: TWaitResult;
+begin
+  { Place thread code here }
+
+  while not terminated do
+  begin
+    wr := FEvent.WaitFor(TExThreadTimeout[FExKind]) ;
+
+    case wr of
+      wrSignaled: Break;
+      wrTimeout: begin
+        case FExKind of
+          // 국내는 사용자가 토탈잔고에서 조회 버튼 클릭할때만..
+          ekBinance: App.Engine.ApiManager.ExManagers[FExKind].RequestBalance;
+          ekUpbit,
+          ekBithumb: App.Engine.TradeCore.Accounts[FExKind].CleanupStuckOrders(30);
+        end;
+      end;
+    end;
+
+  end;
+
+  App.Log(llInfo, '%s Exchange thread terminated', [ ExKindToStr(FExKind)] );
+end;
+
+
+
+procedure TExchangeThread.SyncProc;
+begin
+
+end;
+
+procedure TExchangeThread.TerminatedSet;
+begin
+  FEvent.SetEvent;
+end;
+
+{ TResData }
+
+procedure TResData.Clear;
+begin
+  OutJson := '';
+  Order   := nil;
+end;
+
+end.

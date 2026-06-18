@@ -1,0 +1,449 @@
+unit UExchangeThread;
+
+interface
+
+uses
+  System.Classes, System.SysUtils, System.SyncObjs, System.DateUtils,
+
+  Windows,
+
+  UOrders, URestItems,
+
+  UApiTypes, UApiConsts
+
+  ;
+
+const
+  BALANCE = 'balance';
+  ORD_DETAIL  = 'detail';
+  ORD_LIST = 'orderList';
+
+type
+
+  TResData = record
+    OutJson : string;
+    Order   : TOrder;
+    Name    : string;
+    procedure Clear;
+  end;
+
+  TExchangeThread = class(TThread)
+  private
+    FEvent  : TEvent;
+    FExKind: TExchangeKind;
+    FCount, FIndex: integer;
+    FData : TResData;
+    FRest : TReqeustItem;
+    FLastBalTime: TDateTime;
+    { Private declarations }
+    function GetOrderOBO : TOrder;
+    function GetOrderUpbit : string;
+    function GetOrderIDs : string;
+  protected
+    procedure Execute; override;
+    procedure SyncProc;
+  public
+    constructor Create(eKind : TExchangeKind);
+    destructor Destroy; override;
+
+    procedure DoResume;
+
+    property ExKind : TExchangeKind read FExKind write FExKind;
+    property LastBalTime : TDateTime read FLastBalTime write FLastBalTime;
+
+  end;
+
+implementation
+
+uses
+  GApp, GLibs, UTypes
+  , Rest.Types
+  , UEncrypts
+  , IdCoderMIME, IdGlobal
+  , UBithManager , UUpbitManager, UBinanceManager
+  , UUpbitSpot, UBithSpot
+
+  ;
+
+{
+  Important: Methods and properties of objects in visual components can only be
+  used in a method called using Synchronize, for example,
+
+      Synchronize(UpdateCaption);
+
+  and UpdateCaption could look like,
+
+    procedure TExchangeThread.UpdateCaption;
+    begin
+      Form1.Caption := 'Updated in a thread';
+    end;
+
+    or
+
+    Synchronize(
+      procedure
+      begin
+        Form1.Caption := 'Updated in thread via an anonymous method'
+      end
+      )
+    );
+
+  where an anonymous method is passed.
+
+  Similarly, the developer can call the Queue method with similar parameters as
+  above, instead passing another TThread class as the first parameter, putting
+  the calling thread in a queue with the other thread.
+
+}
+
+{ TExchangeThread }
+
+constructor TExchangeThread.Create(eKind : TExchangeKind);
+begin
+  inherited Create(true);
+  FreeOnTerminate := false;
+  Priority  := tpNormal;
+
+  FEvent  := TEvent.Create( nil, False, False, PChar( ExKindToStr(eKind)+'_Ex_Event') );
+  FExKind := eKind;
+
+  FRest   := TReqeustItem.Create;
+  FRest.ExKind  :=  eKind;
+
+  FIndex  := 0;
+  FCount  := 0;
+
+  FLastBalTime  := 0;
+end;
+
+destructor TExchangeThread.Destroy;
+begin
+  FEvent.Free;
+  FRest.Free;
+  inherited;
+end;
+
+procedure TExchangeThread.DoResume;
+begin
+  if Suspended then
+    Resume;
+end;
+
+procedure TExchangeThread.Execute;
+var
+  idx, i, iGap : integer;
+  aOrder, aTmp : TOrder;
+  sTime, sVal, sSig, sBody : string;
+begin
+  { Place thread code here }
+
+
+  while not terminated do
+  begin
+
+    if not( FEvent.WaitFor( TExThreadTimeout[FExKind] ) in [wrSignaled] ) then
+    begin
+
+      try
+        if App = nil then continue;
+
+        if FLastBalTime <= 0 then
+          FLastBalTime := now;
+        iGap := SecondsBetween( now, FLastBalTime );
+//-------------------------------------------------------------------------------------------------
+        if FExKind = ekBinance then
+        begin
+          if iGap > 60 then
+          begin
+            FLastBalTime := now;
+            FData.Name  := BALANCE;
+            FRest.Req.init(App.Engine.ApiConfig.GetBaseUrl( FExKind, eaFutUsdt ) );
+
+            sTime := GetTimestamp;
+            sSig  := CalculateHMACSHA256( Format('timestamp=%s', [sTime]), App.Engine.ApiConfig.GetSceretKey( FExKind , eaFutUsdt ) );
+
+            with FRest.Req do
+            begin
+              SetParam('timestamp', sTime );
+              SetParam('signature', sSig );
+              SetParam('X-MBX-APIKEY', App.Engine.ApiConfig.GetApiKey( FExKind , eaFutUsdt ), pkHTTPHEADER );
+
+              if not Request( rmGET, '/fapi/v2/account', '', FRest.JsonData, FRest.OutData) then
+              begin
+                 App.Log( llError, '', 'Failed %s RequestBalance -Thread (%s, %s)',
+                    [ TExchangeKindDesc[FExKind], FRest.JsonData, FRest.OutData] );
+                 FData.Clear;
+                 continue;
+              end;
+            end;
+
+            FData.OutJson := FRest.JsonData;
+            Synchronize( SyncProc );
+          end;
+        end else
+//-------------------------------------------------------------------------------------------------
+        if FExKind = ekBithumb then
+        begin
+
+          if iGap > 60 then
+          begin
+//            FCount := 0;
+            FLastBalTime  := now;
+            FData.Name    := BALANCE;
+            FRest.Req.init(App.Engine.ApiConfig.GetBaseUrl( FExKind, eaSpot ) );
+            sTime 	:= GetTimestamp;
+            FRest.AResource :=  '/info/balance';
+            sVal	:= EncodePath( FRest.AResource, Format('endPoint=%s&currency=%s', [ FRest.AResource, 'ALL'] ), sTime );
+
+            FRest.SetBithumbSig( sVal, sTime );
+
+            with FRest.Req do
+            begin
+              SetParam('endPoint', '/info/balance', TRESTRequestParameterKind.pkREQUESTBODY);
+              SetParam('currency', 'ALL',           TRESTRequestParameterKind.pkREQUESTBODY);
+              //App.Log(llInfo, '=========빗썸 잔고조회===========');
+              if not Request( rmPOST, '/info/balance', '', FRest.JsonData, FRest.OutData) then
+              begin
+                 App.Log( llError, '', 'Failed %s ParseBalance-Thread (%s, %s)',
+                    [ TExchangeKindDesc[FExKind], FRest.JsonData, FRest.OutData] );
+                 FData.Clear;
+                 Continue;
+              end;
+            end;
+
+            FData.OutJson := FRest.JsonData;
+            Synchronize( SyncProc );
+
+          end else
+          begin
+//-----------------------------------------------------------------------------------
+            TBithSpot(App.Engine.ApiManager.ExManagers[FExKind].Exchanges[eaSpot]).RequestActiveOrders(GetOrderIDs);
+
+
+            aTmp := nil;
+            for I := 0 to 2 do begin
+
+              aOrder := GetOrderOBO;
+              if aOrder <> nil then begin
+                if aOrder = aTmp then Continue;
+
+                FData.Order   := aOrder;
+                FData.Name    := ORD_DETAIL;
+
+                FRest.Req.init(App.Engine.ApiConfig.GetBaseUrl( FExKind, eaSpot ) );
+                FRest.AResource := '/info/order_detail';
+
+                sTime 	:= GetTimestamp;
+                sVal		:= EncodePath( FRest.AResource, Format('endPoint=%s&order_id=%s&order_currency=%s',
+                  [ FRest.AResource, aOrder.OrderNo, aOrder.Symbol.Code ] ), sTime )  ;
+
+                FRest.SetBithumbSig( sVal, sTime );
+
+                with FRest.Req do
+                begin
+                  SetParam('endPoint',      FRest.AResource, TRESTRequestParameterKind.pkREQUESTBODY);
+                  SetParam('order_id', 			aOrder.OrderNo , TRESTRequestParameterKind.pkREQUESTBODY);
+                  SetParam('order_currency',aOrder.Symbol.Code, TRESTRequestParameterKind.pkREQUESTBODY);
+
+                  if not Request( rmPOST, FRest.AResource, '', FRest.JsonData, FRest.OutData) then
+                  begin
+                     App.Log( llError, '', 'Failed %s RequestBitOrderDetail-Thread (%s, %s)',
+                        [ TExchangeKindDesc[FExKind], FRest.JsonData, FRest.OutData] );
+                    FData.Clear;
+                    aTmp  := aOrder;
+                    Continue;
+                  end;
+                end;
+
+                FData.OutJson := FRest.JsonData;
+                Synchronize( SyncProc );
+                FData.Clear;
+                aTmp  := aOrder;
+              end;
+            end;  // for i:=0
+
+//-----------------------------------------------------------------------------------
+          end;
+
+          FData.Clear;
+
+        end else
+//-------------------------------------------------------------------------------------------------\
+        if FExKind = ekUpbit then
+        begin
+          if App.AppStatus < asLoad then continue;
+          // 1. 주기적으로 잔고 조회
+
+          if iGap > 60 then
+          begin
+
+            FLastBalTime  := now;
+            FData.Name    := BALANCE;
+
+            // weboscket 이 생겼으므로 이젠 조회 안한다.
+            continue;
+
+            FRest.Req.init(App.Engine.ApiConfig.GetBaseUrl( FExKind, eaSpot ) );
+
+            //App.Log(llInfo, '=========업비트 잔고조회===========');
+            FRest.SetUpbitSig('0');
+            if not FRest.Req.Request(rmGET, 'v1/accounts', '',  FRest.JsonData, FRest.OutData) then
+            begin
+               App.Log( llError, '', 'Failed %s RequestBalance -Thread (%s, %s)',
+                  [ TExchangeKindDesc[FExKind], FRest.JsonData, FRest.OutData] );
+               FData.Clear;
+               continue;
+            end;
+
+            FData.OutJson := FRest.JsonData;
+            Synchronize( SyncProc );
+
+          end;
+          {
+          // 2. 주문 상태 상세 조회
+          else begin
+//-----------------------------------------------------------------------------------
+            aTmp := nil;
+            for I := 0 to 1 do begin
+              aOrder  := GetOrderOBO;
+              if aOrder <> nil then
+              begin
+                if aOrder = aTmp then Continue;
+                FData.Order   := aOrder;
+                FData.Name  := ORD_DETAIL;
+                FRest.Req.init(App.Engine.ApiConfig.GetBaseUrl( FExKind, eaSpot ) );
+                sBody := 'uuid='+aOrder.OrderNo;
+                FRest.SetUpbitSig(sBody);
+                if not FRest.Req.Request(rmGET, 'v1/order?'+sBody, '',  FRest.JsonData, FRest.OutData) then
+                begin
+                   App.Log( llError, '', 'Failed %s RequestOrderDetail - Thread (%s, %s)',
+                      [ TExchangeKindDesc[FExKind], FRest.JsonData, FRest.OutData] );
+                   aTmp := aOrder;
+                   FData.Clear;
+                   continue;
+                end;
+                FData.OutJson := FRest.JsonData;
+                Synchronize( SyncProc );
+                aTmp := aOrder;
+                FData.Clear;
+              end;
+            end;
+//-----------------------------------------------------------------------------------
+          end;
+          }
+
+          FData.Clear;
+        end;
+
+      finally
+        inc(FCount);
+      end;
+    end;
+
+  end;
+
+  App.Log(llInfo, '%s Exchange thread terminated', [ ExKindToStr(FExKind)] );
+end;
+
+function TExchangeThread.GetOrderUpbit: string;
+begin
+  Result := '';
+  if App = nil  then Exit;
+  if App.Engine = nil then Exit;
+
+  if App.Engine.TradeCore.AOMutex[FExKind] <= 0 then Exit;
+  if App.AppStatus >= asClose then Exit;
+
+  WaitForSingleObject(App.Engine.TradeCore.AOMutex[FExKind], INFINITE);
+  try
+    Result := TUpbitSpot(App.Engine.ApiManager.ExManagers[FExKind]).GetActiveOrderIDForQuery;
+  finally
+    ReleaseMutex(App.Engine.TradeCore.AOMutex[FExKind]);
+  end;
+
+end;
+
+function TExchangeThread.GetOrderIDs: string;
+var
+  i : integer;
+begin
+  Result := '';
+  if App = nil  then Exit;
+  if App.Engine = nil then Exit;
+
+  if App.Engine.TradeCore.AOMutex[FExKind] <= 0 then Exit;
+  if App.AppStatus >= asClose then Exit;
+
+  WaitForSingleObject(App.Engine.TradeCore.AOMutex[FExKind], INFINITE);
+
+  try
+    var s : string;
+    with App.Engine.TradeCore.Orders[FExKind] do
+      for I := 0 to ActiveOrders.Count-1 do
+      begin
+        if nil = ActiveOrders.Orders[i] then continue;
+        s := ifThenStr(Result.IsEmpty, '', '&');
+        Result := Result + s + 'uuids[]='+ ActiveOrders.Orders[i].OrderNo;
+      end;
+  finally
+    ReleaseMutex(App.Engine.TradeCore.AOMutex[FExKind]);
+  end;
+end;
+
+function TExchangeThread.GetOrderOBO: TOrder;
+begin
+  Result := nil;
+  if App = nil  then Exit;
+  if App.Engine = nil then Exit;
+
+  if App.Engine.TradeCore.AOMutex[FExKind] <= 0 then Exit;
+  if App.AppStatus >= asClose then Exit;
+
+  WaitForSingleObject(App.Engine.TradeCore.AOMutex[FExKind], INFINITE);
+
+  try
+    if FIndex >= App.Engine.TradeCore.Orders[FExKind].ActiveOrders.Count then
+      FIndex := 0;
+    Result := App.Engine.TradeCore.Orders[FExKind].ActiveOrders.Orders[FIndex];
+
+    FIndex := FIndex +1;
+  finally
+    ReleaseMutex(App.Engine.TradeCore.AOMutex[FExKind]);
+  end;
+
+end;
+
+procedure TExchangeThread.SyncProc;
+begin
+//  if FData.Order <> nil then
+  try
+    case FExKind of
+      ekBinance:
+        if FData.Name = BALANCE then
+          TBinanceManager(App.Engine.ApiManager.ExManagers[FExKind]).Parse.ParseFutBalance(FData.OutJson) ;
+      ekUpbit:
+        if FData.Name = BALANCE then
+          TUpbitManager(App.Engine.ApiManager.ExManagers[FExKind]).Parse.ParseAccounts(FData.OutJson)
+        else if (FData.Name = ORD_DETAIL) and (FData.Order <> nil) then
+          TUpbitManager(App.Engine.ApiManager.ExManagers[FExKind]).Parse.ParseSpotOrderDetail(FData.OutJson, FData.Order.OrderNo) ;
+      ekBithumb:
+        if (FData.Order <> nil ) and (FData.Name = ORD_DETAIL) then
+          TBithManager(App.Engine.ApiManager.ExManagers[FExKind]).Parse.ParseSpotOrderDetail(FData.OutJson, FData.Order.OrderNo)
+        else if FData.Name = BALANCE then
+          TBithManager(App.Engine.ApiManager.ExManagers[FExKind]).Parse.ParseBalance(FData.OutJson);
+    end;
+  except
+    on e : exception do
+      App.Log(llError,'%s Exchange thread error : %s', [ ExKindToStr(FExKind), e.Message] );
+  end;
+end;
+
+{ TResData }
+
+procedure TResData.Clear;
+begin
+  OutJson := '';
+  Order   := nil;
+end;
+
+end.

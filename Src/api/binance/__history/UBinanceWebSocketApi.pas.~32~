@@ -1,0 +1,540 @@
+unit UBinanceWebSocketApi;
+
+interface
+
+uses
+  System.Classes, System.SysUtils, System.DateUtils, System.Generics.Collections, System.JSON
+  , UWebSockets
+  , UQuoteTimers
+  , UApiTypes, UApiConsts, UTypes
+  , sgcWebSocket_Classes
+  , UOrders, USymbols
+  , UBinanceFuturesRateLimiter
+  ;
+
+type
+
+  TSocketRateLimit = record
+    Name  : string;
+    Count, CountR : integer;
+    StartTick : int64;
+
+    Limit : integer;
+    Interval : integer;
+
+    procedure Init(sName : string; const intvl, lmt : integer);
+    procedure Reset;
+    function SendOrder : boolean;
+  end;
+
+  TBinanceWebsocketApi = class(TWebSocket)
+  private
+    FTimer: TQuoteTimer;
+    FListenKey: string;
+    FInterval: integer;
+    FSendList: TDictionary<string, TOrder>;
+    FLimit : array [0..2] of TSocketRateLimit;
+    FRateLimiter: TBinanceFuturesRateLimiter;
+
+    procedure wsConnect(Connection: TsgcWSConnection); override;
+    procedure OnMessage(const S : string );
+
+    procedure OnTimer( Sender : TObject );
+
+    function CancelOrder(aOrder : TOrder): boolean;
+    function ChangeOrder(aOrder: TOrder): boolean;
+    function NewOrder(aOrder : TOrder) : boolean;
+
+    procedure ZParse(const s : string);
+  public
+    Constructor Create(aExApiType : TExchangeApiType); overload;
+    destructor Destroy; override;
+
+    function SenderOrder( aOrder : TOrder ): boolean;
+    function LimitCnt(i: integer) : integer;
+
+    property Timer : TQuoteTimer read FTimer;
+    property ListenKey : string read FListenKey;
+    property Interval  : integer read FInterval;
+    property SendList  : TDictionary<string,TOrder> read FSendList;
+
+    property RateLimiter: TBinanceFuturesRateLimiter read FRateLimiter;
+
+  end;
+
+
+implementation
+
+uses
+  GApp, GLibs
+  , UEncrypts
+  , Windows
+
+  ;
+
+{ TBinanceWebsocketApi }
+
+
+function TBinanceWebsocketApi.ChangeOrder(aOrder: TOrder): boolean;
+var
+  sKey, sData, sSig, sReq, sTime : string;
+begin
+  try
+    sTime := GetTimestamp;
+    sData := format('apiKey=%s'+
+                    '&orderId=%s'+
+                    '&price=%s'+
+                    '&quantity=%s'+
+                    '&side=%s'+
+                    '&symbol=%s'+
+                    '&timestamp=%s',
+                     [
+                      App.Engine.ApiConfig.GetApiKey(ExchangeKind, ExApiType),
+                      aOrder.OrderNo,
+                      aOrder.ChgPriceBI.OrgVal,
+                      aOrder.OrderQtyBI.OrgVal,
+                      ifThenStr( aOrder.Side > 0 , 'BUY', 'SELL' ),
+                      aOrder.Symbol.OrgCode,
+                      sTime
+                    ]);
+
+    sSig := CalculateHMACSHA256(sData, App.Engine.ApiConfig.GetSceretKey(ExchangeKind, ExApiType));
+    sKey := GetUUID;
+    sReq := format('{'+
+      '"id": "%s",'+
+      '"method": "order.modify",'+
+      '"params": {'+
+        '"apiKey": "%s",'+
+        '"orderId": "%s",'+
+        '"price": "%s",'+
+        '"quantity": "%s",'+
+        '"side": "%s",'+
+        '"symbol": "%s",'+
+        '"timestamp": %s,'+
+        '"signature": "%s"'+
+      '}'+
+    '}', [
+      sKey, App.Engine.ApiConfig.GetApiKey(ExchangeKind, ExApiType),
+      aOrder.OrderNo,  aOrder.ChgPriceBI.OrgVal, aOrder.OrderQtyBI.OrgVal,
+      ifThenStr( aOrder.Side > 0 , 'BUY', 'SELL' ),
+      aOrder.Symbol.OrgCode,
+      sTime, sSig
+    ]);
+
+    FSendList.Add(sKey, aOrder);
+    SendData(sReq);
+  except
+  end;
+
+end;
+
+constructor TBinanceWebsocketApi.Create(aExApiType : TExchangeApiType);
+begin
+  inherited Create(WSAPI_SOCK, 0, ekBinance, aExApiType);
+
+  FRateLimiter:= TBinanceFuturesRateLimiter.Create;
+
+  FTimer  := nil;
+
+  FInterval := 0;
+  OnNotify    := OnMessage;
+
+  FSendList:= TDictionary<string, TOrder>.Create ;
+
+  with WebSocket do
+  begin
+    HeartBeat.Enabled := true;
+    HeartBeat.Interval:= 120;
+  end;
+
+  FLimit[0].Init('REQUEST_WEIGHT', 60, 2400);
+  FLimit[1].Init('ORDERS_SECOND', 10, 300);
+  FLimit[2].Init('ORDERS_MINUTE', 60, 1200);
+
+end;
+
+destructor TBinanceWebsocketApi.Destroy;
+var
+  I: Integer;
+begin
+
+  if FTimer <> nil then
+    FTimer.Enabled := false;
+  FSendList.Free;
+
+  FRateLimiter.Free;
+
+  inherited;
+end;
+
+function TBinanceWebsocketApi.LimitCnt(i: integer): integer;
+begin
+  if i > High(FLimit) then
+    Result := 0
+  else
+    Result := FLimit[i].Count;
+end;
+
+function TBinanceWebsocketApi.NewOrder(aOrder: TOrder): boolean;
+var
+  sData, sSig, sReq, sTime, sKey : string;
+begin
+  try
+    sTime := GetTimestamp;
+    sData := format('apiKey=%s'+
+                    '&newClientOrderId=%s'+
+                    '&price=%s'+
+                    '&quantity=%s'+
+                    '&reduceOnly=%s'+
+                    '&side=%s'+
+                    '&symbol=%s'+
+                    '&timeInForce=%s'+
+                    '&timestamp=%s'+
+                    '&type=LIMIT',
+                     [
+                      App.Engine.ApiConfig.GetApiKey(ExchangeKind, ExApiType),
+                      aOrder.LocalNo,
+                      aOrder.PriceBI.OrgVal,
+                      aOrder.OrderQtyBI.OrgVal,
+                      ifThenStr(aOrder.ReduceOnly,'true','false'),
+                      ifThenStr( aOrder.Side > 0 , 'BUY', 'SELL' ),
+                      aOrder.Symbol.OrgCode,
+                      ifThenStr(aOrder.TimeInForce = tmGTX, 'GTX', 'GTC'),
+                      sTime
+                    ]);
+
+    sSig := CalculateHMACSHA256(sData, App.Engine.ApiConfig.GetSceretKey(ExchangeKind, ExApiType));
+
+    sKey := GetUUID;
+    sReq := format('{'+
+      '"id": "%s",'+
+      '"method": "order.place",'+
+      '"params": {'+
+        '"apiKey": "%s",'+
+        '"newClientOrderId": "%s",'+
+        '"price": "%s",'+
+        '"quantity": "%s",'+
+        '"reduceOnly": "%s",'+
+        '"side": "%s",'+
+        '"symbol": "%s",'+
+        '"timeInForce": "%s",'+
+        '"timestamp": %s,'+
+        '"type": "LIMIT",'+
+        '"signature": "%s"'+
+      '}'+
+    '}', [
+      sKey, App.Engine.ApiConfig.GetApiKey(ExchangeKind, ExApiType),
+      aOrder.LocalNo,  aOrder.PriceBI.OrgVal, aOrder.OrderQtyBI.OrgVal,
+      ifThenStr(aOrder.ReduceOnly,'true','false'),
+      ifThenStr( aOrder.Side > 0 , 'BUY', 'SELL' ),
+      aOrder.Symbol.OrgCode,
+      ifThenStr(aOrder.TimeInForce = tmGTX, 'GTX', 'GTC'),
+      sTime, sSig
+    ]);
+
+    FSendList.Add(sKey,aOrder);
+    SendData(sReq);
+  except
+
+  end;
+end;
+
+function TBinanceWebsocketApi.CancelOrder(aOrder: TOrder): boolean;
+var
+  sKey, sData, sSig, sReq, sTime : string;
+begin
+
+  try
+    sTime := GetTimeStamp;
+
+    sData := Format('apiKey=%s&orderId=%s&symbol=%s&timestamp=%s', [
+      App.Engine.ApiConfig.GetApiKey(ExchangeKind, ExApiType),
+      aOrder.OrderNo,
+      aOrder.Symbol.OrgCode,
+      sTime]);
+
+    sSig := CalculateHMACSHA256(sData, App.Engine.ApiConfig.GetSceretKey(ExchangeKind, ExApiType));
+
+    sKey := GetUUID;
+    sReq := format('{'+
+      '"id": "%s",'+
+      '"method": "order.cancel",'+
+      '"params": {'+
+        '"apiKey": "%s",'+
+        '"orderId": "%s",'+
+        '"symbol": "%s",'+
+        '"timestamp": %s,'+
+        '"signature": "%s"'+
+      '}'+
+    '}', [
+      sKey, App.Engine.ApiConfig.GetApiKey(ExchangeKind, ExApiType),
+      aOrder.OrderNo,
+      aOrder.Symbol.OrgCode,
+      sTime, sSig
+    ]);
+
+    FSendList.Add(sKey,aOrder);
+    SendData(sReq);
+  except
+  end;
+end;
+
+procedure TBinanceWebsocketApi.OnMessage(const S: string);
+begin
+  if S.IsEmpty then Exit;
+
+  App.Log(llDebug,'binance_order', 'S:%s', [S]) ;
+
+  ZParse(S);
+end;
+
+procedure TBinanceWebsocketApi.OnTimer(Sender: TObject);
+var
+  i: integer;
+begin
+  for I := 0 to High(FLimit) do
+    FLimit[i].Reset;
+end;
+
+function TBinanceWebsocketApi.SenderOrder(aOrder: TOrder): boolean;
+var
+  i : integer;
+  bRes : boolean;
+begin
+  Result := false;
+
+  bRes := true;
+  case aOrder.OrderType of
+    otNormal,
+    otChange:
+      begin
+        //bRes := FLimit[1].SendOrder and FLimit[2].SendOrder;
+        bRes := FRateLimiter.TryOrder;
+        if not bRes then
+        begin
+          App.Engine.TradeBroker.Reject(aOrder, '8888');
+          Exit ;
+        end;
+      end ;
+    otCancel:
+      //if not FLimit[0].SendOrder then
+      if not FRateLimiter.TryCancel then
+      begin
+        App.Engine.TradeBroker.Reject(aOrder, '8888');
+        Exit ;
+      end;
+  end;
+
+  case aOrder.OrderType of
+    otNormal: Result := NewOrder(aOrder);
+    otChange: Result := ChangeOrder(aOrder);
+    otCancel: Result := CancelOrder(aOrder);
+  end;
+end;
+
+procedure TBinanceWebsocketApi.wsConnect(Connection: TsgcWSConnection);
+begin
+  if FTimer = nil then
+  begin
+    FTimer  := App.Engine.QuoteBroker.Timers.New;
+    FTimer.Interval := 500;
+    FTimer.OnTimer  := OnTimer;
+    FTimer.Enabled  := true;
+  end;
+
+  inherited wsConnect(Connection);
+  App.Log(llInfo, ' %s  %d.th Connected', [GetDescript, ConnectTry ]);
+end;
+
+procedure TBinanceWebsocketApi.ZParse(const s: string);
+var
+  aObj, aRes : TJsonObject;
+  aLimits : TJsonArray;
+  sMsg, sID, sOID, sCode, sTmp : string;
+  status : integer;
+  aOrder : TOrder;
+  bError : boolean;
+  dtTime : TDateTime;
+  I: Integer;
+begin
+  aObj := TJsonObject.ParseJSONValue(s) as TJsonObject;
+  try
+
+    sID := aObj.GetValue('id').ToString.Replace('"','');
+    if not (FSendList.TryGetValue(sID, aOrder)) then
+    begin
+      App.Log(llError, '%s not found order : %s', [ TExShortDesc[ExchangeKind], sID ] );
+      Exit;
+    end;
+    if aOrder = nil then Exit;
+
+    bError := false;
+    sOID   := '';   sMsg := '';   sCode := '';
+    status := aObj.GetValue<integer>('status');
+    // 거부 처리.
+    if not (status in [200..201]) then
+    begin
+      sCode  := aObj.GetValue('error').GetValue<string>('code');
+      sMsg   := aObj.GetValue('error').GetValue<string>('msg');
+      bError := true;
+    end;
+
+    // 중복이므로.. 심싲어  User Data Stream 보다 늦다.
+    // 그래서 거부 주문일때만 처리
+    if bError then
+    case aOrder.OrderType of
+      otNormal:
+        begin
+          if bError then begin
+            aOrder.RejectReason := sMsg;
+            dtTime  := now;
+          end
+          else begin
+            aRes   := aObj.GetValue('result') as TJsonObject;
+            sOID   := aRes.GetValue('orderId').ToString;
+            dtTime := UnixTimeToDateTime( aRes.GetValue<int64>('updateTime') );
+            aOrder.OrderNo  := sOID;
+
+            if aRes.GetValue<boolean>('reduceOnly') then
+              aOrder.UpdateOrderQty(aRes.GetValue<double>('origQty'));
+          end;
+
+          App.DebugLog('Binance Fut - wsapi : 신규 주문 %s, (%s, %s, %s)', [
+            ifThenStr(bError, '거부','접수'), aOrder.Represent, sCode, sMsg
+            ]  );
+
+          App.Engine.TradeBroker.Accept(aOrder, dtTime, not bError, sCode) ;
+        end;
+      otCancel:
+        begin
+          if bError then
+            sTmp := ''
+          else begin
+            aRes   := aObj.GetValue('result') as TJsonObject;
+            sTmp   := aRes.GetValue('status').ToString;
+          end;
+
+          // 취소주문 접수..
+          if sTmp <> 'NEW' then
+          begin
+            App.DebugLog('Binance Fut - wsapi : 취소 주문 %s, (%s, %s, %s)', [
+              ifThenStr(bError, '거부','확인'), aOrder.Represent, sCode, sMsg
+              ]  );
+
+            App.Engine.TradeBroker.Cancel(aOrder, not bError, sCode);
+          end;
+
+        end;
+      otChange:
+        begin
+          if not bError then begin
+            aRes   := aObj.GetValue('result') as TJsonObject;
+            dtTime := UnixTimeToDateTime( aRes.GetValue<int64>('updateTime') );
+          end else
+            dtTime := now;
+          App.DebugLog('Binance Fut - wsapi : 정정 주문 %s, (%s, %s, %s)', [
+            ifThenStr(bError, '거부','확인'), aOrder.Represent, sCode, sMsg
+            ]  );
+
+          App.Engine.TradeBroker.Change(aOrder, not bError, dtTime, sCode);
+        end ;
+    end;
+
+    if aObj.GetValue('rateLimits') <> nil then
+    begin
+
+      aLimits := aObj.GetValue('rateLimits') as TJsonArray;
+
+      case aOrder.OrderType of
+        otNormal,
+        otChange: FRateLimiter.LoadOrderLimits(aLimits);
+        otCancel: FRateLimiter.LoadCancelLimits(aLimits);
+      end;
+
+
+//      aLimits := aObj.GetValue('rateLimits') as TJsonArray;
+//      var sType, sInterval, sRes : string;
+//      var iCnt : integer;
+//
+//      sRes := '';
+//      for I := 0 to aLimits.Count -1 do
+//      begin
+//        aRes  := aLimits.Items[i] as TJsonObject;
+//        sType := aRes.GetValue('rateLimitType').Value;
+//        icnt := aRes.GetValue<integer>('count') ;
+//
+//        if sType = 'REQUEST_WEIGHT' then
+//          FLimit[0].CountR  := icnt
+//        else if sType = 'ORDERS' then
+//        begin
+//          sInterval := aRes.GetValue('interval').Value;
+//          if sInterval = 'MINUTE' then
+//            FLimit[2].CountR := iCnt
+//          else
+//            FLimit[1].CountR := iCnt;
+//        end;
+
+
+//        sInterval := aRes.GetValue('interval').Value;
+//
+//        aRes.GetValue<integer>('limit');
+//        aRes.GetValue<integer>('count');
+//        if i < aLimits.Count -1 then
+//          sRes := sRes + ',';
+//
+//        sRes := sRes + Format('(%s:%d)',[sType, iCnt ]);
+//      end;
+
+      //FLimits := sRes;
+      //App.Log(llInfo, 'test_1', '%s (%s)', [sRes, aLimits.ToString] );
+    end;
+
+  finally
+    FreeAndNil(aObj);
+  end;
+
+end;
+
+{ TSocketRateLimit }
+
+procedure TSocketRateLimit.Init(sName : string; const intvl, lmt : integer);
+begin
+  Name      := sName;
+  Count     := 0;
+  StartTick := 0;
+  CountR    := 0;
+  Limit     := lmt;
+  Interval  := intvl
+end;
+
+function TSocketRateLimit.SendOrder: boolean;
+begin
+
+  Reset;
+
+  if Count + 1 >= Limit then Exit (false);
+
+  inc(Count);
+
+  Result := true;
+end;
+
+procedure TSocketRateLimit.Reset;
+var
+  nTick : int64;
+begin
+  if Count = 0 then
+    StartTick := GetTickCount64
+  else begin
+    nTick := GetTickCount64;
+    if (nTick - StartTick) > (Interval * 1000 + 100) then
+    begin
+//      App.Log(llInfo, 'ratelimit','Reset : %s, %d -> 0, gap : %d (real:%d) ',
+//        [Name, Count, nTick - StartTick, CountR]);
+      StartTick := nTick;
+      Count     := 0;
+    end;
+  end;
+end;
+
+end.

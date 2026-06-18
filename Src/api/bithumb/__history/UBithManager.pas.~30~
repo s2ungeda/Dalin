@@ -1,0 +1,365 @@
+unit UBithManager;
+
+interface
+
+uses
+  System.Classes, System.SysUtils, System.DateUtils,   vcl.ExtCtrls,
+
+  UExchangeManager, UBithParse , USymbols, UOrders,  UQuoteTimers, UTypes,
+
+  UApiTypes, UThreadPools
+  ;
+
+type
+
+  TBithManager = class( TExchangeManager )
+  private
+    FParse: TBithParse;
+    FDepTimer: TQuoteTimer;
+    FCount  : int64;
+
+    FQryTimer: TTimer;
+    FQryCount: int64;
+    FBalQryCnt: int64;
+    FIndex : integer;
+    FThreadPool: TCustomThreadPool;
+
+    procedure OnTimer( Sender : TObject );
+    procedure OnQryTimer(Sender : TObject );
+  public
+
+    Constructor  Create( aExType : TExchangeKind );
+    Destructor  Destroy; override;
+
+    function InitMarketWebSockets : boolean ; override;
+    function SubscribeAll : boolean; override;
+    procedure UnSubscribeAll ; override;
+
+    function RequestBalance : boolean; override;
+    function RequestPositons : boolean; override;
+    function RequestOrders: boolean; override;
+    function RequestCandle(aSymbol: TSymbol; iCount: integer): boolean; override;
+
+    function MakeCloseData : boolean ; override;
+
+    function Subscrib( aSymbol : TSymbol ) : boolean; override;
+    function UnSubscrib( aSymbol : TSymbol ) : boolean; override;
+
+    procedure OrderDetailRequest( bStart : boolean ); override;
+
+//    function SendOrder( aOrder : TOrder ): boolean;  override;
+//    procedure RequestOrderList( aSymbol : TSymbol ); override;
+//    procedure RequestOrdeDetail( aOrder : TOrder ) ; override;
+//    procedure RequestBalance( aSymbol : TSymbol ) ; override;
+//    procedure ReceivedData( aMarket : TMarketType; aReqType : TRequestType;  aData, aRef : string ); override;
+
+    procedure OnDepthTimer(Sender: TObject);
+    procedure OnSendDoneEvent(  Sender : TObject );
+
+    // 병렬 처리용
+    function ASyncRequestTradeAmt( aSymbol : TSymbol ) : boolean; override;
+    function ASyncRequest5MinAgo( aSymbol : TSymbol ) : boolean; override;
+    function ASyncRequestAvailable( aSymbol : TSymbol ) : boolean; override;
+
+    property Parse : TBithParse read FParse;
+    property DepTimer : TQuoteTimer read FDepTimer;
+    property ThreadPool : TCustomThreadPool read FThreadPool;
+
+  end;
+
+implementation
+
+uses
+  GApp
+  , UApiConsts
+  , UBithSpot
+  , UBithWebSockets
+  , URestRequests
+  , USharedConsts
+  , UPositions
+  ;
+{ TBinanceManager }
+
+constructor TBithManager.Create(aExType: TExchangeKind);
+begin
+  inherited Create( aExType );
+  FParse  := TBithParse.Create( self );
+  FParse.OnSendDone := OnSendDoneEvent;
+  FCount := 0;
+
+  FQryTimer:= TTimer.Create( nil );
+  FQryTimer.Enabled   := false;
+  FQryTimer.Interval  := 300;
+  FQryTimer.OnTimer   := OnQryTimer;
+  FQryCount           := 0;
+
+  FIndex    := 0;
+  FBalQryCnt  := 0;
+
+  FThreadPool:= TCustomThreadPool.Create(5, ekBithumb);
+end;
+
+destructor TBithManager.Destroy;
+begin
+
+  FQryTimer.Enabled := false;
+  FQryTimer.OnTimer := nil;
+  FQryTimer.Free;
+
+  FThreadPool.Free;
+
+	if FDepTimer <> nil then
+    FDepTimer.Enabled := false;
+
+  FParse.Free;
+  inherited;
+end;
+
+
+const divCnt = 40;
+function TBithManager.InitMarketWebSockets: boolean;
+var
+  i, j, iCount : integer;
+//  aList : TStringList;
+//  aSymbol : TSymbol;
+begin
+
+  iCount := 1;
+  SetLength( QuoteSock, iCount );
+
+  for I := 0 to iCount-1 do begin
+    QuoteSock[i]  := TBithWebSocket.Create(QOUTE_SOCK, i, eaSpot ) ;
+    QuoteSock[i].init('pubwss.bithumb.com/pub/ws' );
+  end;
+
+  Result := true;
+
+  // orderbook 을 위한 조회 타이머.
+  FDepTimer  := App.Engine.QuoteBroker.Timers.New;
+  FDepTimer.Enabled  := false;
+  FDepTimer.Interval := 100;
+  FDepTimer.OnTimer  := OnDepthTimer;
+
+  Timer.OnTimer   := OnTimer;
+end;
+
+function TBithManager.MakeCloseData : boolean ;
+var
+  sTmp : string;
+begin
+  stmp := App.Engine.SymbolCore.MainSymbols[msBTC][ExchangeKind].OrgCode;
+  Result := Exchanges[eaSpot].RequestCandleData('24h', sTmp )
+    and Exchanges[eaSpot].RequestCandleData('30m', sTmp )    ;
+
+  stmp := App.Engine.SymbolCore.MainSymbols[msETH][ExchangeKind].OrgCode;
+  Result := Exchanges[eaSpot].RequestCandleData('24h', sTmp )
+    and Exchanges[eaSpot].RequestCandleData('30m', sTmp )    ;
+
+end;
+
+procedure TBithManager.OnDepthTimer(Sender: TObject);
+begin
+
+//  thread 로 대체
+  if Done then
+  begin
+    FDepTimer.Enabled := false;
+    Exit;
+  end;
+
+//  (Exchanges[mtSpot] as TBithSpot).RequestData;
+//  Exchanges[mtSpot].ProcCyclicWork;
+end;
+
+
+procedure TBithManager.OnQryTimer(Sender: TObject);
+var
+  i, iSent : integer;
+  aPos : TPosition;
+  aOrder : TOrder;
+begin
+
+  try
+
+//    if FIndex >= App.Engine.TradeCore.Positions[ekBithumb].Count then
+//      FIndex := 0;
+//
+//    for I := FIndex to App.Engine.TradeCore.Positions[ekBithumb].Count-1 do
+//    begin
+//      aPos := App.Engine.TradeCore.Positions[ekBithumb].Positions[i];
+//      if aPos <> nil then begin
+//        App.Engine.ApiManager.ExManagers[ekBithumb].RequestOrderList(aPos.Symbol);
+//        break;
+//      end;
+//    end;
+    iSent := 0;
+
+    if FIndex >= App.Engine.TradeCore.Orders[ekBithumb].ActiveOrders.Count then
+      FIndex := 0;
+
+    for I := FIndex to App.Engine.TradeCore.Orders[ekBithumb].ActiveOrders.Count-1 do
+    begin
+      aOrder := App.Engine.TradeCore.Orders[ekBithumb].ActiveOrders.Orders[i];
+      if aOrder <> nil then begin
+        App.Engine.ApiManager.ExManagers[ekBithumb].RequestOrdeDetail( aOrder );
+//        inc( iSent );
+
+//        if iSent >= 2 then
+        break;
+      end;
+    end;
+
+    FIndex := i + 1;
+
+  finally
+    inc(FQryCount);
+  end;
+end;
+
+procedure TBithManager.OnTimer(Sender: TObject);
+begin
+
+  // thread 로 대체
+  Exit;
+
+  try
+    if FBalQryCnt > 60 then begin
+      FBalQryCnt := 0;
+      if App.Config.TradeMod then
+        Exchanges[eaSpot].RequestBalance;
+    end;
+  finally
+    inc(FBalQryCnt);
+  end;
+end;
+
+
+
+procedure TBithManager.OrderDetailRequest(bStart: boolean);
+begin
+  FQryTimer.Enabled := bStart;
+end;
+
+procedure TBithManager.OnSendDoneEvent(Sender: TObject);
+begin
+  if Sender = FParse then
+    (QuoteSock[QOUTE_SOCK] as TBithWebSocket).Send;
+end;
+
+
+function TBithManager.Subscrib(aSymbol: TSymbol): boolean;
+begin
+//  self.Exchanges[ aSymbol.Spec.Market ].
+  Result := false;
+  try
+    (QuoteSock[QOUTE_SOCK] as TBithWebSocket).SubScribe( aSymbol);
+    Result := true;
+  except
+
+  end;
+
+end;
+
+function TBithManager.UnSubscrib(aSymbol: TSymbol): boolean;
+begin
+  (QuoteSock[QOUTE_SOCK] as TBithWebSocket).UnSubScribe( aSymbol);
+  Result := true;
+end;
+
+
+function TBithManager.SubscribeAll: boolean;
+var
+  i, j : integer;
+begin
+  //Exit (true);
+
+  for I := 0 to High(QuoteSock) do
+    QuoteSock[i].SubscribeAll;
+  result := true;
+
+  FDepTimer.Enabled := true;
+end;
+
+
+function TBithManager.ASyncRequest5MinAgo(aSymbol: TSymbol): boolean;
+begin
+  Result := Exchanges[eaSpot].ASyncRequest5MinAgo( aSymbol );
+end;
+
+function TBithManager.ASyncRequestAvailable(aSymbol: TSymbol): boolean;
+begin
+  Result  := Exchanges[eaSpot].ASyncRequestAvailable(aSymbol);
+end;
+
+function TBithManager.ASyncRequestTradeAmt(aSymbol: TSymbol): boolean;
+begin
+  Result := Exchanges[eaSpot].ASyncRequestTradeAmt( aSymbol );
+end;
+
+procedure TBithManager.UnSubscribeAll;
+begin
+  inherited;
+end;
+
+// from shared memroy
+//procedure TBithManager.ReceivedData( aMarket : TMarketType; aReqType : TRequestType;  aData, aRef: string);
+//begin
+//	Exchanges[aMarket].ReceivedData(aReqType, aData, aRef );
+//end;
+
+
+
+function TBithManager.RequestBalance: boolean;
+begin
+	Result := Exchanges[eaSpot].RequestBalance;
+end;
+
+
+
+function TBithManager.RequestCandle(aSymbol: TSymbol; iCount: integer): boolean;
+begin
+  if aSymbol = nil then Exit (false);
+  Result := Exchanges[eaSpot].RequestCandleData(aSymbol, 'n',1, iCount);
+end;
+
+//procedure TBithManager.RequestOrderList(aSymbol: TSymbol);
+//begin
+//  Exchanges[aSymbol.Spec.Market].RequestOrderList( aSymbol );
+//end;
+//
+//procedure TBithManager.RequestBalance(aSymbol: TSymbol);
+//begin
+//  Exchanges[aSymbol.Spec.Market].RequestBalance( aSymbol );
+//end;
+//
+//procedure TBithManager.RequestOrdeDetail(aOrder: TOrder);
+//begin
+//  Exchanges[aOrder.Symbol.Spec.Market].RequestOrderDetail( aOrder );
+//end;
+
+function TBithManager.RequestOrders: boolean;
+begin
+	Result := Exchanges[eaSpot].RequestOrders;
+end;
+
+function TBithManager.RequestPositons: boolean;
+begin
+  result := true;
+end;
+
+//function TBithManager.RequestMaster: boolean;
+//var
+//  I: TMarketType;
+//begin
+//  for I := mtSpot to High(TMarketType) do
+//  begin
+//    if Exchanges[i] = nil then continue;
+//    if not Exchanges[i].RequestMaster then
+//      Exit (false);
+//  end;
+//
+//  Result := true;
+//
+//end;
+
+end.

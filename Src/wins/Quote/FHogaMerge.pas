@@ -1,0 +1,308 @@
+unit FHogaMerge;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
+  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.Grids, Vcl.StdCtrls, Vcl.ExtCtrls
+
+  , USymbols, UDistributor, UQuoteMerge
+
+  , UApiTypes
+
+  ;
+
+type
+  TFrmHogaMerge = class(TForm)
+    Panel1: TPanel;
+    Panel2: TPanel;
+    Edit1: TEdit;
+    Button1: TButton;
+    sgUp2: TStringGrid;
+    sgUp1: TStringGrid;
+    Panel3: TPanel;
+    Panel4: TPanel;
+    Edit2: TEdit;
+    Button2: TButton;
+    sgBt2: TStringGrid;
+    sgBt1: TStringGrid;
+    Edit3: TEdit;
+    Edit4: TEdit;
+    CheckBox1: TCheckBox;
+    sgUp3: TStringGrid;
+    sgBt3: TStringGrid;
+    edtRate: TEdit;
+    Edit5: TEdit;
+    procedure Button1Click(Sender: TObject);
+    procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure FormDestroy(Sender: TObject);
+    procedure Button2Click(Sender: TObject);
+    procedure sgUp1DrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect;
+      State: TGridDrawState);
+    procedure FormCreate(Sender: TObject);
+  private
+    { Private declarations }
+    FSymbol, FSymbol2 : TSymbol;
+    FMgQuote1, FMgQuote2 : TMergedQuote;
+    procedure QuoteEvnet(Sender, Receiver: TObject; DataID: Integer;  DataObj: TObject; EventID: TDistributorID);
+
+    procedure OnBithumb;
+    procedure OnUpbit( aSymbol : TSymbol );
+  public
+    { Public declarations }
+  end;
+
+var
+  FrmHogaMerge: TFrmHogaMerge;
+
+implementation
+
+uses
+  GApp
+  , GLibs
+  , USymbolCore
+  , UQuoteBroker
+  , Math
+  ;
+
+{$R *.dfm}
+
+procedure TFrmHogaMerge.Button1Click(Sender: TObject);
+var
+  aSymbol : TSymbol;
+begin
+  aSymbol := App.Engine.SymbolCore.FindSymbol( ekUpbit, edit1.text);
+  if aSymbol <> nil then
+  begin
+    App.Engine.QuoteBroker.Brokers[ekUpbit].Cancel(self, FSymbol );
+    App.Engine.QuoteBroker.Brokers[ekUpbit].Subscribe( Self, aSymbol, QuoteEvnet);
+    FSymbol := aSymbol;
+  end;
+end;
+
+procedure TFrmHogaMerge.Button2Click(Sender: TObject);
+var
+  aSymbol : TSymbol;
+begin
+  aSymbol := App.Engine.SymbolCore.FindSymbol( ekBithumb, edit2.text);
+  if aSymbol <> nil then
+  begin
+    App.Engine.QuoteBroker.Brokers[ekBithumb].Cancel(self, FSymbol2 );
+    App.Engine.QuoteBroker.Brokers[ekBithumb].Subscribe( Self, aSymbol, QuoteEvnet);
+    FSymbol2 := aSymbol;
+  end;
+end;
+
+procedure TFrmHogaMerge.FormClose(Sender: TObject; var Action: TCloseAction);
+begin
+  Action := caFree;
+end;
+
+procedure TFrmHogaMerge.FormCreate(Sender: TObject);
+begin
+  FMgQuote1 := TMergedQuote.Create;
+  FMgQuote2 := TMergedQuote.Create;
+end;
+
+procedure TFrmHogaMerge.FormDestroy(Sender: TObject);
+begin
+  App.Engine.QuoteBroker.Cancel( Self );
+  FMgQuote1.Free;
+  FMgQuote2.Free;
+end;
+
+procedure TFrmHogaMerge.QuoteEvnet(Sender, Receiver: TObject; DataID: Integer;
+  DataObj: TObject; EventID: TDistributorID);
+  var
+    aSymbol : TSymbol;
+begin
+  if (Receiver <> Self ) or ( DataObj = nil ) then Exit;
+
+  aSymbol := (DataObj as TQuote).Symbol;
+  OnUpbit( aSymbol );
+
+end;
+
+procedure TFrmHogaMerge.sgUp1DrawCell(Sender: TObject; ACol, ARow: Integer;
+  Rect: TRect; State: TGridDrawState);
+begin
+  with ( Sender as TStringGrid ) do
+  begin
+
+    if ARow > 19 then
+    begin
+      Canvas.Brush.Color := clSkyblue;
+    end else
+    begin
+      Canvas.Brush.Color := clWhite;
+    end;
+    Canvas.FillRect( Rect);
+    DrawText( Canvas.Handle, PChar( Cells[ACol,ARow] ), Length( Cells[ACol,ARow] ), Rect, DT_LEFT );
+  end;
+end;
+
+procedure TFrmHogaMerge.OnUpbit( aSymbol : TSymbol );
+var
+  iUnit : integer;
+  dUnit, dVol, dMod, dPrevMod, dPrevMod2, dtmp : double;
+  dAccAskVol, dAccBidVol : double;
+  bi, ai, I, iRow, iPre, iPer : Integer;
+
+  stTmp : string;
+  bUpbit : boolean;
+  sg, sg2, sg3 : TStringGrid;
+
+  aBids: TMarketDepths;
+  aAsks: TMarketDepths;
+  aDepth: TMarketDepth;
+
+  aMgQuote : TMergedQuote;
+
+begin
+
+  if not CheckBox1.Checked then Exit;
+
+  if aSymbol = FSymbol then begin
+    sg := sgUp1;
+    if not TryStrToInt( edit3.Text, iUnit ) then Exit;
+    if not TryStrtoInt( edtRate.Text, iPer ) then Exit;
+
+    sg2:= sgUp2;
+    sg3:= sgUp3;
+    FMgQuote1.SetSymbol(aSymbol, iUnit);
+    aMgQuote := FMgQuote1;
+  end
+  else if aSymbol = FSymbol2 then begin
+    sg := sgBt1;
+    if not TryStrToInt( edit4.Text, iUnit ) then Exit;
+    if not TryStrToInt( edit5.Text, iPer) then Exit;
+
+    sg2:= sgBt2;
+    sg3:= sgBt3;
+    FMgQuote2.SetSymbol(aSymbol, iUnit);
+    aMgQuote := FMgQuote2;
+  end
+  else
+    Exit;
+
+  aMgQuote.OnMakeMergeQuote(aSymbol);
+
+  dUnit := iUnit * UnitFromPrice( aSymbol, aSymbol.Last );
+
+  iRow := 19;
+  bi := 0;  ai := 0;
+
+  try
+
+    aBids := TMarketDepths.Create(0);
+    aAsks := TMarketDepths.Create(0);
+
+    //sg.BeginUpdate;
+    dPrevMod := 0;
+    dPrevMod2:= 0;
+
+    dAccAskVol  := 0;
+    dAccBidVol  := 0;
+
+    with sg do
+    for I := 0 to aSymbol.Bids.Count-1 do
+    begin
+
+      if ( i > 14 ) and ( aSymbol.Spec.ExchangeType = ekUpbit ) then break;
+
+      Cells[0, iRow-i]  := aSymbol.PriceToStr( aSymbol.Asks[i].Price );
+      iPre := GetQtyPrecision( aSymbol, aSymbol.Asks[i].Price );
+      if iPre < 0 then
+      begin
+        dVol := FloorEx(aSymbol.Asks[i].Volume / 1000);
+        stTmp := Format('%sk', [ FmtString( 0,  dVol ) ] );
+      end
+      else
+        stTmp := FmtString( iPre, aSymbol.Asks[i].Volume );
+      Cells[1, iRow-i]  := stTmp;
+
+      dVol  := aSymbol.Asks[i].Volume * (iPer / 100);
+      dTmp  := RoundTo( dVol, -4 ) ;
+      sg2.Cells[1, iRow-i] := dTmp.ToString;
+
+
+      Cells[0, iRow+i+1]  := aSymbol.PriceToStr( aSymbol.Bids[i].Price );
+      iPre := GetQtyPrecision( aSymbol, aSymbol.Bids[i].Price );
+      if iPre < 0 then
+      begin
+        dVol := FloorEx(aSymbol.Bids[i].Volume / 1000);
+        stTmp := Format('%sk', [ FmtString( 0,  dVol ) ] );
+      end
+      else
+        stTmp := FmtString( iPre, aSymbol.Bids[i].Volume );
+      Cells[1, iRow+i+1]  := stTmp;
+
+      dVol  := aSymbol.Asks[i].Volume * (iPer / 100);
+      dTmp  := RoundTo( dVol, -4 ) ;
+      sg2.Cells[1, iRow+i+1] := dTmp.ToString;
+    end;
+
+    //sg.EndUpdate;
+
+    with sg3 do
+      for I := 0 to iRow do
+      begin
+
+        if aMgQuote.Asks.Count > i then
+        begin
+          aDepth := aMgQuote.Asks.Items[i] as TMarketDepth;
+          Cells[0,iRow-i]  := aSymbol.PriceToStr( aDepth.Price );
+          iPre := GetQtyPrecision( aSymbol, aDepth.Price );
+          if iPre < 0 then
+          begin
+            dVol := FloorEx(aDepth.Volume / 1000);
+            stTmp := Format('%sk', [ FmtString( 0,  dVol ) ] );
+            iPre := 0;
+          end
+          else
+            stTmp := FmtString( iPre, aDepth.Volume );
+          Cells[1, iRow-i]  := stTmp;
+        end else
+        begin
+          Cells[0, iRow-i]  := '';
+          Cells[1, iRow-i]  := '';
+        end;
+
+        if aMgQuote.Bids.Count > i then
+        begin
+          aDepth := aMgQuote.Bids.Items[i] as TMarketDepth;
+          Cells[0,iRow+i+1]  := aSymbol.PriceToStr( aDepth.Price );
+          iPre := GetQtyPrecision( aSymbol, aDepth.Price );
+          if iPre < 0 then
+          begin
+            dVol := FloorEx(aDepth.Volume / 1000);
+            stTmp := Format('%sk', [ FmtString( 0,  dVol ) ] );
+            iPre := 0;
+          end
+          else
+            stTmp := FmtString( iPre, aDepth.Volume );
+          Cells[1, iRow+i+1]  := stTmp;
+        end else
+        begin
+          Cells[0, iRow+i+1]  := '';
+          Cells[1, iRow+i+1]  := '';
+        end;
+
+      end;
+
+  finally
+    aBids.Free;
+    aAsks.Free;
+  end;
+
+
+
+end;
+
+procedure TFrmHogaMerge.OnBithumb;
+begin
+
+end;
+
+
+end.

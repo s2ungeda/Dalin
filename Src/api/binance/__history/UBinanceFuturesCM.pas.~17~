@@ -1,0 +1,770 @@
+unit UBinanceFuturesCM;
+
+interface
+
+uses
+  System.Classes, System.SysUtils, System.DateUtils,
+
+  UExchange,
+
+  UOrders,  USymbols,
+
+  UApiTypes
+
+  ;
+
+type
+  TBinanceFuturesCM = class( TExchange )
+  private
+    FIndex  : integer;
+    FLastIndex : integer;
+
+    function RequestFutCMMaster: boolean;
+    function RequestFutCMTicker: boolean;
+
+    // async proc
+    procedure AsyncFutAllTicker;
+    procedure AsyncFutAllOrderBook;
+    procedure MakeRest;
+
+
+  public
+    Constructor Create( aObj : TObject; eaType : TExchangeApiType );
+    Destructor  Destroy; override;
+
+    function ParsePrepareMaster : integer; override;
+    function RequestMaster : boolean ; override;
+    function RequestCandleData( sUnit : string; sCode : string ) : boolean;override;
+    function RequestOrder( aOrder : TOrder ) : boolean;
+
+
+    procedure ParseRequestData( iCode : integer; sName : string; sData : string ); override;
+    procedure CyclicNotify( Sender : TObject ); override;
+    procedure RestNotify( Sender : TObject ); override;
+
+    procedure RequestData( iMod : integer );
+
+    function RequestListenKey( bFirst : boolean ) : string; override;
+
+	  function RequestBalance : boolean; override;
+    function RequestPositons : boolean; override;
+    function RequestOrders: boolean; override;
+
+    function RequestChangeMarginType( stCode, stType : string; var sRes : string ) : boolean;  override;
+    function RequestChangeLeverage( stCode, stLeverage : string ) : boolean; override;
+
+    function ASyncRequestTradeAmt( aSymbol : TSymbol ) : boolean; override;
+    function ASyncRequest5MinAgo( aSymbol : TSymbol ) : boolean; override;
+    function ASyncRequestAvailable( aSymbol : TSymbol ) : boolean; override;
+
+    	// to shared memory
+    function SenderOrder( aOrder : TOrder ): boolean ; override;
+    procedure ReceivedData( aReqType : TRequestType;  aData, aRef : string );override;
+		procedure RequestOrderDetail( aOrder : TOrder ); override;
+    procedure RequestBalance( aSymbol : TSymbol ) ; overload; override;
+		procedure RequestOrderList( aSymbol : TSymbol ); override;
+    procedure RequestPosition( aSymbol : TSymbol ); override;
+    procedure RequestTradeAmt(aSymbol: TSymbol); override;
+    //
+
+  end;
+
+implementation
+
+uses
+  GApp, GLibs, UApiConsts
+  , UTypes
+  , UBinanceParse
+  , UCyclicItems, URestRequests
+  , UEncrypts
+  , REST.Types
+  , System.JSON
+  ;
+
+{ TBinanceSpotNMargin }
+
+
+
+constructor TBinanceFuturesCM.Create(aObj: TObject; eaType : TExchangeApiType);
+begin
+  inherited Create( aObj, eaType );
+
+  FIndex  := 0;
+  FLastIndex := -1;
+
+end;
+
+
+destructor TBinanceFuturesCM.Destroy;
+begin
+
+  inherited;
+end;
+
+function TBinanceFuturesCM.ParsePrepareMaster: integer;
+var
+  master : TJsonObject;
+  aObj  : TJsonObject;
+  aArr  : TJsonArray;
+  aPair : TJSONPair;
+  I: Integer;
+begin
+  master := nil;
+
+  master := TJsonObject.ParseJSONValue( MasterData ) as TJsonObject;
+  try
+    if master = nil then Exit;
+    aPair := master.Get('symbols');
+    if aPair = nil then Exit;
+
+    aArr  := aPair.JsonValue as TJsonArray;
+
+    var sTmp : string;
+
+    for I := 0 to aArr.Count-1 do
+    begin
+      aObj  := aArr.Items[i] as TJsonObject;
+      sTmp  := aObj.GetValue('contractType').Value;
+
+      if sTmp = 'PERPETUAL' then
+        Codes.Add( aObj.GetValue('baseAsset').Value );
+    end;
+  finally
+    FreeAndNil( master );
+  end;
+end;
+
+
+function TBinanceFuturesCM.RequestBalance: boolean;
+var
+  data, sig, sTime: string;
+  sOut, sJson : string;
+begin
+  Exit (true);
+  sTime:= GetTimestamp;
+  data := Format('timestamp=%s', [sTime]);
+  sig  := CalculateHMACSHA256( data, App.Engine.ApiConfig.GetSceretKey( GetExKind, ExApiType) );
+
+  SetParam('timestamp', sTime );
+  SetParam('signature', sig );
+  SetParam('X-MBX-APIKEY', App.Engine.ApiConfig.GetApiKey( GetExKind, ExApiType ), pkHTTPHEADER );
+
+  if Request( rmGET, '/dapi/v1/account', '', sJson, sOut ) then
+    gBinReceiver.ParseFutCMBalance( sJson )
+  else begin
+    App.Log( llError, '', 'Failed %s %s RequestBalance (%s, %s)',
+      [ TExchangeKindDesc[GetExKind], TExApiTypeDesc[ExApiType], sOut, sJson] );
+    Exit(false);
+  end;
+
+  Result := true;
+end;
+
+function TBinanceFuturesCM.RequestCandleData(sUnit, sCode: string): boolean;
+var
+  sJson, sOut, sTmp : string;
+  bRes : boolean;
+  aKind : TMajorSymbolKind;
+begin
+
+  bRes := false;
+  try
+    SetParam('symbol', sCode );
+    SetParam('limit', '50' );
+    SetParam('interval', sUnit );
+
+    if Request( rmGET, '/dapi/v1/klines' , '', sJson, sOut ) then
+    begin
+      sTmp := UpperCase(copy( sCode, 1, 3 ));
+      if sTmp = 'BTC' then
+        aKind := msBTC
+      else aKind := msETH;
+      gBinReceiver.ParseCandleData(aKind, sUnit, sJson);
+    end else
+    begin
+      App.Log( llError, '', 'Failed %s RequestCandleData (%s, %s)',
+        [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+      Exit( false );
+    end;
+    bRes := true;
+  except
+  end;
+
+  Result := bRes;
+end;
+
+function TBinanceFuturesCM.RequestChangeLeverage(stCode,
+  stLeverage: string): boolean;
+var
+  data, sig, sTime: string;
+  sOut, sJson : string;
+begin
+
+  Result := false;
+
+  try
+
+    sTime:= GetTimestamp;
+    data := Format('symbol=%s&leverage=%s&timestamp=%s', [stCode, stLeverage,sTime]);
+    sig  := CalculateHMACSHA256( data, App.Engine.ApiConfig.GetSceretKey( GetExKind, ExApiType ) );
+
+    SetParam('symbol', stCode );
+    SetParam('leverage', stLeverage );
+    SetParam('timestamp', sTime );
+    SetParam('signature', sig );
+    SetParam('X-MBX-APIKEY', App.Engine.ApiConfig.GetApiKey( GetExKind, ExApiType ), pkHTTPHEADER );
+
+    if Request( rmPOST, '/dapi/v1/leverage', '', sJson, sOut ) then
+    begin
+  //    App.Log( llDebug, '', '%s (%s, %s)', [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+      Result := gBinReceiver.ParseLeverage( sJson );
+    end else
+    begin
+      App.Log( llError, '', 'Failed %s RequestChangeLeverage (%s, %s)',
+        [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+      Exit(false);
+    end;
+  except
+  end;
+
+end;
+
+function TBinanceFuturesCM.RequestChangeMarginType(stCode,
+  stType: string; var sRes : string): boolean;
+var
+  data, sig, sTime: string;
+  sOut, sJson : string;
+begin
+
+  Result := false;
+
+  sTime:= GetTimestamp;
+  data := Format('symbol=%s&marginType=%s&timestamp=%s', [stCode, stType,sTime]);
+  sig  := CalculateHMACSHA256( data, App.Engine.ApiConfig.GetSceretKey( ekBinance , ExApiType ) );
+
+  SetParam('symbol', stCode );
+  SetParam('marginType', stType );
+  SetParam('timestamp', sTime );
+  SetParam('signature', sig );
+  SetParam('X-MBX-APIKEY', App.Engine.ApiConfig.GetApiKey( GetExKind , ExApiType ), pkHTTPHEADER );
+
+  if Request( rmPOST, '/dapi/v1/marginType', '', sJson, sOut ) then
+  begin
+//    App.Log( llDebug, '', '%s (%s, %s)', [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+    Result := gBinReceiver.ParseMarginType( sJson );
+  end else
+  begin
+    App.Log( llError, '', 'Failed %s RequestChangeLeverage (%s, %s)',
+      [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+    sRes := sJson;
+    Exit(false);
+  end;
+
+end;
+
+procedure TBinanceFuturesCM.RequestData( iMod : integer );
+begin
+
+//	case iMod of
+//      0 : begin
+//        RestResult := Req[iMod].RequestAsync( AsyncFutAllOrderBook, rmGET, '/fapi/v1/ticker/bookTicker');
+//      end;
+//      1 : begin
+//        RestResult := Req[iMod].RequestAsync( AsyncFutAllTicker, rmGET, '/fapi/v1/ticker/24hr');
+//      end;    
+//  end;
+
+//  if ( FIndex <> FLastIndex )
+//    or ( RestResult = nil )
+//    or (( RestResult <> nil ) and ( RestResult.Finished )) then
+//  begin
+//    FLastIndex := FIndex;
+//
+//    case FIndex of
+//      0 : begin
+//        RestResult := Req[0].RequestAsync( AsyncFutAllOrderBook, rmGET, '/fapi/v1/ticker/bookTicker');
+//      end;
+//      1 : begin
+//        RestResult := Req[1].RequestAsync( AsyncFutAllTicker, rmGET, '/fapi/v1/ticker/24hr');
+//      end;
+////      3 :begin  
+////        RestResult := Req[2].RequestAsync( parseTicker, rmGET, '/public/ticker/ALL_KRW', true);
+////      end;
+//      else exit;
+//    end;
+//
+//    if RestResult = nil then
+//      App.Log( llError,  ' !! %s, %d Request %d Error ', [ TExchangeKindDesc[GetExKind], FIndex ] )
+//    else begin
+//      inc( FIndex );
+//      if FIndex >= 2 then
+//        FIndex := 0;
+//    end;
+//
+//  end else
+//  begin
+//    var s : string;
+//    if RestResult.Finished then s := 'fin' else s := 'not fin';
+//    App.DebugLog( '!! %s, %d waiting req -> %d %s ', [ TExchangeKindDesc[GetExKind], FIndex, RestResult.ThreadID, s ]  );
+//  end;
+end;
+
+procedure TBinanceFuturesCM.AsyncFutAllOrderBook;
+var
+  sJson : string;
+begin
+//  sJson :=  Req[0].GetResponse;
+//  if sJson = '' then Exit;
+  gBinReceiver.ParseFutAllOrderBook( sJson );
+
+end;
+
+procedure TBinanceFuturesCM.AsyncFutAllTicker;
+var
+  sJson : string;
+begin
+//  sJson :=  Req[1].GetResponse;
+//  if sJson = '' then Exit;
+  gBinReceiver.ParseFutAllTicker( sJson );
+
+end;
+
+function TBinanceFuturesCM.RequestFutCMTicker: boolean;
+var
+  sOut, sJson : string;
+begin
+//  sTmp  := App.Engine.ApiConfig.GetBaseUrl( GetExKind , mtFutures );
+//  SetBaseUrl( sTmp );
+
+  if Request( rmGET, '/dapi/v1/ticker/24hr' , '', sJson, sOut ) then
+  begin
+    gBinReceiver.ParseFuttTicker(sJson, ExApiType);
+  end else
+  begin
+    App.Log( llError, '', 'Failed %s ParseFuttTicker (%s, %s)',
+      [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+    Exit( false );
+  end;
+
+  Result := App.Engine.SymbolCore.Futures[ GetExKind].Count > 0;
+end;
+
+function TBinanceFuturesCM.RequestFutCMMaster: boolean;
+begin
+  gBinReceiver.ParseFutCMMaster(MasterData);
+  Result := App.Engine.SymbolCore.Futures[ GetExKind].Count > 0;
+end;
+
+
+function TBinanceFuturesCM.RequestListenKey(bFirst: boolean) : string;
+var
+  data, sig, sTime: string;
+  sOut, sJson : string;
+  aMethod : TRESTRequestMethod;
+  aObj  : TJsonObject;
+begin
+
+  REsult := '';
+  if bFirst then aMethod := rmPOST
+  else begin
+    aMethod := rmPUT;
+    App.DebugLog('------------ Coin-M futures listenkey update --------------' );
+  end;
+
+  SetBaseUrl(    App.Engine.ApiConfig.GetBaseUrl( GetExKind , ExApiType ) );
+  SetParam('X-MBX-APIKEY', App.Engine.ApiConfig.GetApiKey( GetExKind , ExApiType ), pkHTTPHEADER );
+
+  if Request( aMethod, '/dapi/v1/listenKey', '', sJson, sOut ) then
+  begin
+    if bFirst then
+      if RestRes.JSONValue <> nil then
+      begin
+        aObj  := RestRes.JSONValue as TJsonObject;
+        Result := aObj.GetValue('listenKey').Value;
+        Field1 := Result;
+      end;
+  end else
+  begin
+    App.Log( llError, '', 'Failed %s %s RequestListenKey (%s, %s)', [ TExchangeKindDesc[GetExKind], TExApiTypeDesc[ExApiType], sOut, sJson] );
+
+    aObj  := RestRes.JSONValue as TJsonObject;
+    if aObj <> nil then
+    begin
+      var ival : integer;
+      ival := aObj.GetValue<integer>('code',0);
+      if ival = -1125 then
+        NeedReCon := true;
+    end;
+    Exit;
+  end;
+end;
+
+//function TBinanceFuturesCM.RequestFuttMaster: boolean;
+//var
+//  sTmp, sOut, sJson : string;
+//begin
+//  sTmp  := App.Engine.ApiConfig.GetBaseUrl( GetExKind , mtFutures );
+//  SetBaseUrl( sTmp );
+//
+//  if Request( rmGET, '/fapi/v1/exchangeInfo' , '', sJson, sOut ) then
+//  begin
+//    gBinReceiver.ParseFuttMaster(sJson);
+//  end else
+//  begin
+//    App.Log( llError, '', 'Failed %s Fut PreparMaster (%s, %s)',
+//      [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+//    Exit( false );
+//  end;
+//
+//  Result := App.Engine.SymbolCore.Futures[ GetExKind].Count > 0;
+//
+//end;
+
+function TBinanceFuturesCM.RequestMaster: boolean;
+begin
+  
+  Result := RequestFutCMMaster
+         and RequestFutCMTicker;
+         
+	if Result then
+		MakeRest;
+end;
+
+
+function TBinanceFuturesCM.RequestOrder(aOrder: TOrder): boolean;
+var
+  sTime, sData , sSig, sJson, sOut : string;
+begin
+
+  sTime:= GetTimestamp;
+
+  sData := format('symbol=%s&side=%s&type=LIMIT&timeInForce=GTC&quantity=%s&price=%s'+
+  '&newClientOrderId=%s&timestamp=%s', [
+    aOrder.Symbol.OrgCode,
+    ifThenStr( aOrder.Side > 0 ,'BUY', 'SELL'),
+    format('%.*f', [ aOrder.Symbol.Spec.QtyPrecision, aOrder.OrderQty ] ),
+    format('%.*f', [ aOrder.Symbol.Spec.Precision, aOrder.Price ] ),
+    aOrder.LocalNo,
+    sTime
+  ]);
+
+  sSig  := CalculateHMACSHA256( sData, App.Engine.ApiConfig.GetSceretKey( GetExKind , ExApiType ) );
+
+  sData := sData + Format('&signature=%s', [ sSig ]);
+
+  App.DebugLog('queryString : %s', [sData]);
+
+//  SetParam('timestamp', sTime );
+//  SetParam('signature', sSig );
+  SetParam('X-MBX-APIKEY', App.Engine.ApiConfig.GetApiKey( GetExKind , ExApiType ), pkHTTPHEADER );
+
+  if Request( rmPOST, '/dapi/v1/order?'+sData, '', sJson, sOut ) then
+  begin
+//    App.Log( llDebug, '', '%s (%s, %s)', [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+    gBinReceiver.ParseFutNewOrder( sJson, aOrder.LocalNo );//  ParseFutPosition( sJson );
+  end else
+  begin
+    App.Log( llError, '', 'Failed %s RequestPositons (%s, %s)',
+      [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+    Exit(false);
+  end;
+
+  Result := true;
+
+end;
+
+
+
+// 바이낸스는 조회하지 않는다.
+procedure TBinanceFuturesCM.RequestOrderDetail(aOrder: TOrder);
+begin
+  inherited;
+end;
+
+function TBinanceFuturesCM.RequestPositons: boolean;
+var
+  data, sig, sTime: string;
+  sOut, sJson : string;
+begin
+  sTime:= GetTimestamp;
+  data := Format('timestamp=%s', [sTime]);
+  sig  := CalculateHMACSHA256( data, App.Engine.ApiConfig.GetSceretKey( GetExKind , ExApiType ) );
+
+
+  SetParam('timestamp', sTime );
+  SetParam('signature', sig );
+  SetParam('X-MBX-APIKEY', App.Engine.ApiConfig.GetApiKey( GetExKind , ExApiType ), pkHTTPHEADER );
+
+  if Request( rmGET, '/dapi/v1/positionRisk ', '', sJson, sOut ) then
+  begin
+//    App.Log( llDebug, '', '%s (%s, %s)', [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+    gBinReceiver.ParseFutPosition( sJson );
+  end else
+  begin
+    App.Log( llError, '', 'Failed %s RequestPositons (%s, %s)',
+      [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+    Exit(false);
+  end;
+
+  Result := true;
+
+end;
+
+
+function TBinanceFuturesCM.RequestOrders: boolean;
+begin
+  Result := true;
+end;
+
+
+
+procedure TBinanceFuturesCM.MakeRest;
+var
+  aItem : TCyclicItem;  
+begin
+  aItem := CyclicItems.New('orderbook');
+  aItem.Interval  := 1000;
+  aItem.Index     := 0;
+  aItem.Resource	:= '/dapi/v1/ticker/bookTicker';
+  aITem.Method		:= rmGET;
+
+  aItem := CyclicItems.New('listenkey');
+  aItem.Interval  := 60000 * 20;    // 20분..
+  aItem.Index     := 1;
+
+	MakeRestItems( 0 );
+  MakeCyclicThread;
+end;
+
+procedure TBinanceFuturesCM.CyclicNotify(Sender: TObject);
+var
+  aReq  : TRequest;
+begin
+  if Sender = nil then Exit;
+  aReq := Sender as TRequest;
+
+  if aReq.Seq = 1 then begin
+    // 주문낼때 다시 허용
+    //RequestListenKey( false );
+  end
+  else begin
+    if aReq.RequestAsync then
+    	aReq.State := 1;
+  end;
+end;
+
+procedure TBinanceFuturesCM.RestNotify(Sender: TObject);
+begin
+  if Sender = nil then Exit;
+  inherited  RestNotify( Sender )
+end;
+
+procedure TBinanceFuturesCM.ParseRequestData(iCode: integer; sName,
+  sData: string);
+begin
+	if gBinReceiver = nil then Exit;
+  
+  if sData = '' then
+  begin
+  	App.Log(llError, '%s %s Data is Empty', [ TExchangeKindShortDesc[ GetExKind ], sName ]  );
+    Exit;
+  end;
+
+  if iCode <> 200 then begin
+  	App.Log(llError, '%s %s Request is Failed : %d,  %s', [ TExchangeKindShortDesc[ GetExKind ], sName, iCode, sData ]  );
+    Exit;  	
+  end else     
+		if sName = 'orderbook' then
+		  gBinReceiver.ParseFutAllOrderBook( sData );
+
+end;
+
+
+{$region 'shared memory function' }
+
+procedure TBinanceFuturesCM.RequestBalance(aSymbol: TSymbol);
+begin
+	App.Engine.SharedManager.RequestData( ekBinance, aSymbol.Spec.ExApiType,
+      rtBalance,  aSymbol.OrgCode , aSymbol.Spec.BaseCode //aSymbol.Code
+      )  ;
+end;
+
+procedure TBinanceFuturesCM.RequestOrderList(aSymbol: TSymbol);
+var
+	sData : string;
+begin
+	sData := Format('%s', [ aSymbol.Code ] );
+
+	App.Engine.SharedManager.RequestData( ekBinance, aSymbol.Spec.ExApiType,
+      rtOrderList,  aSymbol.OrgCode , aSymbol.Code
+      )  ;
+end;
+
+procedure TBinanceFuturesCM.RequestPosition(aSymbol: TSymbol);
+begin
+	App.Engine.SharedManager.RequestData( ekBinance, aSymbol.Spec.ExApiType,
+      rtPosition,  aSymbol.Spec.BaseCode , aSymbol.Code
+      )  ;
+end;
+
+procedure TBinanceFuturesCM.RequestTradeAmt(aSymbol: TSymbol);
+var
+  sTime : string;
+  dTime : TDateTime;
+begin
+  // 1일 체결 금액을 구하기 위해
+  dTime := incDay( now, -1 );
+  sTime := GetTimeStamp(dTime);
+
+	App.Engine.SharedManager.RequestData( ekBinance, aSymbol.Spec.ExApiType,
+      rtTradeAmt,  sTime , aSymbol.Code
+      )  ;
+end;
+
+
+
+function TBinanceFuturesCM.SenderOrder(aOrder: TOrder): boolean;
+var
+	sData : string;
+begin
+//  Result := RequestOrder( aOrder );
+//  Exit;
+	// '|' 를 구분자 사용
+
+  if aOrder.OrderType = otNormal then
+  begin
+
+    sData := Format('%s|%s|%s|%s|%s|%s|%s|%s', [
+      aOrder.Symbol.OrgCode,
+      ifThenStr( aOrder.Side > 0 , 'BUY', 'SELL' ),
+      aOrder.PriceBI.OrgVal,  aOrder.OrderQtyBI.OrgVal,
+      'LIMIT',
+      aOrder.LocalNo,
+      ifThenStr(aOrder.ReduceOnly, 'true', 'false') ,
+      ifThenStr(aOrder.TimeInForce = tmGTX, 'GTX', 'GTC')
+    ]);
+
+    App.Engine.SharedManager.RequestData( ekBinance, aOrder.Symbol.Spec.ExApiType,
+      rtNewOrder,  sData , aOrder.LocalNo
+      )
+  end else
+  if aOrder.OrderType = otCancel then
+  begin
+    sData := Format('%s|%s', [
+      aOrder.OrderNo,
+      aOrder.Symbol.OrgCode
+    ]);
+
+    App.Engine.SharedManager.RequestData( ekBinance, aOrder.Symbol.Spec.ExApiType,
+      rtCnlOrder,  sData , aOrder.OrderNo
+      )
+  end;
+end;
+
+
+function TBinanceFuturesCM.ASyncRequest5MinAgo(aSymbol: TSymbol): boolean;
+var
+  sJson, sOut, sTmp : string;
+begin
+  if aSymbol = nil then Exit (false);
+
+  Setparam('symbol', aSymbol.OrgCode );
+  SetParam('limit', '5');
+  Setparam('interval', '1m');
+
+  if Request( rmGET, '/dapi/v1/klines' , '', sJson, sOut ) then
+  begin
+    gBinReceiver.ParseFut5MinAgo( sJson, aSymbol.Code, false);
+  end else
+  begin
+    App.Log( llError, '', 'Failed %s ASyncRequest5MinAgo (%s, %s)',
+      [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+    Exit( false );
+  end;
+
+  Result := true;
+end;
+
+
+function TBinanceFuturesCM.ASyncRequestAvailable(aSymbol: TSymbol): boolean;
+var
+  data, sig, sTime: string;
+  sOut, sJson : string;
+begin
+  Result := false;
+  sTime:= GetTimestamp;
+  data := Format('timestamp=%s', [sTime]);
+  sig  := CalculateHMACSHA256( data, App.Engine.ApiConfig.GetSceretKey( GetExKind , ExApiType ) );
+
+
+  SetParam('timestamp', sTime );
+  SetParam('signature', sig );
+  SetParam('X-MBX-APIKEY', App.Engine.ApiConfig.GetApiKey( GetExKind , ExApiType ), pkHTTPHEADER );
+
+  if Request( rmGET, '/dapi/v1/account', '', sJson, sOut ) then
+  begin
+//    App.Log( llDebug, '', '%s (%s, %s)', [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+    Result := gBinReceiver.ParseAsyncFutBalance( sJson, aSymbol );
+  end else
+  begin
+    App.Log( llError, '', 'Failed %s %s RequestBalance (%s, %s)',
+      [ TExchangeKindDesc[GetExKind], TExApiTypeDesc[ExApiType], sOut, sJson] );
+    Exit(false);
+  end;
+
+
+end;
+
+function TBinanceFuturesCM.ASyncRequestTradeAmt(aSymbol: TSymbol): boolean;
+var
+  data, sig, sTime, sPTime: string;
+  sOut, sJson : string;
+  dTime : TDateTime;
+begin
+
+  // 1일 체결 금액을 구하기 위해
+  dTime := incDay( now, -1 );
+  sPTime:= GetTimeStamp(dTime);
+
+  sTime:= GetTimestamp;
+  data := Format('startTime=%s&timestamp=%s', [sPTime, sTime]);
+  sig  := CalculateHMACSHA256( data, App.Engine.ApiConfig.GetSceretKey( GetExKind, ExApiType ) );
+
+  SetParam( 'startTime', sPTime);
+  SetParam('timestamp', sTime );
+  SetParam('signature', sig );
+  SetParam('X-MBX-APIKEY', App.Engine.ApiConfig.GetApiKey( GetExKind, ExApiType ), pkHTTPHEADER );
+
+  if Request( rmGET, '/dapi/v1/userTrades', '', sJson, sOut ) then
+  begin
+    gBinReceiver.ParseFutTradeAmt( sJson, sPTime, false );
+  end else
+  begin
+    App.Log( llError, '', 'Failed %s RequestPositons (%s, %s)',
+      [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+    Exit(false);
+  end;
+
+  Result := true;
+end;
+
+procedure TBinanceFuturesCM.ReceivedData(aReqType: TRequestType; aData,
+  aRef: string);
+begin
+  with gBinReceiver do
+	case aReqType of
+    rtNewOrder  : ParseFutNewOrder( aData, aRef ) ;        // aRef is LocalHo
+    rtCnlOrder  : ParseFutCnlOrder( aData, aRef ) ;	      // aRef is OrderNo
+    rtOrderList : ParseFutOrderList( aData, aRef );		    // aRef is symbol code
+    rtBalance   : ParseFutCmBalance( aData, true ) ;         // aref is symbol code
+    rtPosition  : ParseFutCmPositions(aData, aRef) ;         // aref is symbol code
+//    rtAbleOrder : ParseSpotAvailableOrder( aData, aRef) ;   // aref is symbol code
+//    rtOrdDetail : ParseSpotOrderDetail( aData, aRef ) ;     // aref is OrderNo
+    rtTradeAmt  : ParseFutTradeAmt(aData, aRef);             // aref is yesterday time
+  end;
+
+end;
+
+{$endregion}
+
+end.

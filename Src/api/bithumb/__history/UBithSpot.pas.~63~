@@ -1,0 +1,1059 @@
+unit UBithSpot;
+
+interface
+
+uses
+  System.Classes, System.SysUtils, System.DateUtils, System.Generics.Collections,
+
+  System.JSON,  Rest.Json , Rest.Types ,  REST.Client, JOSE.Core.JWT,
+
+  UExchange, USymbols , UOrders, UMarketSpecs, UAccounts,
+
+  UApiTypes
+
+  ;
+
+type
+  TBithSpot = class( TExchange )
+  private
+
+    FIndex  : integer;
+    FLastIndex : integer;
+
+    function RequestTicker : boolean;
+    function RequestOrderBook : boolean;  overload;
+
+    procedure OnHTTPProtocolError(Sender: TCustomRESTRequest);
+    procedure parseAssetsstatus;
+    procedure parseOrderBook;
+    procedure parseTicker;
+    procedure MakeRest;
+    procedure SetToken(var jwt: TJWT; const sQuery: string); overload;
+
+  public
+    Constructor Create( aObj : TObject; eaType : TExchangeApiType);
+    Destructor  Destroy; override;
+
+    function EncodePath( sRrsc, sPoint, sTime  : string ) : string;
+
+    procedure SetToken(aReq: TRESTRequest; const sQuery: string); overload;
+    procedure RequestData;
+
+    procedure CyclicNotify( Sender : TObject ); override; 
+    procedure RestNotify( Sender : TObject ); override;    
+
+    procedure RequestOrderBook( c : char ) ; overload;
+    function RequestDNWState : boolean; override;
+    procedure ParseRequestData( iCode : integer; sName : string; sData : string ); override;
+    procedure ParseRequestData( aReqType : TRequestType; sData : string ); override;
+
+    function ParsePrepareMaster : integer  ; override;
+    function RequestMaster : boolean ; override;
+    function RequestCandleData(sUnit : string; sCode : string ) : boolean;overload; override;
+    function RequestCandleData(aSymbol: TSymbol; sUnit : string; iDiv, iCount: integer) : boolean; overload; override;
+
+    procedure RequestActiveOrders(const aList: TList<TOrder>);
+	  function RequestBalance : boolean; override;
+    function RequestPositons : boolean; override;
+    function RequestOrders: boolean;overload; override;
+
+    //function RequestBalance2 : boolean;
+    function SyncRequestOrderDetail( aOrder : TOrder ) : string; override;
+
+		// to shared memory
+//    procedure RequestBalance( aSymbol : TSymbol ) ; overload; override;
+    procedure RequestOrderDetail( aOrder : TOrder ); override;
+  	procedure RequestOrderList( aSymbol : TSymbol ); override;
+    procedure RequestTradeAmt( aSymbol : TSymbol ) ; override;
+    function SenderOrder( aOrder : TOrder ): boolean ; override;
+    procedure RequestStuckOrderList(aList: TStringList);override;
+    procedure ReceivedData( aReqType : TRequestType;  aData, aRef : string );override;
+
+  end;
+
+//var
+//  CriticalSection: TRTLCriticalSection;
+
+implementation
+
+uses
+  GApp , GLibs, UApiConsts ,  UEncrypts
+  , UTypes
+  , UBithParse, URestItems ,UCyclicItems, URestRequests, UBithManager
+  , USymbolUtils
+  , Math
+  , Web.HTTPApp, idcodermime, IdGlobal
+  , System.Diagnostics, System.Hash
+  , JOSE.Core.Builder, JOSE.Core.JWA
+  ;
+
+{ TBinanceSpotNMargin }
+
+constructor TBithSpot.Create(aObj: TObject; eaType : TExchangeApiType);
+begin
+  inherited Create( aObj, eaType );
+
+  FIndex  := 0;
+  FLastIndex := -1;
+end;
+
+destructor TBithSpot.Destroy;
+begin
+
+  inherited;
+end;          
+
+function TBithSpot.EncodePath(sRrsc, sPoint, sTime : string): string;
+var
+	sValue : string;
+begin
+	sValue := HTTPEncode(UTF8Encode(sPoint));
+  sValue := StringReplace(sValue, '+', '%20', [rfReplaceAll]);
+  sValue := StringReplace(sValue, '%21', '!', [rfReplaceAll]);
+  sValue := StringReplace(sValue, '%27', '''', [rfReplaceAll]);
+  sValue := StringReplace(sValue, '%28', '(', [rfReplaceAll]);
+  sValue := StringReplace(sValue, '%29', ')', [rfReplaceAll]);
+  sValue := StringReplace(sValue, '%26', '&', [rfReplaceAll]);
+  sValue := StringReplace(sValue, '%3D', '=', [rfReplaceAll]);
+  sValue := StringReplace(sValue, '%7E', '~', [rfReplaceAll]);
+
+  Result := sRrsc + chr(0) + sValue +  chr(0 ) + sTime;
+end;
+
+function TBithSpot.ParsePrepareMaster : integer;
+var
+  aObj, master : TJsonObject;
+  aVal : TJsonValue;
+  aPair : TJsonPair;
+  i : Integer;
+
+begin
+  master := TJsonObject.ParseJSONValue( MasterData ) as TJsonObject;
+  if master = nil then Exit;
+  aObj := master.GetValue('data') as TJsonObject;
+
+  try
+    for I := 0 to aObj.Size-1 do
+    begin
+      aPair := aObj.Get(i);
+      if aPair.JsonValue.ClassType = TJSONObject then
+      begin
+        aVal  := aPair.JsonValue;
+  //      DoLog( Format('%d. %s : %s ', [ i, aPair.JsonString.Value, aPair.JsonValue.Value]));
+        Codes.Add( aPair.JsonString.Value );
+      end;
+    end;
+  finally
+    if master <> nil then master.Free;
+  end;
+end;
+
+function TBithSpot.RequestMaster: boolean;
+begin
+
+  Result := RequestTicker
+    and RequestOrderBook
+    and RequestDNWState
+    ;
+
+	if Result then
+		MakeRest;
+end;
+
+function TBithSpot.RequestTicker: boolean;
+var
+  aObj, master : TJsonObject;
+  aVal : TJsonValue;
+  aPair : TJsonPair;
+  i : Integer;
+  sBase, sCode, sTmp : string;
+  aSymbol : TSymbol;
+  bNew : boolean;
+  aList: TList;
+begin
+  aList := nil;
+  master := TJsonObject.ParseJSONValue( MasterData ) as TJsonObject;
+  aObj := master.GetValue('data') as TJsonObject;
+
+  aList := TList.Create;
+  try
+
+    for I := 0 to aObj.Size-1 do
+    begin
+      aPair := aObj.Get(i);
+      if aPair.JsonValue.ClassType <> TJSONObject then continue;
+      sCode := aPair.JsonString.Value;
+      if ( GetCodeIndex( sCode ) < 0 ) then Continue;
+
+      aSymbol := App.Engine.SymbolCore.Symbols[GetExKind].FindCode(sCode);
+      if aSymbol = nil then
+      begin
+        bNew := true;
+        aSymbol := App.Engine.SymbolCore.RegisterSymbol(GetExKind, mtSpot, sCode );
+        if aSymbol = nil then Exit (false);
+      end else
+        bNew := false;
+
+      with aSymbol do
+      begin
+        // 버전을 혼용하고 있음.. 옛날버전은  Code+Settle
+        // 최신은 Settle+Code  추후 최신으로 바꿔야 함..
+        //OrgCode     := sCode+'_KRW';
+        OrgCode          := 'KRW-'+sCode;
+        Spec.BaseCode    := sCode;
+        Spec.QuoteCode   := 'KRW';
+        Spec.SettleCode  := 'KRW';
+        //Spec.SetSpec(1,1,4);
+      end;
+
+      aVal  := aPair.JsonValue;
+
+      aSymbol.DayOpen := StrToFloatDef( aVal.GetValue<string>( 'opening_price' ), 0.0 );
+      aSymbol.DayHigh := StrToFloatDef( aVal.GetValue<string>( 'max_price' ), 0.0 );
+      aSymbol.DayLow  := StrToFloatDef( aVal.GetValue<string>( 'min_price' ), 0.0 );
+      aSymbol.Last    := StrToFloatDef( aVal.GetValue<string>( 'closing_price' ), 0.0 );
+      aSymbol.PrevClose   := StrToFloatDef( aVal.GetValue<string>( 'prev_closing_price' ), 0.0 );
+      aSymbol.DayAmount   := StrToFloatDef( aVal.GetValue<string>( 'acc_trade_value_24H' ), 0.0 ) / 100000000;
+      aSymbol.DayVolume   := StrToFloatDef( aVal.GetValue<string>( 'units_traded_24H' ), 0.0 );
+
+  //    aSymbol.Time  := UnixToDateTime(  aVal.GetValue<int64>( 'date' ) );
+      aSymbol.LocalTime := now;
+
+      if bNew then
+        App.Engine.SymbolCore.RegisterSymbol( GetExKind, aSymbol );
+
+      if ( sCode <> 'BTC' ) and ( sCode <> 'ETH') and ( sCode <> 'XRP') then
+        aList.Add( aSymbol );
+
+    end;
+    Result := App.Engine.SymbolCore.Spots[GetExKind].Count > 0 ;
+
+    aList.Sort(CompareDailyAmount);
+    if aList.Count > 2 then
+    begin
+//      App.Engine.SymbolCore.TopAmtSubscribe( ekBithumb, TSymbol( aList.Items[0] ), TSymbol( aList.Items[1] ) );
+      App.Engine.ApiManager.ExManagers[ekBithumb].TopAmtSymbols[0] := TSymbol( aList.Items[0] );
+      App.Engine.ApiManager.ExManagers[ekBithumb].TopAmtSymbols[1] := TSymbol( aList.Items[1] );
+    end;
+  finally
+    if master <> nil then  master.Free;
+    if aList <> nil then aList.Free;
+
+  end;
+end;
+
+
+
+
+
+
+
+function TBithSpot.RequestOrderBook: boolean;
+var
+  sOut, sJson : string;
+begin
+  SetBaseUrl( App.Engine.ApiConfig.GetBaseUrl( GetExKind , eaSpot ) );
+
+  // 406 에러 때문에 아래 와 같이 헤더 추가
+  Set406;
+
+//  if not RequestAsync(
+//     ReceiveAsyncData
+//   , rmGET, '/public/orderbook/ALL_KRW') then
+//     App.Log( llError, 'Failed %s RequestOrderBook ', [ TExchangeKindDesc[GetExKind]] );
+
+  if Request( rmGET, '/public/orderbook/ALL_KRW', '', sJson, sOut ) then
+  begin
+    gBithReceiver.ParseSpotOrderBook( sJson );
+  end else
+  begin
+    App.Log( llError, '', 'Failed %s RequestOrderBook (%s, %s)',
+      [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+    Exit( false );
+  end;
+
+  Result := true;
+end;
+
+procedure TBithSpot.RequestOrderBook( c : char );
+var
+  sOut, sJson : string;
+begin
+
+  //EnterCriticalSection(CriticalSection);
+  try
+
+    SetBaseUrl( App.Engine.ApiConfig.GetBaseUrl( GetExKind , eaSpot ) );
+    // 406 에러 때문에 아래 와 같이 헤더 추가
+    Set406;
+
+    if Request( rmGET, '/public/orderbook/ALL_KRW', '', sJson, sOut ) then
+    begin
+      gBithReceiver.ParseSpotOrderBook( sJson );
+    end else
+    begin
+      App.Log( llError, '', 'Failed %s RequestOrderBook (%s, %s)',
+        [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+      Exit;
+    end;
+
+//    if not RequestAsync(
+//       ReceiveAsyncData
+//     , rmGET, '/public/orderbook/ALL_KRW') then
+//       App.Log( llError, 'Failed %s RequestOrderBook ', [ TExchangeKindDesc[GetExKind]] );
+  except
+  //  LeaveCriticalSection(CriticalSection);
+  end;
+end;
+
+
+function TBithSpot.RequestCandleData(sUnit, sCode: string): boolean;
+var
+  sOut, sJson, sRrs, sTmp : string;
+  bRes : boolean;
+  aKind : TMajorSymbolKind;
+begin
+
+  bRes := false;
+  try
+
+    SetBaseUrl( App.Engine.ApiConfig.GetBaseUrl( GetExKind , eaSpot ) );
+    // 406 에러 때문에 아래 와 같이 헤더 추가
+    Set406;
+
+    sRrs := Format('public/candlestick/%s/%s', [ sCode, sUnit] );
+    if Request( rmGET, sRrs, '', sJson, sOut ) then
+    begin
+
+      sTmp := copy( sCode, 1, 3 );
+      if sTmp = 'BTC' then
+        aKind := msBTC
+      else aKind := msETH;
+      gBithReceiver.ParseCandleData(aKind, sUnit, sJson );
+
+    end else
+    begin
+      App.Log( llError, '', 'Failed %s RequestCandleData (%s, %s)',
+        [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+      Exit ( false );
+    end;
+    bRes := true;
+  except
+  end;
+
+  Result := bRes;
+end;
+
+function TBithSpot.RequestCandleData(aSymbol: TSymbol; sUnit: string; iDiv,
+  iCount: integer): boolean;
+var
+  sOut, sJson, sRrs, sTmp : string;
+  bRes : boolean;
+  aKind : TMajorSymbolKind;
+begin
+
+  bRes := false;
+  try
+
+    SetBaseUrl( App.Engine.ApiConfig.GetBaseUrl( GetExKind , eaSpot ) );
+
+    case sUnit[1] of
+      'n': sTmp := 'minutes';
+      'd': sTmp := 'days';
+      'w': sTmp := 'weeks';
+      'm': sTmp := 'months';
+    end;
+
+    sRrs := Format('v1/candles/%s/%d?market=%s&count=%d', [sTmp, iDiv, 'KRW-'+aSymbol.Code, iCount] );
+    if Request( rmGET, sRrs, '', sJson, sOut ) then
+    begin
+      gBithReceiver.ParseCandleData(aSymbol, sJson);
+    end else
+    begin
+      App.Log( llError, '', 'Failed %s RequestCandleData (%s, %s)',
+        [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+      Exit ( false );
+    end;
+    bRes := true;
+  except
+  end;
+
+  Result := bRes;
+
+end;
+
+procedure TBithSpot.ParseRequestData(iCode: integer; sName, sData: string);
+begin
+
+	if gBithReceiver = nil then exit;  
+
+  if sData = '' then
+  begin
+  	App.Log(llError, '%s %s Data is Empty', [ TExchangeKindShortDesc[ GetExKind ], sName ]  );
+    Exit;
+  end;
+
+  if iCode <> 200 then begin
+  	App.Log(llError, '%s %s Request is Failed : %d,  %s', [ TExchangeKindShortDesc[ GetExKind ], sName, iCode, sData ]  );
+    Exit;
+  end else begin
+
+		if sName = 'orderbook' then
+			gBithReceiver.ParseSpotOrderBook( sData )
+    else if sName = 'ticker' then
+    	gBithReceiver.ParseTicker( sData )
+    else if sName = 'status' then
+    	gBithReceiver.ParseDnwState( sData );
+  end;         
+end;
+
+procedure TBithSpot.ParseRequestData(aReqType: TRequestType; sData: string);
+begin
+	if gBithReceiver = nil then exit;  
+	case aReqType of
+    rtNewOrder: ;
+    rtCnlOrder: ;
+    rtOrderList: ;
+    rtPosition: ;
+//    rtBalance: gBithReceiver.ParseBalance( sData ) ;
+    rtAbleOrder: ;
+  end;
+end;
+
+procedure TBithSpot.RequestData;
+var
+	aReq : TReqeustItem;
+  i, idx : integer;
+begin
+
+
+
+	exit;
+
+	for I := 0 to 2 do
+  begin
+
+//    if ( i = 2 ) and ( FIndex mod 3 = 0 ) then
+//    	continue;
+        
+    aReq := TReqeustItem.Create;
+    aReq.AMethod	:= rmGET;
+    aReq.Req.init( App.Engine.ApiConfig.GetBaseUrl( GetExKind , eaSpot ), true );
+
+
+    case i of
+      0 : begin aReq.AResource:= '/public/orderbook/ALL_KRW';   	idx	:= RestType(PUB_REQ);  
+      					aReq.Name := 'orderbook'; end;
+      1 : begin aReq.AResource:= '/public/assetsstatus/ALL';		 	idx := RestType(PUB_REQ); 
+     						aReq.Name := 'assetsstatus'; 		end;
+      2 : begin aReq.AResource:= 'public/ticker/ALL_KRW'; 				idx := RestType(PUB_REQ);
+      					aReq.Name := 'ticker'; 		end;
+    end;
+    
+//    if Rest[idx] <> nil then
+//    	Rest[idx].PushQueue( aReq );  
+  end;
+
+
+  inc( FIndex );
+  if FIndex > (High(int64) - 1000) then
+  	FIndex := 0;
+    
+//  if ( FIndex <> FLastIndex )
+//    or ( RestResult = nil )
+//    or (( RestResult <> nil ) and ( RestResult.Finished )) then
+//  begin
+//    FLastIndex := FIndex;
+//
+//    case FIndex of
+//      0 , 2: begin
+//        RestResult := Req[0].RequestAsync( parseOrderBook, rmGET, '/public/orderbook/ALL_KRW', true);
+//      end;
+//      1 : begin
+//        RestResult := Req[1].RequestAsync( parseAssetsstatus, rmGET, '/public/assetsstatus/ALL', true);
+//      end;
+//      3 :begin
+//        RestResult := Req[2].RequestAsync( parseTicker, rmGET, '/public/ticker/ALL_KRW', true);
+//      end;
+//      else exit;
+//    end;
+//
+//    if RestResult = nil then
+//      App.Log( llError,  ' !! %s, %d Request %d Error ', [ TExchangeKindDesc[GetExKind], FIndex ] )
+//    else begin
+//      inc( FIndex );
+//      if FIndex >= 4 then
+//        FIndex := 0;
+//    end;
+//
+//  end else
+//  begin
+//    var s : string;
+//    if RestResult.Finished then s := 'fin' else s := 'not fin';
+//    App.DebugLog( '!! %s, %d waiting req -> %d %s ', [ TExchangeKindDesc[GetExKind], FIndex, RestResult.ThreadID, s ]  );
+//  end;
+end;
+
+
+procedure TBithSpot.parseOrderBook;
+var
+  sJson : string;
+begin
+ //sJson :=  Req[0].GetResponse;
+  if sJson = '' then Exit;
+  gBithReceiver.ParseSpotOrderBook( sJson );
+
+end;
+procedure TBithSpot.parseAssetsstatus;
+var
+  sJson : string;
+begin
+  //sJson :=  Req[1].GetResponse;
+  if sJson = '' then Exit;
+  gBithReceiver.ParseDnwState( sJson );
+
+end;
+procedure TBithSpot.parseTicker;
+var
+  sJson : string;
+begin
+  //sJson :=  Req[2].GetResponse;
+  if sJson = '' then Exit;
+  gBithReceiver.ParseTicker( sJson );
+end;
+
+function TBithSpot.RequestDNWState : boolean;
+var
+  sOut, sJson, sRrsc : string;
+  LToken: TJWT;
+begin
+  Result := false;
+  LToken:= TJWT.Create(TJWTClaims);
+  try
+    try
+      SetBaseUrl(App.Engine.ApiConfig.GetBaseUrl(GetExKind , eaSpot));
+
+      //Set406;
+      sRrsc := 'v1/status/wallet';
+      SetToken(LToken, '');
+
+      if Request2( rmGET, sRrsc, '', sJson, sOut ) then
+      begin
+        gBithReceiver.ParseDnwState( sJson );
+      end else
+      begin
+        App.Log( llError, '', 'Failed %s RequestDNWState (%s, %s)',
+          [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+        Exit (false);
+      end;
+      result := true;
+
+    except
+    end;
+  finally
+    LToken.Free;
+  end;
+end;
+
+
+	// received data from shared memroy
+procedure TBithSpot.ReceivedData(aReqType: TRequestType; aData, aRef: string);
+begin
+	case aReqType of
+    rtNewOrder: gBithReceiver.ParseSpotNewOrder( aData, aRef ) ;    // aRef is LocalHo
+    rtCnlOrder: gBithReceiver.ParseSpotCnlOrder( aData, aRef ) ;	  // aRef is OrderNo
+    rtOrderList: gBithReceiver.ParseSpotOrderList( aData, aRef );		// aRef is symbol code
+//    rtBalance: gBithReceiver.ParseSpotBalance( aData, aRef ) ;      // aref is symbol code
+	  rtPosition: ;
+    rtAbleOrder: ;
+    rtOrdDetail: gBithReceiver.ParseSpotOrderDetail( aData, aRef ) ; // aref is OrderNo
+    rtTradeAmt : gBithReceiver.ParseSpotTradeAmt(aData, aRef);       // aref is Symbol code
+  end;
+end;
+     {
+function TBithSpot.RequestBalance: boolean;
+var
+	sRsrc, sJson, sOut, sTime, sData, sVal, sSig : string;
+  sParam1 : string;
+begin
+  try
+
+  	SetBaseUrl( App.Engine.ApiConfig.GetBaseUrl( GetExKind , eaSpot ) );
+
+    sParam1	:= 'ALL';
+    sRsrc := '/info/balance';
+    sTime := GetTimestamp;
+    sVal	:= EncodePath( sRsrc, Format('endPoint=%s&currency=%s', [ sRsrc, sParam1] ), sTime );
+
+    sSig	:= CalculateHMACSHA512( sVal, App.Engine.ApiConfig.GetSceretKey( GetExKind, eaSpot) );
+    sData	:= TIdEncoderMIME.EncodeString( sSig, IndyTextEncoding_UTF8 );
+
+// 		Set406;
+
+  	SetParam('Api-Key', App.Engine.ApiConfig.GetApiKey( GetExKind, eaSpot), TRESTRequestParameterKind.pkHTTPHEADER );//, [poDoNotEncode]);
+		SetParam('Api-Sign', sData , TRESTRequestParameterKind.pkHTTPHEADER , [poDoNotEncode]);
+		SetParam('Api-Nonce', sTime , TRESTRequestParameterKind.pkHTTPHEADER );
+
+    SetParam('endPoint', sRsrc, TRESTRequestParameterKind.pkREQUESTBODY);
+    SetParam('currency', sParam1, TRESTRequestParameterKind.pkREQUESTBODY);
+
+    if Request( rmPOST, sRsrc, '', sJson, sOut ) then
+    begin
+      gBithReceiver.ParseBalance( sJson );
+    end else
+    begin
+      App.Log( llError, '', 'Failed %s %s RequestBalance (%s, %s)',
+        [ TExchangeKindDesc[GetExKind], TExApiTypeDesc[eaSpot], sOut, sJson] );
+      Exit( false );
+    end;
+
+	except
+  end;
+
+  Result := true;
+end;
+       }
+function TBithSpot.RequestBalance: boolean;
+var
+	sRsrc, sJson, sOut, sVal, sKey : string;
+  LToken: TJWT;
+begin
+
+  sKey := App.Engine.ApiConfig.GetApiKey(GetExKind, eaSpot, 1);
+  if (sKey = DEFAULT_STR) or (sKey.IsEmpty) then
+    Exit (false);
+
+  LToken:= TJWT.Create(TJWTClaims);
+  try
+    try
+      RESTClient2.BaseURL := App.Engine.ApiConfig.GetBaseUrl( GetExKind , eaSpot );
+
+      sRsrc := '/v1/accounts';
+      sVal  := '';
+
+      SetToken(LToken, sVal);
+
+      if Request2(rmGET, sRsrc, '', sJson, sOut ) then
+      begin
+        gBithReceiver.ParseAssets(sJson);
+      end else
+      begin
+        App.Log( llError, '', 'Failed %s RequestBalance (%s, %s)',
+          [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+        Exit( false );
+      end;
+
+    except
+    end;
+  finally
+    LToken.Free;
+  end;
+
+  Result := true;
+end;
+
+//function TBithSpot.RequestBalance2: boolean;
+//var
+//	sRsrc, sJson, sOut, sTime, sData, sVal, sSig : string;
+//  sParam1 : string;
+//begin
+//  try
+//
+//  	SetBaseUrl( App.Engine.ApiConfig.GetBaseUrl( GetExKind , eaSpot ) );
+//
+//    sParam1	:= 'ALL';
+//    sRsrc := '/info/balance';
+//    sTime := GetTimestamp;
+//    sVal	:= EncodePath( sRsrc, Format('endPoint=%s&currency=%s', [ sRsrc, sParam1] ), sTime );
+//
+//    sSig	:= CalculateHMACSHA512( sVal, App.Engine.ApiConfig.GetSceretKey( GetExKind, eaSpot) );
+//    sData	:= TIdEncoderMIME.EncodeString( sSig, IndyTextEncoding_UTF8 );
+//
+//// 		Set406;
+//
+//  	SetParam('Api-Key', App.Engine.ApiConfig.GetApiKey( GetExKind, eaSpot), TRESTRequestParameterKind.pkHTTPHEADER );//, [poDoNotEncode]);
+//		SetParam('Api-Sign', sData , TRESTRequestParameterKind.pkHTTPHEADER , [poDoNotEncode]);
+//		SetParam('Api-Nonce', sTime , TRESTRequestParameterKind.pkHTTPHEADER );
+//
+//    SetParam('endPoint', sRsrc, TRESTRequestParameterKind.pkREQUESTBODY);
+//    SetParam('currency', sParam1, TRESTRequestParameterKind.pkREQUESTBODY);
+//
+//    if Request( rmPOST, sRsrc, '', sJson, sOut ) then
+//    begin
+//      gBithReceiver.ParseBalance( sJson );
+//    end else
+//    begin
+//      App.Log( llError, '', 'Failed %s %s RequestBalance (%s, %s)',
+//        [ TExchangeKindDesc[GetExKind], TExApiTypeDesc[eaSpot], sOut, sJson] );
+//      Exit( false );
+//    end;
+//
+//	except
+//  end;
+//
+//  Result := true;
+//
+//end;
+
+
+
+function TBithSpot.RequestPositons: boolean;
+begin
+  try
+
+	except
+  end;
+
+  Result := true;
+end;
+
+procedure TBithSpot.RequestStuckOrderList(aList: TStringList);
+begin
+  inherited;
+
+end;
+
+procedure TBithSpot.SetToken(var jwt : TJWT; const sQuery: string);
+var
+  vHash : THashSHA2;
+  sToken, sSig: string;
+begin
+  with jwt do
+  begin
+    Claims.SetClaimOfType<string>('access_key', App.Engine.ApiConfig.GetApiKey(GetExKind, ExApiType, 1));
+    Claims.SetClaimOfType<string>('nonce', GetUUID );
+    Claims.SetClaimOfType<int64>('timestamp', StrToInt64(GetTimestamp) );
+    if not sQuery.IsEmpty then
+    begin
+      Claims.SetClaimOfType<string>('query_hash', vHash.gethashstring( sQuery, SHA512 ) );
+      Claims.SetClaimOfType<string>('query_hash_alg', 'SHA512' );
+    end;
+  end;
+
+  sSig := TJOSE.SerializeCompact(App.Engine.ApiConfig.GetSceretKey(GetExKind, ExApiType, 1),
+                                 TJOSEAlgorithmId.HS256, jwt);
+  sToken:= Format('Bearer %s', [sSig]);
+
+  RESTClient2.AddParameter('Authorization', sToken, TRESTRequestParameterKind.pkHTTPHEADER, [poDoNotEncode]);
+end;
+
+function TBithSpot.RequestOrders: boolean;
+var
+	sRsrc, sJson, sOut, sVal, sKey : string;
+  LToken: TJWT;
+begin
+
+  sKey := App.Engine.ApiConfig.GetApiKey(GetExKind, eaSpot, 1);
+  if (sKey = DEFAULT_STR) or (sKey.IsEmpty) then
+    Exit (false);
+
+  LToken:= TJWT.Create(TJWTClaims);
+  try
+    try
+
+      RESTClient2.BaseURL := App.Engine.ApiConfig.GetBaseUrl( GetExKind , eaSpot );
+
+      sRsrc := '/v1/orders';
+      sVal  := 'state=wait';
+
+      SetToken(LToken, sVal);
+
+      if Request2(rmGET, sRsrc+'?'+sVal, '', sJson, sOut ) then
+      begin
+        gBithReceiver.ParseOrders( sJson );
+      end else
+      begin
+        App.Log( llError, '', 'Failed %s RequestOrders (%s, %s)',
+          [ TExchangeKindDesc[GetExKind], sOut, sJson] );
+        Exit( false );
+      end;
+
+    except
+    end;
+  finally
+    LToken.Free;
+  end;
+
+  Result := true;
+end;
+
+procedure TBithSpot.OnHTTPProtocolError(Sender: TCustomRESTRequest);
+begin
+  if Sender <> nil  then
+  begin
+    App.Log( llError,  '%s Async Request Error : %s ( status : %d, %s)' , [ TExchangeKindDesc[GetExKind]
+    ,  Sender.Response.Content ,  Sender.Response.StatusCode, Sender.Response.StatusText ]  );
+  end;
+end;
+
+procedure TBithSpot.MakeRest;
+var
+  aItem : TCyclicItem;
+  info : TDivInfo;
+begin
+
+  aItem := CyclicItems.New('orderbook');
+  aItem.Interval  := 1000;
+  aItem.Index     := 1;
+  aItem.Resource	:= '/public/orderbook/ALL_KRW';
+  aITem.Method		:= rmGET;
+
+  aItem := CyclicItems.New('ticker');
+  aItem.Interval  := 1000;
+  aItem.Index     := 2;
+  aItem.Resource	:= '/public/ticker/ALL_KRW';
+  aITem.Method		:= rmGET;
+
+  aItem := CyclicItems.New('status');
+  aItem.Interval  := 3000;
+  aItem.Index     := 3;
+  aItem.Resource	:= '/public/assetsstatus/multichain/ALL';
+  aITem.Method		:= rmGET;
+
+  MakeRestItems( 3 );
+	// cyclic thread .. 리커버리 끝나면  resume..
+	MakeCyclicThread;
+end;
+
+procedure TBithSpot.CyclicNotify(Sender: TObject);
+var
+	aItem : TCyclicItem;
+  aReq  : TRequest;
+  sNm, sRsrc  : string;
+begin
+
+  if Sender = nil then Exit;
+  aReq := Sender as TRequest;
+
+  if aReq.RequestAsync then
+  	aReq.State := 1;
+
+end;
+
+procedure TBithSpot.RestNotify(Sender: TObject);
+var
+   aReq : TRequest;
+   sTmp : string;
+   avg  : integer;
+   gap  : integer;
+begin
+  if Sender = nil then Exit;
+  inherited  RestNotify( Sender );
+
+end;
+
+
+procedure TBithSpot.RequestActiveOrders(const aList: TList<TOrder>) ;
+var
+	sRsrc, sJson, sOut, sKey, s, uuids : string;
+  LToken: TJWT;
+  i : Integer;
+begin
+  if (aList = nil) or (aList.Count <= 0) then Exit;
+
+  sKey := App.Engine.ApiConfig.GetApiKey(GetExKind, eaSpot, 1);
+  if (sKey = DEFAULT_STR) or (sKey.IsEmpty) then
+    Exit;
+
+  // 4개 이하는 직접 조회 한다.
+  if aList.Count <= 3 then begin
+    for I := 0 to aList.Count-1 do
+      TBithManager(App.Engine.ApiManager.ExManagers[ekBithumb]).ThreadPool.PushTask(rttDetail, aList[i]);
+    Exit;
+  end;
+
+  uuids := '';
+  for I := 0 to aList.Count-1 do
+  begin
+    if nil = aList[i] then continue;
+    s := ifThenStr(uuids.IsEmpty, '', '&');
+    uuids := uuids + s + 'uuids='+ aList[i].OrderNo;
+  end;
+
+  LToken:= TJWT.Create(TJWTClaims);
+  try
+    try
+
+      //SetBaseUrl( App.Engine.ApiConfig.GetBaseUrl( GetExKind , eaSpot ) );
+      RESTClient2.BaseURL := App.Engine.ApiConfig.GetBaseUrl( GetExKind , eaSpot );
+
+      sRsrc := '/v1/orders';
+      SetToken(LToken, uuids);
+
+      if Request2(rmGET, sRsrc+'?'+uuids, '', sJson, sOut ) then
+      begin
+        gBithReceiver.ParseActiveOrders(aList, sJson);
+      end else
+      begin
+        App.Log( llError, '', 'Failed %s RequestActiveOrders (%s, %s), %s',
+          [ TExchangeKindDesc[GetExKind], sOut, sJson, uuids] );
+        Exit;
+      end;
+
+    except
+    end;
+  finally
+    LToken.Free;
+  end;
+end;
+
+//procedure TBithSpot.RequestBalance(aSymbol: TSymbol);
+//begin
+//
+//	App.Engine.SharedManager.RequestData( ekBithumb, aSymbol.Spec.ExApiType,
+//      rtBalance,  aSymbol.Code , aSymbol.Spec.BaseCode// aSymbol.Code
+//      )  ;
+//end;
+
+
+
+
+procedure TBithSpot.RequestOrderDetail(aOrder: TOrder);
+var
+	sData : string;
+  i : integer;
+begin
+
+  if aOrder = nil then Exit;
+
+	sData := Format('%s|%s', [ aOrder.Symbol.Code, aOrder.OrderNo ] );
+
+	App.Engine.SharedManager.RequestData( ekBithumb, aOrder.Symbol.Spec.ExApiType,
+      rtOrdDetail,  sData , aOrder.LocalNo
+      )  ;
+end;
+
+
+procedure TBithSpot.RequestOrderList(aSymbol: TSymbol);
+var
+	sData : string;
+begin
+	sData := Format('%s', [ aSymbol.Code ] );
+
+	App.Engine.SharedManager.RequestData( ekBithumb, aSymbol.Spec.ExApiType,
+      rtOrderList,  sData , aSymbol.Code
+      )  ;
+end;
+
+
+procedure TBithSpot.RequestTradeAmt(aSymbol: TSymbol);
+var
+	sData : string;
+begin
+  if aSymbol = nil then Exit;
+
+	sData := Format('%s', [ aSymbol.Code ] );
+
+  App.Engine.SharedManager.RequestData(ekBithumb, aSymbol.Spec.ExApiType,
+    rtTradeAmt, sData, aSymbol.Code);
+
+end;
+
+function TBithSpot.SenderOrder(aOrder: TOrder): boolean;
+var
+	sData, sTmp : string;
+begin
+	// '|' 를 구분자 사용
+  Result := false;
+
+  if aOrder.OrderType = otNormal then
+  begin
+
+    case aOrder.PriceControl of
+      pcLimit: sTmp  := 'limit';
+      pcMarket: sTmp := ifThenStr(aOrder.Side > 0,'price', 'market');
+    end;
+
+    sData := Format('%s|%s|%s|%s|%s', [
+      aOrder.Symbol.OrgCode,
+      ifThenStr( aOrder.Side > 0 , 'bid', 'ask' ),
+      aOrder.PriceBI.OrgVal,
+      aOrder.OrderQtyBI.OrgVal,
+      sTmp
+    ]);
+
+    Result := App.Engine.SharedManager.RequestData( ekBithumb, aOrder.Symbol.Spec.ExApiType,
+      rtNewOrder,  sData , aOrder.LocalNo
+      );
+
+  end else
+  if aOrder.OrderType = otCancel then
+  begin
+    sData := aOrder.OrderNo;
+
+    Result := App.Engine.SharedManager.RequestData( ekBithumb, aOrder.Symbol.Spec.ExApiType,
+      rtCnlOrder,  sData , aOrder.OrderNo
+      );
+  end;
+
+end;
+
+
+procedure TBithSpot.SetToken(aReq: TRESTRequest; const sQuery: string);
+var
+  LToken: TJWT;
+  vHash : THashSHA2;
+  sID, sTime, sParam, sSig, sToken : string;
+begin
+  LToken:= TJWT.Create(TJWTClaims);
+  try
+    sID := GetUUID;
+    sTime := GetTimestamp;
+
+    if not sQuery.IsEmpty then
+      sParam := vHash.gethashstring(sQuery, SHA512);
+
+    LToken.Claims.SetClaimOfType<string>('access_key', App.Engine.ApiConfig.GetApiKey(GetExKind, ExApiType, 1));
+    LToken.Claims.SetClaimOfType<string>('nonce', sID );
+    LToken.Claims.SetClaimOfType<int64>('timestamp', StrToInt64(sTime) );
+    if not sQuery.IsEmpty then
+      LToken.Claims.SetClaimOfType<string>('query_hash', sParam );
+    LToken.Claims.SetClaimOfType<string>('query_hash_alg', 'SHA512' );
+
+    sSig := TJOSE.SerializeCompact(App.Engine.ApiConfig.GetSceretKey(GetExKind, ExApiType, 1),  TJOSEAlgorithmId.HS512, LToken);
+    sToken := Format('Bearer %s', [sSig ]);
+
+    aReq.AddParameter('Authorization', sToken, TRESTRequestParameterKind.pkHTTPHEADER, [poDoNotEncode] );
+
+  finally
+    LToken.Free;
+  end;
+end;
+
+
+function TBithSpot.SyncRequestOrderDetail(aOrder: TOrder): string;
+var
+  sTime, sVal, sRsrc, sSig, sBody, outJson, outRes : string    ;
+  aExKind : TExchangeKind;
+begin
+  Result := '';
+
+  try
+   	aExKind	:= GetExKind;
+    sRsrc 	:= '/info/order_detail';
+    sTime 	:= GetTimestamp;
+    sVal		:= EncodePath( sRsrc, Format('endPoint=%s&order_id=%s&order_currency=%s',
+      [sRsrc, aOrder.OrderNo, aOrder.Symbol.Code]), sTime )  ;
+
+    sSig	:= CalculateHMACSHA512( sVal, App.Engine.ApiConfig.GetSceretKey( aExKind, eaSpot) );
+    sBody	:= TIdEncoderMIME.EncodeString( sSig, IndyTextEncoding_UTF8 );
+
+    SetParam('Api-Key', App.Engine.ApiConfig.GetApiKey( aExKind, eaSpot), TRESTRequestParameterKind.pkHTTPHEADER );//, [poDoNotEncode]);
+    SetParam('Api-Sign', sBody , TRESTRequestParameterKind.pkHTTPHEADER , [poDoNotEncode]);
+    SetParam('Api-Nonce', sTime , TRESTRequestParameterKind.pkHTTPHEADER );
+
+    SetParam('endPoint', sRsrc, TRESTRequestParameterKind.pkREQUESTBODY);
+    SetParam('order_id', 			aOrder.OrderNo , TRESTRequestParameterKind.pkREQUESTBODY);
+    SetParam('order_currency',aOrder.Symbol.Code, TRESTRequestParameterKind.pkREQUESTBODY);
+
+    if not Request( rmPOST, sRsrc, '',outJson, outRes ) then
+      App.Log( llError, '', 'Failed %s RequestBitOrderDetail (%s, %s)',
+      [ TExchangeKindDesc[aExKind], outRes, outJson] );
+
+    Result := outJson;
+	except
+  end;
+end;
+
+
+end.

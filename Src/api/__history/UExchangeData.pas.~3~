@@ -1,0 +1,43 @@
+unit UExchangeData;
+
+interface
+
+uses
+  System.Classes, System.SysUtils
+  , UApiTypes
+  ;
+
+type
+
+  TDelayInfo = record
+    DelayMS : double;
+    BTCMS   : double;
+    ETHMS   : double;
+    XRPMS   : double;
+  end;
+
+  TExchangeData = record
+    Delay : TDelayInfo;
+
+    procedure SetDelayData( sBaseCode : string; dValue : double );
+  end;
+
+  TExhcnageDataArray = array [ TExchangeKind] of TExchangeData;
+
+implementation
+
+{ TExchangeData }
+
+procedure TExchangeData.SetDelayData(sBaseCode: string; dValue: double);
+begin
+  Delay.DelayMS := dValue;
+  if sBaseCode = 'BTC' then
+    Delay.BTCMS := dValue
+  else if sBaseCode = 'ETH' then
+    Delay.ETHMS := dValue
+  else if sBaseCode = 'XRP' then
+    Delay.XRPMS := dValue;
+
+end;
+
+end.

@@ -1,0 +1,516 @@
+unit UAccounts;
+
+interface
+uses
+  System.Classes, System.SysUtils, System.Generics.Collections
+  , USymbols, UAssets
+  , UTypes, UApiTypes
+
+  ;
+type
+
+  TAcntAmtArray = array [TSettleCurType] of double;
+  TMarketArray = array [TExchangeApiType] of double;
+
+	TAccount = class( TCollectionItem )
+  private
+    FAccountType: TAccountMarketType;
+    FExchangeKind: TExchangeKind;
+    FApiKey: string;
+    FPriKey: string;
+  //  FBalances: TStrings;
+    //FTradeAmt: double;
+    FName: string;
+    FTradeAmt: TMarketArray;
+    FActiveSellOrderAmt: double;
+    FActiveBuyOrderAmt: double;
+    FAssets: TAssetManager;
+    FAsset: TAsset;
+
+    FFees: TMarketArray;
+    FMultiAssetsMode: boolean;
+    FTotWalletBalance: double;
+    FTotMainMargin: double;
+    FEquity: double;
+    FUniAvailableForOrder: double;
+
+    function GetName: string;
+    procedure SetAsset(const Value: TAsset);
+    function GetEquity: double;
+    function GetBalance: double;
+    function GetAvailable: double;
+  public
+//    AvailableAmt :  array [TSettleCurType] of double;            // 주문가능금액
+//    Balance      :  array [TSettleCurType] of double;            // 보유자산
+
+    constructor Create( aColl : TCollection ); override;
+    destructor Destroy; override;
+
+//    function New( sCode : string ): TBalance;
+//    function Find( sCode : string): TBalance;
+    function GetTotTradeAmt : double;
+
+    // REST 조회결과 담는 함수들
+    procedure SetTradeAmt( amt : double; aExApiType : TExchangeApiType);
+    //procedure SetBalance( aSType : TSettleCurType; dBal : double );
+    //
+    procedure DoOrder( aSType : TSettleCurType;  iType : integer; dAmt : double);
+    procedure ApplyFill( aFillObj : TObject );
+
+    property AccountType  : TAccountMarketType read FAccountType write FAccountType;
+    property ExchangeKind : TExchangeKind read FExchangeKind write FExchangeKind;
+
+    property ApiKey : string read FApiKey;
+    property PriKey : string read FPriKey;
+    property Name	  : string read GetName write FName;
+
+    property TradeAmt : TMarketArray read FTradeAmt write FTradeAmt;
+    property Fees     : TMarketArray read FFees write FFees;
+
+    // lock amt
+    property ActiveBuyOrderAmt : double read FActiveBuyOrderAmt ;
+    property ActiveSellOrderAmt : double read FActiveSellOrderAmt ;
+
+    property Assets : TAssetManager read FAssets;
+    // 대표자산(원화/USDT)
+    property Asset : TAsset read FAsset write SetAsset;
+
+    // 멀티에셋모드.
+    property MultiAssetsMode : boolean read FMultiAssetsMode write FMultiAssetsMode;
+    property TotWalletBalance : double read FTotWalletBalance write FTotWalletBalance;
+    property TotMainMargin : double read FTotMainMargin write FTotMainMargin;
+
+    property Equity : double read FEquity;
+    property UniAvailableForOrder : double read FUniAvailableForOrder;
+
+    property Balance : double read GetBalance;
+    property Available : double read GetAvailable;
+
+  end;
+
+  TAccounts = class(TCollection)
+  private
+    FPresentName: string;
+    FPassword: string;
+    function GetAccount(i: Integer): TAccount;
+  public
+    constructor Create;
+    Destructor Destroy ; override;
+    //function New( sKey, sPri: String; aKind: TExchangeKind ): TAccount; overload;
+    function New( sKey, sPri: String; aKind: TExchangeKind; aMarket : TAccountMarketType ): TAccount; overload;
+
+    //function Find( sKey: string) : TAccount; overload;
+    function Find( aKind: TExchangeKind) : TAccount; overload;
+    function Find( aKind: TExchangeKind; aMarket : TAccountMarketType) : TAccount; overload;
+
+    function Represent: String;
+    property Accounts[i: Integer]: TAccount read GetAccount; default;
+  end;
+
+  TAccountList = class(TStringList)
+  private
+    function GetAccount(i: Integer): TAccount;
+  public
+    function Represent: String;
+    procedure AddAccount(aAccount: TAccount);
+    procedure GetList(aList: TStrings);
+    property Accounts[i: Integer]: TAccount read GetAccount; default;
+    function Find( sKey: String): TAccount; overload;
+    function Find( aKind: TExchangeKind) : TAccount; overload;
+  end;  
+	
+implementation
+uses
+	UApiConsts, GLibs
+  , Math
+  , GApp
+  , UFills
+  ;
+{ TAccount }
+procedure TAccount.ApplyFill(aFillObj: TObject);
+var
+  aFill : TFill;
+  aExApitype : TExchangeApiType;
+begin
+  if aFillObj = nil then Exit;
+  aFill := aFillObj as TFill;
+
+  case aFill.Symbol.Spec.Market of
+    mtSpot:
+      begin
+        FTradeAmt[eaSpot] := FTradeAmt[eaSpot]  + ( aFill.Price * aFill.Volume );
+        FFees[eaSpot] := FFees[eaSpot]  + aFill.Fee;
+      end ;
+    mtFutures:
+      begin
+        aExApitype  := aFill.Symbol.Spec.ExApiType;
+        FTradeAmt[aExApitype] := FTradeAmt[aExApitype] + (ifThenFloat( aFill.Symbol.Spec.FutureType = ftCoin, 1/aFill.Price, aFill.Price)
+          * abs(aFill.Volume) * aFill.Symbol.Spec.PointValue);
+        FFees[aExApitype] := FFees[aExApitype]  + aFill.Fee;
+      end;
+  end;
+end;
+
+constructor TAccount.Create(aColl: TCollection);
+var
+  i : TSettleCurType;
+  j: TExchangeApiType;
+begin
+  inherited create( aColl );
+
+  for j := eaSpot to High(TExchangeApiType) do
+  begin
+    FTradeAmt[j] := 0.0;
+    FFees[j] := 0.0;
+  end;
+
+  FAssets:= TAssetManager.Create;
+  FMultiAssetsMode  := false;
+end;
+destructor TAccount.Destroy;
+begin
+  FAssets.Free;
+  inherited;
+end;
+
+// iType = 0 : 주문접수    else  취소, 체결..
+procedure TAccount.DoOrder(aSType: TSettleCurType; iType : integer; dAmt: double );
+begin
+//  if iType = 0 then
+//    // 접수된 금액만큼 빼준다.
+//    AvailableAmt[aSType]  := Max( 0,AvailableAmt[aSType] - dAmt )
+//
+//  else begin
+//    // 취소된 금액만큼 더해준다.
+//    AvailableAmt[aSType]  := Max( 0, AvailableAmt[aSType] + dAmt );
+//  end;
+end;
+
+function TAccount.GetAvailable: double;
+var
+  uafo, im, dTotCoin, dSum : double;   // uniAvailableForOrder
+  i : integer;
+  aAss : TAsset;
+begin
+  Result := 0;
+  if FAsset = nil then Exit;
+
+  im :=App.Engine.TradeCore.Positions[FExchangeKind].GetTotInitMargin(Self);
+  dTotCoin		:= App.Engine.TradeCore.Positions[FExchangeKind].GetOpenPL( Self );
+  dSum        := 0;
+
+  for I := 0 to FAssets.Count-1 do
+  begin
+    aAss  := FAssets.Assets[i];
+    if aAss.MarginAvailable then begin
+      var dRate : double;
+      dRate := min( aAss.AskRate, aAss.BidRate );
+      if aAss.Currency = 'USDT' then
+        dSum:= dSum + ((aAss.Balance + dTotCoin) * dRate )
+      else
+        dSum:= dSum + (aAss.Balance * dRate );
+    end;
+  end;
+
+  if (ExchangeKind = ekBinance) and (FAccountType = amFuture) and (FMultiAssetsMode) then begin
+    uafo   := dSum - (im * FAsset.AskRate);
+    Result := CalcDiv(uafo, FAsset.AskRate);
+  end else
+    if FAsset <> nil then
+      Result := FAsset.Balance + dTotCoin - im;
+end;
+
+function TAccount.GetBalance: double;
+begin
+  Result := 0;
+  if FAsset = nil then Exit;
+
+  if (ExchangeKind = ekBinance) and (FAccountType = amFuture) and (FMultiAssetsMode) then
+    Result := GetEquity
+  else
+    if FAsset <> nil then
+      Result := FAsset.Balance;
+end;
+
+function TAccount.GetEquity: double;
+var
+  I: Integer;
+  aAss : TAsset;
+begin
+  Result := 0;
+
+  for I := 0 to FAssets.Count-1 do
+  begin
+    aAss  := FAssets.Assets[i];
+    if aAss.MarginAvailable then begin
+      var dRate : double;
+      dRate := min( aAss.AskRate, aAss.BidRate );
+      Result:= Result + (aAss.Balance * dRate );
+    end;
+  end;
+
+  FEquity := Result;
+end;
+
+function TAccount.GetName: string;
+begin
+	Result := TExchangeKindShortDesc[ FExchangeKind ]+'.'+ TAccountMarketTypeDesc[ FAccountType];
+end;
+
+function TAccount.GetTotTradeAmt: double;
+var
+  i : TExchangeApiType;
+begin
+  for I := eaSpot to High(TExchangeApiType) do
+    Result :=  Result + FTradeAmt[i];
+end;
+
+procedure TAccount.SetAsset(const Value: TAsset);
+begin
+  FAsset := Value;
+  Value.IsMain  := true;
+end;
+
+//procedure TAccount.SetBalance(aSType: TSettleCurType; dBal: double);
+//begin
+//  Balance[ scUSDT ] := Max(0, Balance[ scUSDT ] + dBal );
+//  AvailableAmt[ scUSDT ] := Max(0, AvailableAmt[ scUSDT ] + dBal );
+//end;
+
+procedure TAccount.SetTradeAmt(amt: double; aExApiType : TExchangeApiType);
+begin
+  FTradeAmt[aExApiType] := amt;
+end;
+
+//function TAccount.New(sCode: string): TBalance;
+//begin
+//  Result := Find(sCode);
+//  if Result = nil then
+//  begin
+//    Result := TBalance.Create;
+//    FBalances.AddObject( sCode, Result );
+//  end ;
+//end;
+//
+//function TAccount.Find(sCode: string): TBalance;
+//var
+//  iRes : integer;
+//begin
+//  iRes := FBalances.IndexOf( sCode );
+//  if iRes < 0 then
+//    Result := nil
+//  else
+//    Result := FBalances.Objects[iRes] as TBalance;
+//end;
+
+{procedure TAccount.SetAvailableAmt(const Value: TAcntAmtArray);
+begin
+  FAvailableAmt := Value;
+end;
+
+ TAccounts }
+constructor TAccounts.Create;
+begin
+  inherited Create(TAccount);
+end;
+
+destructor TAccounts.Destroy;
+begin
+  inherited;
+end;
+
+function TAccounts.Find(aKind: TExchangeKind; aMarket: TAccountMarketType): TAccount;
+var
+  I: Integer;
+  aAcnt : TAccount;
+begin
+	Result := nil;
+  for I := 0 to Count-1 do
+	begin
+		aAcnt := GetAccount(i);
+    if (aAcnt.AccountType = aMarket ) and ( aAcnt.ExchangeKind = aKind ) then
+    begin
+      Result := aAcnt;
+      Break;
+    end;
+  end;
+end;
+
+
+//function TAccounts.Find(sKey: string): TAccount;
+//var
+//  I: Integer;
+//  aAcnt : TAccount;
+//begin
+//	Result := nil;
+//  for I := 0 to Count-1 do
+//	begin
+//		aAcnt := GetAccount(i);
+//    if ( aAcnt.ApiKey = sKey ) then
+//    begin
+//      Result := aAcnt;
+//      Break;
+//    end;
+//  end;
+//end;
+
+function TAccounts.Find(aKind: TExchangeKind): TAccount;
+var
+  I: Integer;
+  aAcnt : TAccount;
+begin
+	Result := nil;
+  for I := 0 to Count-1 do
+	begin
+		aAcnt := GetAccount(i);
+    if ( aAcnt.ExchangeKind = aKind ) then
+    begin  
+      Result := aAcnt;
+      Break;
+    end;
+  end;
+end;
+
+function TAccounts.GetAccount(i: Integer): TAccount;
+begin
+  if (i >= 0) and (i <= Count-1) then
+    Result := TAccount(Items[i])
+  else
+    Result := nil;
+end;
+
+function TAccounts.New(sKey, sPri: String; aKind: TExchangeKind;
+  aMarket: TAccountMarketType): TAccount;
+begin
+  if (sKey = '') {or ( sPri = '' )} then begin
+    Result := nil;
+    Exit;
+  end;
+//  Result := Find(sKey);
+  Result := Find( aKind, aMarket );
+  if Result = nil then
+  begin
+    Result := Add as TAccount;
+    Result.FApiKey := sKey;
+    Result.FPriKey := sPri;
+		Result.AccountType	:= aMarket;
+    Result.ExchangeKind	:= aKind;
+  end;
+end;
+
+//function TAccounts.New(sKey, sPri: String; aKind: TExchangeKind): TAccount;
+//begin
+//  if (sKey = '') or ( sPri = '' ) then begin
+//    Result := nil;
+//    Exit;
+//  end;
+//
+//  Result := Find(sKey);
+//  if Result = nil then
+//  begin
+//    Result := Add as TAccount;
+//    Result.FApiKey := sKey;
+//    Result.FPriKey := sPri;
+//    Result.ExchangeKind	:= aKind;
+//    Result.AccountType	:= amAll;
+//  end;
+//end;
+
+function TAccounts.Represent: String;
+begin
+end;
+{ TAccountList }
+procedure TAccountList.AddAccount(aAccount: TAccount);
+begin
+  if (aAccount <> nil) and (IndexOfObject(aAccount) < 0) then
+    AddObject(aAccount.Name, aAccount);
+end;
+function TAccountList.Find(aKind: TExchangeKind): TAccount;
+var
+  i: Integer;
+begin
+  Result := nil;
+  for i := 0 to Count - 1 do
+    if GetAccount(i).ExchangeKind = aKind then
+    begin
+      Result := Objects[i] as TAccount;
+      Break;
+    end;   
+end;
+function TAccountList.Find(sKey: String): TAccount;
+var
+  i: Integer;
+begin
+  Result := nil;
+  for i := 0 to Count - 1 do
+    if GetAccount(i).FApiKey = sKey then
+    begin
+      Result := Objects[i] as TAccount;
+      Break;
+    end;   
+end;
+function TAccountList.GetAccount(i: Integer): TAccount;
+begin
+  if (i >= 0) and (i <= Count-1) then
+    Result := TAccount(Objects[i])
+  else
+    Result := nil;
+end;
+procedure TAccountList.GetList(aList: TStrings);
+var
+  i: Integer;
+  aAccount: TAccount;
+begin
+  if aList = nil then Exit;
+  for i := 0 to Count - 1 do
+  begin
+    aAccount := GetAccount(i);
+    aList.AddObject(aAccount.Name, aAccount);
+  end;
+end;
+function TAccountList.Represent: String;
+begin
+end;
+{ TBalance }
+
+//function TBalance.Available: double;
+//begin
+//  Result := Balance - Locked;
+//end;
+//
+//constructor TBalance.Create;
+//begin
+//  Balance := 0.0;
+//  Locked  := 0.0;
+//  Symbol  := nil;
+//end;
+//
+//function TBalance.Represent: string;
+//begin
+//
+//  Result := 'None';
+//
+//  if Symbol <> nil then
+//  begin
+//    Result :=   TExChangeKindDesc[ Symbol.Spec.ExchangeType ]
+//      + ' , ' + TMarketTypeDesc[ Symbol.Spec.Market ]
+//      + ' , ' + Symbol.Spec.BaseCode
+//      + ' , ' + Symbol.Spec.SettleCode
+//      + ' , ' + Format('%.*n', [ 8, Balance ] )
+//      + ' , ' + Format('%.*n', [ 8, Locked ] );
+//
+//  end;
+//end;
+//
+//procedure TBalance.SetItem(dBal, dLock: double; aSymbol: TSymbol);
+//begin
+//  Balance := dBal;
+//  Locked  := dLock;
+//  Symbol  := aSymbol;
+//end;
+
+
+
+
+end.
+

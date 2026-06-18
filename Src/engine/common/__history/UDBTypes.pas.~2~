@@ -1,0 +1,18 @@
+unit UDBTypes;
+
+interface
+
+uses
+  System.Classes
+  ;
+
+type
+
+  TSignalResult = record
+
+  end;
+
+
+implementation
+
+end.

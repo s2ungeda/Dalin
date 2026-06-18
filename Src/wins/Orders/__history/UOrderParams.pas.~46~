@@ -1,0 +1,300 @@
+unit UOrderParams;
+
+interface
+
+uses
+  System.Classes, UTypes, UApiTypes
+  ;
+
+type
+
+  TKipConfig = record
+    ReTryCount    : integer;
+    ReTryInterval : integer;      // ms
+
+    OrderInterval : integer;      // ms
+
+    UseOrdInterval: boolean;
+    UseNotify     : boolean;
+
+    procedure Init;
+  end;
+
+  TAutoKipData = record
+    OrderQty  : double;
+    Kip       : double;
+    RepeatCnt : integer;
+    ReduceOnly: boolean;
+
+    Config : TKipConfig;
+
+    procedure SetKipData( dOrderQty , dKip : double;  iRepeatCnt : integer; bReduce : boolean );
+    procedure SetConfig( aCfg : TKipConfig );
+  end;
+
+  TKipFillAvg = record
+    FilledQty   : double;
+    KipFill     : double;
+    IdxFill     : double;
+    procedure Init;
+    function  GetKipFill : double;
+    function  GetIDXill : double;
+  end;
+
+  TKipTradeAmt = record
+    AccFilledQty : array [TPositionType] of double;
+    TradeAmt  : array [TPositionType] of double;
+    //AvgKipVal : array [TPositionType] of double;
+    AvgPrice  : array [TPositionType] of double;
+    ToTKipVal : array [TPositionType] of double;
+
+    KipFillAvg : TKipFillAvg;
+
+    procedure Init;
+  end;
+
+  TPKConfig = record
+    Cfg : TKipConfig;
+    OrdRate : integer;
+    procedure init;
+  end;
+
+  TPKData = record
+    OrderQty  : double;
+    Kip       : double;
+    RepeatCnt : integer;
+    ReduceOnly: boolean;
+    Side      : integer;
+
+    Config : TPKConfig;
+
+    procedure SetKipData( dOrderQty , dKip : double;  iSide, iRepeatCnt : integer; bReduce : boolean );
+    procedure SetConfig( aCfg : TPKConfig );
+  end;
+
+  // pk data 를 다시 만들자.
+  TPICommonData = record
+    UseLimitTime : boolean;
+    STime, ETime : TDateTime;
+
+    ExMAvgPeriod : integer;
+    ExDisparity  : double;     // 환 이격도
+    ExSameValue  : integer;    // 환 얼마동안 같은값 유지
+
+    QuoteDelay, ExDelay: integer;    // 시세 딜레이
+
+    STick, FTick: Integer;
+    ReTryCount    : integer;  // 주문실패시 재주문 횟수
+    ReTryInterval : integer;  // 주문실패시 재주문 인터벌(ms)
+
+    UseReduce : boolean;
+    UseFirstOrderFill : boolean;
+    FillSound : string;
+
+    UseERFilter: boolean;     // 환율 가격 필터
+    ERFilterPrc: double;      // 진입은 이상일때, 청산은 이하일때
+
+    SafeMarginQty: array [TExchangeKind] of integer;
+    CnlDelay     : array [TExchangeKind] of integer;  // ms
+    CustomUnit   : array [TExchangeKind, TMajorTradeSymbol] of double;
+    LotSize      : array [TMajorTradeSymbol] of double;
+    PriceRangePer: array [TSymbolCountryType] of double;
+
+    ResumeDelay  : integer;
+    ResumeType   : integer;
+    RjtMaxCnt    : integer;
+
+    MATerm: integer;
+
+    ETRate : double;
+    PTRate : double;
+    TORate : integer;
+
+    procedure Assign(const data: TPICommonData);
+  end;
+
+  TPIData = record
+    OrderQty  : double;
+    PK, PI, ED: double;
+    bPK, bPI, bED: boolean;
+    RepeatCnt : integer;
+    Method    : integer;  // A, F, S
+
+//    CommData  : TPICommonData;
+
+    procedure Assign(const data: TPIData);
+  end;
+
+
+implementation
+
+uses
+  GLibs
+  ;
+
+{ TAutoKipData }
+
+procedure TAutoKipData.SetConfig(aCfg: TKipConfig);
+begin
+  Config.ReTryCount     := aCfg.ReTryCount;
+  Config.ReTryInterval  := aCfg.ReTryInterval;
+  Config.OrderInterval  := aCfg.OrderInterval;
+end;
+
+procedure TAutoKipData.SetKipData(dOrderQty, dKip: double; iRepeatCnt : integer; bReduce : boolean);
+begin
+  OrderQty  := dOrderQty;
+  Kip       := dKip;
+  RepeatCnt := iRepeatCnt;
+  ReduceOnly := bReduce;
+end;
+
+{ TKipConfig }
+
+
+procedure TKipConfig.Init;
+begin
+  ReTryCount    := 0;
+  ReTryInterval := 1000;
+  OrderInterval := 1000;
+
+  UseOrdInterval:= false;
+  UseNotify     := false;
+end;
+
+{ TKipTradeAmt }
+
+procedure TKipTradeAmt.Init;
+var
+  I: TPositionType;
+begin
+  for I := ptLong to High(TPositionType) do
+  begin
+    AccFilledQty[i]  := 0;
+    TradeAmt[i]   := 0;
+    AvgPrice[i]   := 0;
+    ToTKipVal[i]  := 0;
+  end;
+  KipFillAvg.Init;
+end;
+
+{ TKipFillAvg }
+
+function TKipFillAvg.GetIDXill: double;
+begin
+  Result := CalcDiv( IdxFill, FilledQty);
+end;
+
+function TKipFillAvg.GetKipFill: double;
+begin
+  Result := CalcDiv( KipFill, FilledQty);
+end;
+
+procedure TKipFillAvg.Init;
+begin
+  FilledQty   := 0;
+  KipFill     := 0;
+  IdxFill     := 0;
+end;
+
+
+{ TPKConfig }
+
+procedure TPKConfig.init;
+begin
+  Cfg.Init;
+  OrdRate := 15;
+end;
+
+{ TPKData }
+
+procedure TPKData.SetConfig(aCfg: TPKConfig);
+begin
+  Config.Cfg.ReTryCount     := aCfg.Cfg.ReTryCount;
+  Config.Cfg.ReTryInterval  := aCfg.Cfg.ReTryInterval;
+  Config.Cfg.OrderInterval  := aCfg.Cfg.OrderInterval;
+  Config.Cfg.UseOrdInterval := aCfg.Cfg.UseOrdInterval;
+  Config.OrdRate  := aCfg.OrdRate;
+end;
+
+procedure TPKData.SetKipData(dOrderQty, dKip: double; iSide, iRepeatCnt: integer; bReduce: boolean);
+begin
+  OrderQty  := dOrderQty;
+  Kip       := dKip;
+  RepeatCnt := iRepeatCnt;
+  ReduceOnly:= bReduce;
+  Side      := iSide;
+end;
+
+{ TPIData }
+
+procedure TPIData.Assign(const data: TPIData);
+begin
+    OrderQty := data.OrderQty;
+    PK := data.PK;  PI := data.PI;  ED:= data.ED;
+    bPK:= data.bPK; bPI:= data.bPI; bED:= data.bED;
+    RepeatCnt := data.RepeatCnt;
+    Method    := data.Method;
+
+//    CommData.Assign(data.CommData);
+end;
+
+{ TPICommonData }
+
+procedure TPICommonData.Assign(const data: TPICommonData);
+var
+  e: TExchangeKind;
+begin
+  STick := data.STick;  FTick:= data.FTick;
+  ReTryCount    := data.ReTryCount;
+  ReTryInterval := data.ReTryInterval;
+
+  UseFirstOrderFill := data.UseFirstOrderFill;
+  FillSound := data.FillSound;
+
+  UseReduce := data.UseReduce;
+
+  for e := ekBinance to High(TExchangeKind) do
+  begin
+    SafeMarginQty[e] := data.SafeMarginQty[e];
+    CnlDelay[e]      := data.CnlDelay[e];
+  end;
+
+  MATerm  := data.MATerm;
+  ExSameValue := data.ExSameValue;
+
+  UseERFilter:= data.UseERFilter;
+  ERFilterPrc:= data.ERFilterPrc;
+
+
+  UseLimitTime := data.UseLimitTime;
+  STime := data.STime;
+  ETime := data.ETime;
+
+  ExMAvgPeriod := data.ExMAvgPeriod;
+  ExDisparity  := data.ExDisparity;     // 환 이격도
+
+  QuoteDelay  := data.QuoteDelay;
+  ExDelay     := data.ExDelay;
+
+  for e := ekBinance to High(TExchangeKind) do
+    for var t := tsBTC to High(TMajorTradeSymbol) do
+      CustomUnit[e,t] := data.CustomUnit[e, t];
+
+  for var t := tsBTC to High(TMajorTradeSymbol) do
+    LotSize[t] := data.LotSize[t];
+
+  ResumeDelay  := Data.ResumeDelay;
+  ResumeType   := Data.ResumeType;
+  RjtMaxCnt   := Data.RjtMaxCnt;
+
+  PriceRangePer[scDomes]  := data.PriceRangePer[scDomes];
+  PriceRangePer[scInter]  := data.PriceRangePer[scInter];
+
+  ETRate := data.ETRate;
+  PTRate := data.PTRate;
+  TORate := data.TORate;
+
+end;
+
+end.

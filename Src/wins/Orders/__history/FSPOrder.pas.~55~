@@ -1,0 +1,772 @@
+unit FSPOrder;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
+  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.Grids, Vcl.ExtCtrls, Vcl.StdCtrls,
+  Vcl.Mask, Vcl.Buttons, Vcl.Menus
+
+  , USPItems , USPOrders, USymbols
+  , UStorage, Vcl.ComCtrls
+  ;
+
+
+const
+  SB_COL = 6;
+  SP_COL = 0;
+
+type
+
+  TFrmSPOrder = class(TForm)
+    plBooks: TPanel;
+    sgHoga: TStringGrid;
+    Panel1: TPanel;
+    Panel2: TPanel;
+    sgHoga2: TStringGrid;
+    edtCode: TLabeledEdit;
+    spBooks: TSpeedButton;
+    GroupBox1: TGroupBox;
+    edtEntryRate: TLabeledEdit;
+    edtEntryTick: TLabeledEdit;
+    GroupBox4: TGroupBox;
+    edtLimitMajorPosition: TLabeledEdit;
+    edtLimitTradeAmt: TLabeledEdit;
+    edtLimitPL: TLabeledEdit;
+    sgItem: TStringGrid;
+    cbMajor: TComboBox;
+    cbSub: TComboBox;
+    PopupMenu1: TPopupMenu;
+    N1: TMenuItem;
+    Button2: TButton;
+    Timer1: TTimer;
+    edtLimitSubPosition: TLabeledEdit;
+    edtEntryCount: TLabeledEdit;
+    edtEntryQty: TLabeledEdit;
+    GroupBox7: TGroupBox;
+    cbHogaMerge: TCheckBox;
+    edtMergeUnit: TLabeledEdit;
+    edtAutoModifyCount: TLabeledEdit;
+    cbModifyDelay: TCheckBox;
+    edtModifyDelaySec: TLabeledEdit;
+    GroupBox6: TGroupBox;
+    edtLiquidRate: TLabeledEdit;
+    edtLiquidTick: TLabeledEdit;
+    edtLiquidCount: TLabeledEdit;
+    edtLiquidQty: TLabeledEdit;
+    GroupBox8: TGroupBox;
+    cbBasePrice: TComboBox;
+    edtBaseTick: TLabeledEdit;
+    plLiquidSP: TPanel;
+    plEntrySP: TPanel;
+    edtAutoModifyTick: TLabeledEdit;
+    edtAutoModifyLastTick: TLabeledEdit;
+    Label1: TLabel;
+    edtMinVolume: TLabeledEdit;
+    stBar: TStatusBar;
+    Panel3: TPanel;
+    cbRun: TCheckBox;
+    sgEntry: TStringGrid;
+    sgLiquid: TStringGrid;
+    edtAutoModifyInterval: TLabeledEdit;
+    cbEntry: TCheckBox;
+    cbLiquid: TCheckBox;
+    procedure spBooksClick(Sender: TObject);
+    procedure FormCreate(Sender: TObject);
+    procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure FormDestroy(Sender: TObject);
+    procedure edtSubTickKeyPress(Sender: TObject; var Key: Char);
+    procedure edtEntryRateKeyPress(Sender: TObject; var Key: Char);
+    procedure btnAddClick(Sender: TObject);
+    procedure sgItemTopLeftChanged(Sender: TObject);
+    procedure Panel2Resize(Sender: TObject);
+    procedure N1Click(Sender: TObject);
+    procedure Button2Click(Sender: TObject);
+    procedure Timer1Timer(Sender: TObject);
+    procedure cbBasePriceChange(Sender: TObject);
+    procedure cbRunClick(Sender: TObject);
+    procedure edtEntryQtyKeyPress(Sender: TObject; var Key: Char);
+    procedure sgHogaDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect;
+      State: TGridDrawState);
+  private
+    FBooksHeight : integer;
+    FParam: TSPParam;
+    FRow  : integer;
+    FStorage  : TStorage;
+
+    FSPOrder  : TSPOrder;
+    { Private declarations }
+    function CheckInput : boolean;
+    procedure reArrangeControls;
+    procedure DisplayData;
+    procedure SBOnClick( Sender : TObject );
+
+    procedure LoadEnv; overload;
+    procedure SaveEnv; overload;
+    function UpdateParam: boolean;
+
+    procedure Start;
+    procedure Stop;
+    procedure EnableControls;
+    procedure OnTextNotifyEvent(Sender: TObject; Value: String);
+  public
+    { Public declarations }
+    procedure LoadEnv( aStorage : TStorage ); overload;
+    procedure SaveEnv( aStorage : TStorage ); overload;
+
+    procedure OnQuoteNotifiy( Sender : TObject; sType : TSPType );
+
+    property Param : TSPParam read FParam;
+  end;
+
+var
+  FrmSPOrder: TFrmSPOrder;
+
+implementation
+
+uses
+  GApp, Math, UConsts
+  , GLibs
+  , UTypes
+  , UApiTypes
+  , USymbolCore
+  ;
+
+{$R *.dfm}
+
+procedure TFrmSPOrder.btnAddClick(Sender: TObject);
+var
+  aBtn : TSpeedButton;
+  aRect : TRect;
+  aSP : TSPOrder;
+begin
+
+  try
+
+    if not CheckInput then
+    begin
+      ShowMessage('입력값이 잘못되었습니다. !!');
+      Exit;
+    end;
+
+
+
+//    InsertLine( sgItem, 1 );
+//
+//    with sgItem do
+//    begin
+//
+//      aSP := FSPOrders.New( FParam.Code );
+//      aSP.Init( FParam );
+//      Objects[SP_COL, 1] := aSP;
+//
+//      Cells[0, 1] := IntToStr( FSPOrders.Count );
+//      Cells[1, 1] := FParam.Code;
+//      Cells[4, 1] := Format('%.2f', [ aSP.Param.EntryRate ] );
+//      Cells[5, 1] := Format('%.2f', [ aSP.Param.LiquidReate ] );
+//
+//      aRect := sgItem.CellRect( 6, 1);
+//
+//      aBtn  := TSpeedButton.Create( self );
+//      with aBtn do
+//      begin
+//        GroupIndex := RowCount;
+//        SetBounds( aRect.Left+1, aRect.Top+1, aRect.Right-aRect.Left-2, DefaultRowHeight-1 );
+//        Parent:= sgItem;
+//        Caption  := 'Run';
+//        Down  := true;
+//        AllowAllUp := true;
+//        Objects[SB_COL, 1]  := aBtn;
+//        Tag := FSPOrders.Count-1;
+//        OnClick := SBOnClick;
+//      end;
+//
+//    end;
+//
+//    reArrangeControls;
+
+  finally
+    FParam.Clear;
+  end;
+
+end;
+
+function TFrmSPOrder.UpdateParam : boolean;
+begin
+  Result := CheckInput ;
+end;
+
+procedure TFrmSPOrder.Button2Click(Sender: TObject);
+begin
+//  SaveEnv;
+  if not UpdateParam then
+  begin
+    ShowMessage('설정변경 실패, 입력값을확인하세요');
+    Exit;
+  end;
+
+  if FSPOrder <> nil then
+  begin
+    FSPOrder.OnParam( FParam );
+  end;
+
+end;
+
+procedure TFrmSPOrder.cbBasePriceChange(Sender: TObject);
+begin
+//  edtEntryBaseTick.Visible  := cbBaseCon.ItemIndex <> 0;
+end;
+
+procedure TFrmSPOrder.EnableControls;
+begin
+  edtCode.Enabled := not cbRun.Checked;
+  cbMajor.Enabled := not cbRun.Checked;
+  cbSub.Enabled   := not cbRun.Checked;
+end;
+
+procedure TFrmSPOrder.cbRunClick(Sender: TObject);
+begin
+  if cbRun.Checked then
+    Start
+  else
+    Stop;
+
+  EnableControls;
+end;
+
+function TFrmSPOrder.CheckInput: boolean;
+begin
+
+  Result := false;
+
+  if edtCode.Text = '' then Exit;
+  if cbMajor.ItemIndex = cbSub.ItemIndex then Exit;
+
+  if edtEntryCount.Text = '' then Exit;
+  if edtEntryQty.Text = '' then Exit;
+  if edtEntryRate.Text = '' then Exit;
+  if edtEntryTick.Text = '' then Exit;
+
+  if edtLiquidCount.Text = '' then Exit;
+  if edtLiquidQty.Text = '' then Exit;
+  if edtLiquidRate.Text = '' then Exit;
+  if edtLiquidTick.Text = '' then Exit;
+
+  if edtLimitMajorPosition.Text = '' then Exit;
+  if edtLimitSubPosition.Text = '' then Exit;
+  if edtLimitTradeAmt.Text = '' then Exit;
+  if edtLimitPL.Text = '' then Exit;
+
+  if edtAutoModifyInterval.Text = '' then Exit;
+  if edtAutoModifyCount.Text = '' then Exit;
+  if edtAutoModifyTick.Text = '' then Exit;
+  if edtAutoModifyLastTick.Text = '' then Exit;
+
+  if edtMinVolume.Text = '' then Exit;
+
+  if cbHogaMerge.Checked then
+    if edtMergeUnit.Text = '' then Exit;
+
+  if cbModifyDelay.Checked then
+    if edtModifyDelaySec.Text = '' then Exit;
+
+  FParam.Code := edtCode.Text;
+
+  FParam.MajorEx  := TExchangeKind( cbMajor.ItemIndex + 1 );
+  FParam.SubEx    := TExchangeKind( cbSub.ItemIndex + 1 );
+
+  FParam.UseEntry := cbEntry.Checked;
+  if not TryStrToInt( edtEntryCount.Text, FParam.EntryCount) then Exit;
+  if not TryStrToInt( edtEntryTick.Text, FParam.EntryTick) then Exit;
+  if not TryStrToFloat( edtEntryRate.Text, FParam.EntryRate ) then Exit;
+  if not TryStrToFloat( edtEntryQty.Text, FParam.EntryQty ) then Exit;
+
+  FParam.UseLiquid  := cbLiquid.Checked;
+  if not TryStrToInt( edtLiquidCount.Text, FParam.LiquidCount) then Exit;
+  if not TryStrToInt( edtLiquidTick.Text, FParam.LiquidTick) then Exit;
+  if not TryStrToFloat( edtLiquidRate.Text, FParam.LiquidRate ) then Exit;
+  if not TryStrToFloat( edtLiquidQty.Text, FParam.LiquidQty ) then Exit;
+
+  FParam.BasePrice  := cbBasePrice.ItemIndex;
+  if not TryStrToInt( edtBaseTick.Text, FParam.BaseTick) then Exit;
+  if not TryStrToFloat( edtMinVolume.Text, FParam.MinVolume ) then Exit;
+
+  if not TryStrToFloat( edtLimitMajorPosition.Text, FParam.LimitMajorPos ) then Exit;
+  if not TryStrToFloat( edtLimitSubPosition.Text, FParam.LimitSubPos ) then Exit;
+  if not TryStrToFloat( edtLimitTradeAmt.Text, FParam.LimitTradeAmt ) then Exit;
+  if not TryStrToFloat( edtLimitPL.Text, FParam.LimitPL ) then Exit;
+
+  FParam.UseHogaMerge     := cbHogaMerge.Checked;
+  FParam.UseMdodifyDelay  := cbModifyDelay.Checked;
+
+  if not TryStrToInt( edtMergeUnit.Text, FParam.HogaMergeUnit ) then Exit;
+
+  if not TryStrToInt( edtAutoModifyInterval.Text, FParam.AutoModifyInterval ) then Exit;
+  if not TryStrToInt( edtAutoModifyCount.Text, FParam.AutoModifyCount ) then Exit;
+  if not TryStrToInt( edtAutoModifyTick.Text, FParam.AutoModifyTick ) then Exit;
+  if not TryStrToInt( edtAutoModifyLastTick.Text, FParam.AutoModifyLastTick ) then Exit;
+
+  if not TryStrToInt( edtModifyDelaySec.Text, FParam.ModifyDelaySec ) then Exit;
+
+  Result := true;
+
+end;
+
+procedure TFrmSPOrder.DisplayData;
+begin
+
+end;
+
+procedure TFrmSPOrder.edtEntryQtyKeyPress(Sender: TObject; var Key: Char);
+begin
+  if not (CharInSet(Key , ['0'..'9','.',#8])) then
+    Key := #0;
+end;
+
+procedure TFrmSPOrder.edtEntryRateKeyPress(Sender: TObject; var Key: Char);
+begin
+  if not (CharInSet(Key , ['-','0'..'9','.',#8])) then
+    Key := #0;
+end;
+
+procedure TFrmSPOrder.edtSubTickKeyPress(Sender: TObject; var Key: Char);
+begin
+  if not (CharInSet(Key , ['0'..'9',#8])) then
+    Key := #0;
+end;
+
+procedure TFrmSPOrder.FormClose(Sender: TObject; var Action: TCloseAction);
+begin
+  ACtion := caFree;
+end;
+
+const
+  sgItemTitle : array [0..1] of string = ('시간','로그');
+  sgLogTitle  : array [0..3] of string = ('Base호가','계산가격','주문가격','비교호가');
+
+procedure TFrmSPOrder.FormCreate(Sender: TObject);
+var
+  I: Integer;
+begin
+  FBooksHeight  := plBooks.Height;
+
+  spBooks.Down := false;
+  spBooksClick( nil );
+
+  for I := 0 to sgItem.ColCount-1 do
+    sgItem.Cells[i,0] := sgItemTitle[i];
+
+  for I := 0 to sgEntry.RowCount-1 do
+  begin
+    sgEntry.Cells[0,i]  := sgLogTitle[i];
+    sgLiquid.Cells[0,i] := sgLogTitle[i];
+  end;
+
+  FStorage := TStorage.Create;
+  FSPOrder := nil;
+
+//  LoadEnv;
+end;
+
+procedure TFrmSPOrder.FormDestroy(Sender: TObject);
+begin
+  //
+//  SaveEnv;
+  if FSPOrder <> nil then
+    FSPOrder.Free;
+
+  FStorage.Free;
+end;
+
+
+procedure TFrmSPOrder.N1Click(Sender: TObject);
+begin
+  //if FRow < 1 then Exit;
+
+  sgItem.RowCount := 1;
+end;
+
+procedure TFrmSPOrder.OnQuoteNotifiy(Sender: TObject; sType: TSPType);
+var
+  aGrid : TStringGrid;
+  aAsks, aBids : TMarketDepths;
+  I: integer;
+  sCurPrice, sTmp : string;
+  aSymbol : TSymbol;
+
+  procedure SetCurPrice( iRow : integer );
+  begin
+    with aGrid do
+      if Cells[1,iRow] = sCurPrice then
+        Objects[1,iRow] := Pointer(100)
+      else
+        Objects[1,iRow] := nil;
+  end;
+
+  function GetVol( dPrice : double; dVolume : double) : string;
+  var
+    iPre : integer;
+    dVol : double;
+  begin
+    iPre := GetQtyPrecision( aSymbol, dPrice );
+    if iPre < 0 then
+    begin
+      dVol := Floor(dVolume / 1000);
+      result := Format('%sk', [ FmtString( 0,  dVol ) ] );
+    end
+    else
+      result := FmtString( iPre, dVolume );
+  end;
+
+begin
+  if Sender <> FSPOrder then Exit;
+  if not spBooks.Down then Exit;
+
+  if sType = spMajor then begin
+    aSymbol :=  FSPOrder.Symbols[spMajor];
+    aGrid := sgHoga;
+    if FSPOrder.Param.UseHogaMerge then begin
+      aAsks := FSPOrder.MgQuotes[spMajor].Asks;
+      aBids := FSPOrder.MgQuotes[spMajor].Bids;
+    end else
+    begin
+      aAsks := FSPOrder.Symbols[spMajor].Asks;
+      aBids := FSPOrder.Symbols[spMajor].Bids;
+    end;
+  end
+  else begin
+    aSymbol :=  FSPOrder.Symbols[spSub];
+    aGrid := sgHoga2;
+    aAsks := FSPOrder.Symbols[spSub].Asks;
+    aBids := FSPOrder.Symbols[spSub].Bids;
+  end ;
+
+  sCurPrice := aSymbol.PriceToStr(aSymbol.Last);
+
+  with aGrid do
+  begin
+    for I := 0 to aAsks.Count-1 do
+    begin
+      if i > 4 then break;
+
+      Cells[1,4-i]  := aSymbol.PriceToStr(aAsks[i].Price);
+      sTmp := GetVol( aAsks[i].Price,  aAsks[i].Volume );
+      Cells[0, 4-i] := sTmp;
+      SetCurPrice(4-i);
+    end;
+
+    for I := 0 to aBids.Count-1 do
+    begin
+      if i > 4 then break;
+
+      Cells[1,5+i]  := aSymbol.PriceToStr(aBids[i].Price);
+      sTmp := GetVol( aBids[i].Price,  aBids[i].Volume );
+      Cells[2, 5+i] := sTmp;
+      SetCurPrice(5+i);
+    end;
+
+  end;
+
+end;
+
+procedure TFrmSPOrder.OnTextNotifyEvent(Sender: TObject; Value: String);
+begin
+  if Sender = nil then Exit;
+
+  InsertLine(sgItem, 1);
+  with sgItem do
+  begin
+    Cells[0,1]  := FormatDateTime('mm-dd hh:nn:ss', now );
+    Cells[1,1]  := Value;
+  end;
+end;
+
+procedure TFrmSPOrder.Panel2Resize(Sender: TObject);
+begin
+  reArrangeControls;
+end;
+
+procedure TFrmSPOrder.reArrangeControls;
+var
+  I: Integer;
+  aBtn  : TSpeedButton;
+  aRect : TRect;
+begin
+
+  for I := 1 to sgItem.RowCount - 1 do
+  begin
+
+    aBtn:= TSpeedButton( sgItem.Objects[SB_COL, i]);
+
+    aRect := sgItem.CellRect( SB_COL, i);
+    if aBtn <> nil then
+      aBtn.SetBounds( aRect.Left+1, aRect.Top+1, aRect.Right- aRect.Left-2, sgItem.DefaultRowHeight-1  );
+  end;
+end;
+
+procedure TFrmSPOrder.SaveEnv;
+begin
+  FStorage.Clear;
+  FStorage.New;
+
+  SaveEnv( FStorage );
+
+  FStorage.Save(ComposeFilePath( [App.DataDir, 'SPOrder.lsg'] ));
+end;
+
+procedure TFrmSPOrder.LoadEnv;
+begin
+  if not FStorage.Load(ComposeFilePath( [App.DataDir, 'SPOrder.lsg'] )) then Exit;
+
+  FStorage.First;
+  LoadEnv( FStorage );
+
+end;
+
+procedure TFrmSPOrder.SaveEnv(aStorage: TStorage);
+begin
+  with aStorage do
+  begin
+    //
+    FieldByName('Code').AsString        := edtCode.Text;
+    FieldByName('MajorEx').AsInteger    := cbMajor.ItemIndex;
+    FieldByName('SubEx').AsInteger      := cbSub.ItemIndex;
+
+    FieldByName('UseEntry').AsBoolean   := cbEntry.Checked;
+    FieldByName('EntryRate').AsString   := edtEntryRate.Text;
+    FieldByName('EntryCount').AsString  := edtEntryCount.Text;
+    FieldByName('EntryTick').AsString   := edtEntryTick.Text;
+    FieldByName('EntryQty').AsString    := edtEntryQty.Text;
+
+    FieldByName('UseLiquid').AsBoolean   := cbLiquid.Checked;
+    FieldByName('LiquidRate').AsString   := edtLiquidRate.Text;
+    FieldByName('LiquidCount').AsString  := edtLiquidCount.Text;
+    FieldByName('LiquidTick').AsString   := edtLiquidTick.Text;
+    FieldByName('LiquidQty').AsString    := edtLiquidQty.Text;
+
+    FieldByName('BasePrice').AsInteger  := cbBasePrice.ItemIndex;
+    FieldByName('BaseTick').AsString    := edtBaseTick.Text;
+    FieldByName('MinVolume').AsString   := edtMinVolume.Text;
+
+    FieldByName('LimitMajorPosition').AsString  := edtLimitMajorPosition.Text;
+    FieldByName('LimitSubPosition').AsString    := edtLimitSubPosition.Text;
+    FieldByName('LimitTradeAmt').AsString := edtLimitTradeAmt.Text;
+    FieldByName('LimitPL').AsString       := edtLimitPL.Text;
+
+    FieldByName('UseHogaMerge').AsBoolean   := cbHogaMerge.Checked;
+    FieldByName('MergeUnit').AsString       := edtMergeUnit.Text;
+    FieldByName('UseModifyDelay').AsBoolean := cbModifyDelay.Checked;
+    FieldByName('ModifyDelaySec').AsString  := edtModifyDelaySec.Text;
+
+    FieldByName('AutoModifyInterval').AsString  := edtAutoModifyInterval.Text;
+    FieldByName('AutoModifyCount').AsString     := edtAutoModifyCount.Text;
+    FieldByName('AutoModifyTick').AsString      := edtAutoModifyTick.Text;
+    FieldByName('AutoModifyLastTick').AsString  := edtAutoModifyLastTick.Text;
+
+  end;
+end;
+
+
+procedure TFrmSPOrder.LoadEnv(aStorage: TStorage);
+begin
+  with aStorage do
+  begin
+
+    edtCode.Text  := FieldByName('Code').AsString;
+    cbMajor.ItemIndex := FieldByName('MajorEx').AsIntegerDef(0);
+    cbSub.ItemIndex   := FieldByName('SubEx').AsIntegerDef(1);
+
+    cbEntry.Checked     := FieldByName('UseEntry').AsBooleanDef(cbEntry.Checked);
+    edtEntryRate.Text   := FieldByName('EntryRate').AsString;
+    edtEntryCount.Text  := FieldByName('EntryCount').AsStringDef(edtEntryCount.Text);
+    edtEntryTick.Text   := FieldByName('EntryTick').AsStringDef(edtEntryTick.Text);
+    edtEntryQty.Text    := FieldByName('EntryQty').AsStringDef(edtEntryQty.Text);
+
+    cbLiquid.Checked    := FieldByName('UseLiquid').AsBooleanDef(cbLiquid.Checked);
+    edtLiquidRate.Text  := FieldByName('LiquidRate').AsString;
+    edtLiquidCount.Text := FieldByName('LiquidCount').AsStringDef(edtLiquidCount.Text);
+    edtLiquidTick.Text  := FieldByName('LiquidTick').AsStringDef(edtLiquidTick.Text);
+    edtLiquidQty.Text   := FieldByName('LiquidQty').AsStringDef(edtLiquidQty.Text);
+
+    cbBasePrice.ItemIndex := FieldByName('BasePrice').AsIntegerDef(0);
+    edtBaseTick.Text      := FieldByName('BaseTick').AsStringDef('0');
+    edtMinVolume.Text     := FieldByName('MinVolume').AsString;
+
+    edtLimitMajorPosition.Text  := FieldByName('LimitMajorPosition').AsString;
+    edtLimitSubPosition.Text    := FieldByName('LimitSubPosition').AsString ;
+    edtLimitTradeAmt.Text       := FieldByName('LimitTradeAmt').AsString ;
+    edtLimitPL.Text             := FieldByName('LimitPL').AsString ;
+
+    cbHogaMerge.Checked   := FieldByName('UseHogaMerge').AsBoolean;
+    edtMergeUnit.Text     := FieldByName('MergeUnit').AsString ;
+    cbModifyDelay.Checked := FieldByName('UseModifyDelay').AsBoolean ;
+    edtModifyDelaySec.Text:= FieldByName('ModifyDelaySec').AsString;
+
+    edtAutoModifyInterval.Text  := FieldByName('AutoModifyInterval').AsStringDef( edtAutoModifyInterval.Text );
+    edtAutoModifyCount.Text     := FieldByName('AutoModifyCount').AsStringDef('3');
+    edtAutoModifyTick.Text      := FieldByName('AutoModifyTick').AsStringDef('1');
+    edtAutoModifyLastTick.Text  := FieldByName('AutoModifyLastTick').AsStringDef('5');
+  end;
+end;
+
+procedure TFrmSPOrder.SBOnClick(Sender: TObject);
+var
+  aBtn : TSpeedButton;
+  aSP  : TSPOrder;
+begin
+  aBtn := TSpeedButton( Sender );
+//  ShowMessage( inttostr(aBtn.Tag ));
+//  aSP := FSPOrders.SPOrders[ aBtn.Tag ];
+
+  if aSP <> nil then
+    if aBtn.Down then
+    begin
+      aBtn.Caption  := 'Run';
+      aSP.Stop;
+    end else
+    begin
+      if not aSP.Start then
+      begin
+        aBtn.Down := true;
+        ShowMessage('실행할수 없습니다.');
+        Exit;
+      end;
+      aBtn.Caption  := 'Stop';
+    end;
+end;
+
+procedure TFrmSPOrder.sgHogaDrawCell(Sender: TObject; ACol, ARow: Integer;
+  Rect: TRect; State: TGridDrawState);
+  var
+    aFont, aBack : TColor;
+    dFormat : word;
+    aRect : TRect;
+    stTxt : string;
+begin
+
+  aFont := clBlack;
+  aBack := clWhite;
+  aRect := Rect;
+  dFormat := DT_RIGHT ;
+
+  with (Sender as TStringGrid) do
+  begin
+    stTxt := Cells[ACol, ARow];
+
+    if ACol = 1 then
+    begin
+      dFormat := DT_CENTER;
+
+      if Objects[ACol, ARow] <> nil then
+        if Integer( Objects[ACol, ARow] ) = 100 then
+          aBack :=  SELECTED_COLOR;
+    end;
+
+
+    aRect.Top := Rect.Top + 2;
+    if ( ARow > 0 ) and ( dFormat = DT_RIGHT ) then
+      aRect.Right := aRect.Right - 2;
+    dFormat := dFormat or DT_VCENTER;
+
+    Canvas.Font.Color   := aFont;
+    Canvas.Brush.Color  := aBack;
+
+    Canvas.FillRect( Rect);
+    DrawText( Canvas.Handle, PChar( stTxt ), Length( stTxt ), aRect, dFormat );
+  end;
+
+end;
+
+procedure TFrmSPOrder.sgItemTopLeftChanged(Sender: TObject);
+begin
+//  reArrangeControls;
+end;
+
+procedure TFrmSPOrder.spBooksClick(Sender: TObject);
+begin
+  if spBooks.Down then
+  begin
+    spBooks.Caption := '▽';
+    plBooks.Visible := true;
+    Height  := Height + FBooksHeight;//209;
+  end else
+  begin
+    spBooks.Caption := '△';
+    plBooks.Visible := false;
+    Height  := Height - FBooksHeight;//plBooks.Height;
+  end;
+end;
+
+procedure TFrmSPOrder.Start;
+begin
+  if not CheckInput then
+  begin
+    ShowMessage('입력값을확인하세요');
+    cbRun.Checked := false;
+    Exit;
+  end;
+
+  if FSPOrder = nil then
+    FSPOrder  := TSPOrder.Create( nil );
+
+  FSPOrder.Init( FParam );
+  FSPOrder.OnSPNotify     :=  OnTextNotifyEvent;
+  FSPOrder.OnQuoteNofity  := OnQuoteNotifiy;
+
+  if not FSPOrder.Start then
+  begin
+    ShowMessage('시작을 할 수 없음');
+    cbRun.Checked := false;
+    Exit;
+  end;
+
+  Panel3.Color  := clSkyBlue
+end;
+
+procedure TFrmSPOrder.Stop;
+begin
+  if FSPOrder <> nil then
+    FSPOrder.Stop;
+  Panel3.Color  := clBtnFace;
+
+//  plEntrySP.Caption   := '';
+//  plLiquidSP.Caption  := '';
+end;
+
+procedure TFrmSPOrder.Timer1Timer(Sender: TObject);
+begin
+
+  if FSPOrder = nil then Exit;
+  if not FSPOrder.Run then Exit;
+
+  plEntrySP.Caption := Format('%.2f', [ FSPOrder.SPValue[aoEntry] * 100 ] );
+  plLiquidSP.Caption:= Format('%.2f', [ FSPOrder.SPValue[aoExit] * 100 ] );
+
+{
+  ('Base호가','계산가격','주문가격','비교호가');
+}
+
+  with sgEntry do
+  begin
+    Cells[1, 0]  := FSPOrder.Symbols[spMajor].PriceToStr( FSPOrder.BasePrice[aoEntry] );
+    Cells[1, 1]  := FmtString(3,  FSPOrder.TargetPrice[aoEntry]  );
+    Cells[1, 2]  := FSPOrder.Symbols[spSub].PriceToStr( FSPOrder.OrderPrice[aoEntry] );
+    Cells[1, 3]  := FSPOrder.Symbols[spSub].PriceToStr( FSPOrder.CompPrice[aoEntry] );
+  end;
+
+  with sgLiquid do
+  begin
+    Cells[1, 0]  := FSPOrder.Symbols[spMajor].PriceToStr( FSPOrder.BasePrice[aoExit] );
+    Cells[1, 1]  := FmtString(3, FSPOrder.TargetPrice[aoExit] );
+    Cells[1, 2]  := FSPOrder.Symbols[spSub].PriceToStr( FSPOrder.OrderPrice[aoExit] );
+    Cells[1, 3]  := FSPOrder.Symbols[spSub].PriceToStr( FSPOrder.CompPrice[aoExit] );
+  end;
+
+  stBar.Panels[0].Text  := Format('%.4f', [ FSPOrder.Assets[spMajor].Balance ]);//.ToString;
+  stBar.Panels[1].Text  := Format('%.4f', [ FSPOrder.Assets[spSub].Balance ] );
+  stBar.Panels[2].Text  := FmtString( 0, FSPOrder.TradeRate) + '%';
+  stBar.Panels[3].Text  := FSPOrder.TradePL.ToString;
+
+end;
+
+end.

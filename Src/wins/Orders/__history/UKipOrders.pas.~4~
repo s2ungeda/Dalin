@@ -1,0 +1,97 @@
+unit UKipOrders;
+
+interface
+
+uses
+  System.Classes, System.DateUtils, System.SysUtils
+
+  , UOrders
+  , UTypes
+  ;
+
+type
+
+  TKipOrder = class( TCollectionItem )
+  private
+    FDone: boolean;
+    FMakeTime: TDateTime;
+    FCount: integer;
+  public
+    Orders : array [TPositionType] of TOrder;
+    constructor Create( aColl : TCollection ); override;
+    procedure CheckState;
+
+    property  MakeTime : TDateTime read FMakeTime;
+    property  Done     : boolean read FDone;
+    property  Count    : integer read FCount write FCount;
+  end;
+
+  TKipOrders = class( TCollection )
+  private
+    FIsEntry: boolean;
+    function GetKipOrder(i: integer): TKipOrder;
+  public
+    constructor Create( bEntry : boolean ); overload;
+    destructor Destroy; override;
+
+    function New( aBuy, aSell : TOrder ) : TKipOrder;
+
+    property IsEntry : boolean read FIsEntry ;
+    property KipOrders[i: integer] : TKipOrder read GetKipOrder;
+  end;
+
+implementation
+
+{ TKipOrder }
+
+procedure TKipOrder.CheckState;
+begin
+  if not FDone then
+  begin
+    if ( Orders[ptLong].State = osFilled ) and ( Orders[ptShort].State = osFilled ) then
+      FDone := true;
+  end;
+  // 타이머 체크..거부 된 주문이 있으면 바로 재진입..
+end;
+
+constructor TKipOrder.Create(aColl: TCollection);
+begin
+  inherited Create(aColl);
+  Orders[ptLong] := nil;
+  Orders[ptShort] := nil;
+
+  FDone := false;
+  FMakeTime := now;
+end;
+
+{ TKipOrders }
+
+
+constructor TKipOrders.Create(bEntry: boolean);
+begin
+  inherited Create( TKipOrder );
+  FIsEntry := bEntry;
+end;
+
+destructor TKipOrders.Destroy;
+begin
+
+  inherited;
+end;
+
+function TKipOrders.GetKipOrder(i: integer): TKipOrder;
+begin
+  if (i<0 ) or ( i>=Count) then
+    Result := nil
+  else
+    Result := Items[i] as TKipOrder;
+end;
+
+function TKipOrders.New(aBuy, aSell: TOrder): TKipOrder;
+begin
+  Result := Add as TKipOrder;
+  Result.Orders[ptLong]   := aBuy;
+  Result.Orders[ptShort]  := aSell;
+end;
+
+end.

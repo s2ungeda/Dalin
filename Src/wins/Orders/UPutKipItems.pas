@@ -1,0 +1,342 @@
+unit UPutKipItems;
+
+interface
+
+uses
+  System.Classes, System.SysUtils,
+  UOrders,
+  UApiTypes, UTypes
+  ;
+
+type
+
+  TPutKipItem = class(TCollectionItem)
+  private
+    FLiqOrds: TOrderList;
+    FOrder: TOrder;
+//    FPosType: TPositionType;
+
+    FKip: double;
+    FIdx: integer;
+
+    FIsEntry: boolean;
+    FFilledQty: double;
+    FAvgPrice: double;
+    FKipValue: double;
+    FDust: double;
+    FRslStr: string;
+    FIdxPk: double;
+    FTPrice: double;
+    FDone: boolean;
+    FEstPrice: double;
+    FPIValue: double;
+
+  public
+    Constructor Create(aColl : TCollection); override;
+    Destructor  Destroy; override;
+
+    procedure Init;
+    procedure SetOrder(aOrder : TOrder; bLiq : boolean = false);
+    procedure DeleteLiqOrder(aOrder : TOrder);
+    procedure CheckLiqOrders;
+    procedure SetDust(dDust : double);
+
+    procedure CalcFillAvgKip;
+    procedure CalcIdxPk(const dPrice : double);
+    procedure CalcCustomIdx(const dPrice: double);
+
+    function IsDone : boolean;
+    function IsChange: boolean;
+
+    property Order : TOrder read FOrder;
+    property LiqOrds : TOrderList read FLiqOrds;
+    property Idx : integer read FIdx;
+
+    property Kip      : double read FKip;
+    property IdxPk    : double read FIdxPk;
+    property FilledQty: double read FFilledQty;
+    property AvgPrice : double read FAvgPrice;
+
+    property Dust     : double read FDust;
+    property RsltStr  : string read FRslStr write FRslStr;
+    property TPrice   : double read FTPrice;
+    property Done     : boolean read FDone;
+
+    property IsEntry : boolean read FIsEntry write FIsEntry;
+    property KipValue : double read FKipValue write FKipValue;
+    //
+    property PIValue  : double read FPIValue write FPIValue;
+  end;
+
+  TPutKipItems = class(TCollection)
+  private
+    FDustQty: double;
+    FFilledQty: double;
+    function GetPutKipItem(i:integer): TPutKipItem;
+
+  public
+    Constructor Create;
+    Destructor  Destroy; override;
+
+    function New(iCnt : integer) : TPutKipItem;
+
+    function TotFilledQty: double;
+    procedure SetDust(dDust : double);
+    procedure Init;
+
+    property DustQty : double read FDustQty;
+    property PutKipItem[i:integer] : TPutKipItem read GetPutKipItem;
+    property FilledQty : double read FFilledQty write FFilledQty;
+  end;
+
+implementation
+
+uses
+  GApp, GLibs
+  , UConsts
+  , System.Math
+  ;
+
+{ TPutKipItem }
+
+
+
+procedure TPutKipItem.CalcCustomIdx(const dPrice: double);
+begin
+  FIdxPk := FKip - ((dPrice / App.Engine.ApiManager.ExRate.Value * 100) - 100);
+end;
+
+procedure TPutKipItem.CalcFillAvgKip;
+var
+  I: Integer;
+  aOrder : TOrder;
+  dFilledQty, dAvgPrice : double;
+  dAsk, dBid : double;
+begin
+
+  if FLiqOrds.Count <= 0 then
+  begin
+    FFilledQty  := 0.0;
+    FAvgPrice   := 0.0;
+    FKip        := 0.0;
+
+    Exit;
+  end;
+
+  dFilledQty := 0; dAvgPrice := 0;
+  for I := 0 to FLiqOrds.Count-1 do
+  begin
+    dFilledQty:= dFilledQty + FLiqOrds.Orders[i].FilledQty;
+    dAvgPrice := (dAvgPrice * (dFilledQty - FLiqOrds.Orders[i].FilledQty) + FLiqOrds.Orders[i].AvgPrice * FLiqOrds.Orders[i].FilledQty) / dFilledQty;
+  end;
+
+  FFilledQty := dFilledQty;
+  FAvgPrice  := dAvgPrice;
+
+  if FIsEntry then begin
+    if FOrder.Side > 0 then begin
+      dAsk := dAvgPrice * App.Engine.ApiManager.ExRate.Value;
+      dBid := FOrder.AvgPrice;
+    end else
+    begin
+      dAsk := FOrder.AvgPrice * App.Engine.ApiManager.ExRate.Value;
+      dBid := dAvgPrice;
+    end;
+    if dAsk <= 0 then
+      dAsk := 1;
+    FKip := (dBid / dAsk - 1) * 100;
+//    FIdxPk  := FKip - ( App.Engine.SymbolCore.Tethers[aS
+
+  end else begin
+    if FOrder.Side > 0 then begin
+      dAsk := dAvgPrice ;
+      dBid := FOrder.AvgPrice * App.Engine.ApiManager.ExRate.Value;
+    end else
+    begin
+      dAsk := FOrder.AvgPrice;
+      dBid := dAvgPrice * App.Engine.ApiManager.ExRate.Value;
+    end;
+    if dBid <= 0 then
+      dBid := 1;
+    FKip := (dAsk / dBid -1) * 100;
+  end;
+end;
+
+procedure TPutKipItem.CalcIdxPk(const dPrice: double);
+begin
+  FTPrice := dPrice;
+  if FKip <= EPSILON then
+    FIdxPk      := 0.0
+  else
+    FIdxPk := FKip - ((dPrice / App.Engine.ApiManager.ExRate.Value * 100) - 100);
+end;
+
+procedure TPutKipItem.CheckLiqOrders;
+var
+  i : integer;
+begin
+  i := 0;
+  while i <= FLiqOrds.Count - 1 do
+  begin
+    if not (FLiqOrds.Orders[i].State  in [osReady, osSent, osSrvAcpt, osActive]) then
+      FLiqOrds.Delete(i)
+    else
+      inc(i);
+  end;
+
+end;
+
+procedure TPutKipItem.DeleteLiqOrder(aOrder: TOrder);
+var
+  I: Integer;
+begin
+  for I := 0 to LiqOrds.Count-1 do
+    if LiqOrds.Orders[i] = aOrder then
+    begin
+      LiqOrds.Delete(i);
+      break;
+    end;
+end;
+
+constructor TPutKipItem.Create(aColl: TCollection);
+begin
+  inherited Create(aColl);
+
+  FLiqOrds  := TOrderList.Create;
+  FFilledQty:= 0;
+  FAvgPrice := 0;
+  FDust     := 0;
+  FDone     := false;
+//  FPosType  := aType;
+end;
+
+destructor TPutKipItem.Destroy;
+begin
+  FLiqOrds.Free;
+  inherited;
+end;
+
+procedure TPutKipItem.Init;
+begin
+  FOrder := nil;
+  FLiqOrds.Clear;
+end;
+
+function TPutKipItem.IsChange: boolean;
+begin
+  Result := false;
+  if FOrder = nil then Exit;
+
+  if FOrder.Symbol.Spec.ExApiType = eaFutUsdt then
+    Result := true;
+end;
+
+function TPutKipItem.IsDone: boolean;
+var
+  I: Integer;
+  dFilledQty : double;
+begin
+  Result := false;
+  if FDone then Exit;
+  if FOrder = nil then Exit;
+//
+  dFilledQty  := 0;
+  if FOrder.State = osFilled then
+  begin
+    for I := 0 to FLiqOrds.Count-1 do
+      dFilledQty  := dFilledQty + FLiqOrds.Orders[i].FilledQty;
+  end else
+    Exit;
+
+  //Result:= CheckZero(FOrder.FilledQty - dFilledQty - FDust);
+
+  if CmpVal(dFilledQty + FDust, FOrder.FilledQty) >= 0  then
+  begin
+    RsltStr := Format('FilledQty:%s <= %s (%s+%s)', [ doubleToStr(FOrder.FilledQty),
+      doubleToStr(FDust+dFilledQty), doubleToStr(dFilledQty), doubleToStr(FDust) ]);
+    Result := true;
+  end;
+
+  FDone := Result;
+//
+//  bDone := false;
+//  for I := 0 to FLiqOrds.Count-1 do
+//  begin
+//    if FLiqOrds.Orders[i].State = osFilled then
+//      bDone := true
+//    else if FLiqOrds.Orders[i].State <> osFilled then
+//    begin
+//      bDone := false;
+//      break;
+//    end;
+//  end;
+//
+//  Result := (FOrder.State = osFilled) and bDone;
+end;
+
+procedure TPutKipItem.SetDust(dDust: double);
+begin
+  FDust := FDust + dDust;
+end;
+
+procedure TPutKipItem.SetOrder(aOrder: TOrder; bLiq: boolean);
+begin
+  if bLiq then
+    FLiqOrds.Add(aOrder)
+  else
+    FOrder := aOrder;
+end;
+
+{ TPutKipItems }
+
+constructor TPutKipItems.Create;
+begin
+  inherited Create(TPutKipItem);
+  FDustQty  := 0;
+  FFilledQty:= 0;
+end;
+
+destructor TPutKipItems.Destroy;
+begin
+
+  inherited;
+end;
+
+function TPutKipItems.GetPutKipItem(i:integer): TPutKipItem;
+begin
+  if (i < 0) or (i >= Count) then
+    Result := nil
+  else
+    Result := Items[i] as TPutKipItem;
+end;
+
+procedure TPutKipItems.Init;
+begin
+  Clear;
+  FDustQty := 0;
+  FFilledQty := 0;
+end;
+
+function TPutKipItems.New(iCnt: integer): TPutKipItem;
+begin
+  Result := Add as TPutKipItem;
+  REsult.FIdx := iCnt;
+end;
+
+procedure TPutKipItems.SetDust(dDust: double);
+begin
+  FDustQty := min(0, dDust);
+end;
+
+function TPutKipItems.TotFilledQty: double;
+begin
+  Result := FFilledQty;
+  if GetPutKipItem(Count-1).FOrder <> nil then begin
+    // Method A 일때 다른 한쪽은전량체결이 아닐수 있으므로.
+    Result := FFilledQty + GetPutKipItem(Count-1).Order.ActiveQty;
+  end;
+
+end;
+
+end.
+

@@ -1,0 +1,235 @@
+unit UApiConfigManager;
+
+interface
+
+uses
+  system.Classes,  system.SysUtils , system.IniFiles,
+
+  UApiTypes, UApiConsts, USecureString
+  ;
+
+type
+
+  TApiConfigManager = class
+  private
+    FDomesticCnt: integer;
+    FOverseasCnt: integer;
+    FVerbose: boolean;
+
+    function GetTotal: integer;
+
+  public
+
+    OrderLimit    : TApiOrderLimit;
+    DnwLimit      : TAccountDnwLimit;
+    ExchangeInfo  : array of TExchangeInfo;
+    QuoteOrderLog : array [0..1] of TQuoteOrderLog;
+
+    constructor Create;
+    destructor Destroy; override;
+    function LoadExchangeConfig : boolean;
+
+    function GetBaseUrl( aExKind : TExchangeKind; aExApiType : TExchangeApiType ) : string;
+    function GetPrepare( aExKind : TExchangeKind; aExApiType : TExchangeApiType ) : string;
+    function GetSceretKey( aExKind : TExchangeKind; aExApiType : TExchangeApiType; idx : integer = 0 ) : string;
+    function GetApiKey( aExKind : TExchangeKind; aExApiType : TExchangeApiType; idx : integer = 0) : string;
+    function GetFee(aExKind : TExchangeKind; aExApiType : TExchangeApiType;
+      aStType: TSettleCurType; feeType: TFeeType) : double;
+    function FeeToStr(aExKind : TExchangeKind; aExApiType : TExchangeApiType;
+      aStType: TSettleCurType; feeType: TFeeType) : string;
+
+    procedure SetOrderLimit( aExKind : TExchangeKind; aItem : TLimitITem );
+    procedure SetDefOrderLimit( aExKind : TExchangeKind; aItem : TDefOrderLimit );
+    procedure SetFee(aExKind : TExchangeKind; aExApiType : TExchangeApiType;
+      aStType: TSettleCurType; feeType: TFeeType; const s: string);
+
+    // only signal
+    function GetBaseFee(aStType: TSettleCurType): double;
+
+    property ToTalCnt : integer read GetTotal;
+    property DomesticCnt : integer read FDomesticCnt;
+    property OverseasCnt : integer read FOverseasCnt;
+    property Verbose     : boolean read FVerbose;
+
+    //property OrderLimit : TApiOrderLimit read FOrderLimit write FOrderLimit;
+  end;
+
+implementation
+
+uses
+  GApp, GLibs
+  , UTypes
+
+
+  ;
+
+{ TApiConfigManasger }
+
+constructor TApiConfigManager.Create;
+
+begin
+  FDomesticCnt:= 0;
+  FOverseasCnt:= 0;
+
+  QuoteOrderLog[0].Init;
+  QuoteOrderLog[1].Init;
+end;
+
+destructor TApiConfigManager.Destroy;
+var
+  i : integer;
+  ea: TExchangeApiType;
+begin
+  for i := 0 to High(ExchangeInfo) do
+    for ea := eaSpot to High(TExchangeApiType) do begin
+      if ExchangeInfo[i].ApiInfo[ea].ApiKey[0].Sec <> nil then
+        ExchangeInfo[i].ApiInfo[ea].ApiKey[0].Sec.Free;
+      if ExchangeInfo[i].ApiInfo[ea].ApiKey[1].Sec <> nil then
+        ExchangeInfo[i].ApiInfo[ea].ApiKey[1].Sec.Free;
+    end;
+
+  ExchangeInfo := nil;
+  //ExAccountInfo:= nil;
+  inherited;
+end;
+
+
+
+function TApiConfigManager.GetBaseFee(aStType: TSettleCurType): double;
+var
+  d1, d2: double;
+begin
+  // upbit taker + binance maker;
+  Result :=  ExchangeInfo[0].ApiInfo[eaFutUsdt].Fee[aStType,ftMaker] +
+    ExchangeInfo[1].ApiInfo[eaSpot].Fee[scKRW,ftTaker];
+end;
+
+function TApiConfigManager.GetBaseUrl(aExKind: TExchangeKind; aExApiType : TExchangeApiType): string;
+begin
+  Result := ExchangeInfo[ integer( aExKind )].ApiInfo[aExApiType].BaseUrl;
+end;
+
+function TApiConfigManager.FeeToStr(aExKind: TExchangeKind;
+  aExApiType: TExchangeApiType; aStType: TSettleCurType;
+  feeType: TFeeType): string;
+begin
+  Result := ExchangeInfo[integer(aExKind)].ApiInfo[aExApiType].Fee[aStType,feeType].ToString;
+end;
+
+function TApiConfigManager.GetFee(aExKind: TExchangeKind;
+  aExApiType: TExchangeApiType; aStType: TSettleCurType;
+  feeType: TFeeType): double;
+begin
+  Result := ExchangeInfo[integer(aExKind)].ApiInfo[aExApiType].Fee[aStType,feeType];
+end;
+
+function TApiConfigManager.GetSceretKey(aExKind: TExchangeKind; aExApiType : TExchangeApiType; idx : integer): string;
+begin
+  Result := ExchangeInfo[ integer( aExKind )].ApiInfo[aExApiType].ApiKey[idx].Secret;
+end;
+
+function TApiConfigManager.GetApiKey(aExKind: TExchangeKind; aExApiType : TExchangeApiType; idx : integer): string;
+begin
+  Result := ExchangeInfo[ integer( aExKind )].ApiInfo[aExApiType].ApiKey[idx].Key;
+end;
+
+function TApiConfigManager.GetPrepare(aExKind: TExchangeKind; aExApiType : TExchangeApiType): string;
+begin
+  Result := ExchangeInfo[ integer( aExKind )].ApiInfo[aExApiType].Prepare;
+end;
+
+function TApiConfigManager.GetTotal: integer;
+begin
+  result := FDomesticCnt + FOverseasCnt;
+end;
+
+function TApiConfigManager.LoadExchangeConfig: boolean;
+var
+  pIniFile : TIniFile;
+  stDir : string;
+  iCnt : integer;
+  I: Integer;
+  j : TExchangeApiType;
+
+  //ApiInfo : ^TApiInfo;
+begin
+  result := true;
+
+  stDir := ExtractFilePath( paramstr(0) )+'Config\';
+  pIniFile := TIniFile.Create(stDir + 'exchange.ini' );
+  try
+    try
+      /////////////////////////////////////////////////////////////
+
+      iCnt := pIniFile.ReadInteger('Exchange', 'Count', 0);
+      SetLength( ExchangeInfo, iCnt );
+
+      for I := 0 to iCnt-1 do
+      begin
+        stDir := Format('Exchange_%d', [i]);
+        ExchangeInfo[i].SetInfo(  i,
+          pIniFile.ReadString(stDir, 'name', 'Sauri')
+          , pIniFile.ReadInteger(stDir, 'domestic',0 ) = 1
+          , pIniFile.ReadInteger(stDir, 'fut', 0 ) = 1
+          , pIniFile.ReadInteger(stDir, 'futcm', 0) = 1
+        ) ;
+
+        if ExchangeInfo[i].IsDomestic then inc( FDomesticCnt )
+        else inc( FOverseasCnt );
+      end;
+
+      for I := 0 to iCnt-1 do
+      begin
+        for j := eaSpot to High(TExchangeApiType) do
+        begin
+
+            if (j <> eaSpot) and (not ExchangeInfo[i].IsFuture) then continue;
+
+            stDir := Format( '%s_%s', [ ExchangeInfo[i].Name, ifThenStr( j = eaSpot,'spot', 'future')  ] );
+
+            if TExchangeKind(i) = ekBinance then begin
+              if j = eaFutCoin then stDir := stDir+'_cm';
+              if (not App.Config.RunMod) {and ( j = eaSpot)} then stDir := stDir + '_Test';
+            end;
+
+            ExchangeInfo[i].ApiInfo[j].BaseUrl  :=  pIniFile.ReadString( stDir, 'Url', 'Sauri');
+            ExchangeInfo[i].ApiInfo[j].Prepare  :=  pIniFile.ReadString( stDir, 'PrePare', 'Sauri');
+            ExchangeInfo[i].ApiInfo[j].Port     :=  pIniFile.ReadInteger(stDir, 'Port', 443 );
+
+            ExchangeInfo[i].ApiInfo[j].WSUrl    :=  pIniFile.ReadString( stDir, 'WSocket', 'Sauri' );
+            ExchangeInfo[i].ApiInfo[j].WSApiUrl :=  pIniFile.ReadString( stDir, 'WSApi', 'Sauri' );
+
+        end;
+      end;
+    except
+      result := false;
+    end;
+  finally
+    pIniFile.Free;
+  end;
+end;
+
+
+
+procedure TApiConfigManager.SetDefOrderLimit(aExKind: TExchangeKind;
+  aItem: TDefOrderLimit);
+begin
+  OrderLimit.DefOrderLimit[aExKind] := aItem;
+end;
+
+procedure TApiConfigManager.SetFee(aExKind: TExchangeKind;
+  aExApiType: TExchangeApiType; aStType: TSettleCurType; feeType: TFeeType;
+  const s: string);
+  var d: double;
+begin
+  d := ifThenFloat(s.IsEmpty, 0, StrToDouble(s));
+  ExchangeInfo[integer(aExKind)].ApiInfo[aExApiType].Fee[aStType,feeType] := d;
+end;
+
+procedure TApiConfigManager.SetOrderLimit(aExKind: TExchangeKind;
+  aItem: TLimitITem);
+begin
+  OrderLimit.OrderLimit[aExKind] := aItem;
+end;
+
+end.

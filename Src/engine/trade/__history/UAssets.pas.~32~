@@ -1,0 +1,695 @@
+﻿unit UAssets;
+
+interface
+
+uses
+  System.Classes, System.SysUtils, System.SyncObjs, System.Generics.Collections
+  , USymbols
+  , UApiTypes
+  ;
+
+type
+
+  { 주문 예약 추적 모델 }
+  POrderReservation = ^TOrderReservation;
+  TOrderReservation = record
+    Identifier: string;
+    UUID: string;
+
+    Side: integer;          // 매수/매도 구분 추가
+    Currency: string;         // 대상 코인 (예: BTC)
+
+    Price: Double;
+    OriginalVolume: Double;
+    RemainingVolume: Double;
+
+    ReservedAmount: Double;
+    StandardFeeRate: Double;
+
+    ReservedAt: TDateTime; // 주문 예약 시각 (Timestamp)
+  end;
+
+  TAsset = class( TCollectionItem )
+  private
+    FLock: TCriticalSection;
+    FMarginAvailable: boolean;
+    function GetOpenAmt: double;
+  public
+    Currency  : string;
+    Balance   : double;
+    Locked    : double;
+    Available : double;
+    QueryedAvailable : double;
+    Fess      : double;
+    // only binance
+    MainMargin: double;
+    //TotBalance: double;
+    InitMargin: double;
+    // binance multi asset mode;
+    IndexPrice  : double;
+    AskRate     : double;
+    BidRate     : double;
+    //
+    AvgPrice  : double;
+    IsMain    : boolean;
+    Symbol    : TSymbol;
+    Account   : TObject;
+
+    Updated   : boolean;
+
+    Balance2   : double;
+    Locked2    : double;
+    Available2 : double;
+
+    constructor Create( aColl : TCollection ); override;
+    destructor  Destroy; override;
+
+    //procedure   AddFill( aFillObj : TObject );
+    procedure   init;
+    procedure   UpdateAsset(ADeltaBalance, ADeltaLocked: Double);
+    procedure   SyncAsset(ADeltaBalance, ADeltaLocked, AAvgPrice: Double);
+    function    Represet : string ;
+
+    property OpenAmt  : double read GetOpenAmt;
+    property MarginAvailable : boolean read FMarginAvailable write FMarginAvailable;
+  end;
+
+  TAssetManager  = class(TStringList)
+  private
+    FLock: TCriticalSection;
+    FAssets : TCollection;
+    FPendingOrders: TDictionary<string, POrderReservation>;
+
+    FAccount: TObject;
+    function GetAsset(i: integer): TAsset;
+    function IsProcess : boolean;
+    procedure UpdateAsset(const ACurrency: string; ADeltaBalance,
+      ADeltaLocked: double);
+    procedure CheckServerStatusAndRecover(const AIdentifier: string);
+
+
+  public
+    constructor Create;
+    destructor  Destroy; override;
+
+    function Find(sCurrency : string ) : TAsset;
+    function New( sCurrency : string; aAcnt : TObject ) : TAsset;
+
+    procedure DeleteAsset( i : integer );
+    function  GetTotalCoin : double;
+    procedure init;
+    procedure DoLog;
+    procedure UpdateReady;
+    procedure UpdateDone;
+
+    procedure AcceptOrder(const ALocalNo, AOrderNo: string);
+    procedure CleanupStuckOrders(AMaxSeconds: Integer);
+    // only recovery active order
+    procedure LoadOrder(ASide: integer; const ACurrency, AOrderNo: string;
+      APrice, AVolume, ALocked: Double);
+
+    function ReserveOrder(ASide: integer; const ACurrency, ALocalNo: string;
+      APrice, AVolume: Double): boolean;
+
+    procedure SyncAsset(aAsset: TAsset; AActualBalance, AActualLocked, AAvgPrice: double);
+
+    procedure ProcessCancel(const AOrderNo: string);
+    procedure ProcessTrade(const AOrderNo: string; ATradePrice, ATradeVolume,
+      APaidFee: Double; bDone:boolean);
+
+    property Assets[i: integer] : TAsset read GetAsset; default;
+    property Account: TObject read FAccount write FAccount;
+  end;
+
+implementation
+
+uses
+  GApp, GLibs, UTypes, UConsts
+  , UApiConsts
+  , UAccounts
+  , Math
+  , System.DateUtils
+  ;
+
+{ TAssetManager }
+
+procedure TAssetManager.AcceptOrder(const ALocalNo, AOrderNo: string);
+var
+  Order: POrderReservation;
+begin
+  if not IsProcess then Exit;
+
+  FLock.Enter;
+  try
+    if not FPendingOrders.TryGetValue(ALocalNo, Order) then begin
+      App.Log(llError, 'AcceptOrder 실패: ALocalNo "%s"에 해당하는 주문 없음', [ALocalNo]);
+      Exit;
+    end;
+
+    Order^.UUID := AOrderNo;
+    // Dictionary의 Key를 Identifier에서 UUID로 바꿉니다.
+    // ExtractPair는 딕셔너리에서 데이터를 제거하되, 객체(레코드 포인터)를 파괴하지 않고 반환합니다.
+    FPendingOrders.ExtractPair(ALocalNo);
+    FPendingOrders.Add(AOrderNo, Order);
+  finally
+    FLock.Leave;
+  end;
+end;
+
+function TAssetManager.ReserveOrder(ASide: integer; const ACurrency, ALocalNo: string; APrice, AVolume: Double): boolean;
+var
+  NewOrder: POrderReservation;
+  ReservedQty: Double;
+  aAsset : TAsset;
+  dStdFee: double;
+begin
+  Result := false;
+  if not IsProcess then Exit;
+
+  dStdFee :=  App.Engine.ApiConfig.GetStandardFee(TAccount(FAccount).ExchangeKind, eaSpot);
+
+  FLock.Enter;
+  try
+    if ASide > 0 then
+    begin
+      aAsset  := TAccount(FAccount).Asset;
+      if aAsset = nil then
+      begin
+        App.Log(llError, 'KRW 잔고 없음');
+        Exit;
+      end;
+
+      ReservedQty := (APrice * AVolume) * (1 + dStdFee/100);
+      if aAsset.Available < ReservedQty then
+      begin
+        App.Log(llError, 'KRW 잔고 부족: 필요 %m, 가용 %m', [ReservedQty, aAsset.Available]);
+        Exit;
+      end;
+    end
+    else
+    begin
+      ReservedQty := AVolume;
+      aAsset  := Find(ACurrency);
+      if aAsset = nil then
+      begin
+        App.Log(llError, '%s 잔고 없음');
+        Exit;
+      end;
+
+      if aAsset.Available < ReservedQty then
+      begin
+        App.Log(llError, '%s 잔고 부족: 필요 %m, 가용 %m', [ACurrency, ReservedQty, aAsset.Available]);
+        Exit;
+      end;
+    end;
+
+    aAsset.UpdateAsset(-ReservedQty, ReservedQty);
+
+    System.New(NewOrder);
+
+    NewOrder^.Side := ASide;
+    NewOrder^.Currency := ACurrency;
+    NewOrder^.Price := APrice;
+    NewOrder^.OriginalVolume := AVolume;
+    NewOrder^.RemainingVolume := AVolume;
+    NewOrder^.StandardFeeRate := dStdFee/100;
+    NewOrder^.ReservedAmount := ReservedQty;
+    NewOrder^.ReservedAt := now;
+
+    FPendingOrders.Add(ALocalNo, NewOrder);
+
+    Result := true;
+  finally
+    FLock.Leave;
+  end;
+end;
+
+
+procedure TAssetManager.SyncAsset(aAsset: TAsset; AActualBalance, AActualLocked,
+  AAvgPrice: double);
+begin
+  if aAsset = nil then Exit;
+  aAsset.SyncAsset(AActualBalance, AActualLocked, AAvgPrice);
+end;
+
+procedure TAssetManager.ProcessCancel(const AOrderNo: string);
+var
+  Order: POrderReservation;
+  Refund: double;
+begin
+  if not IsProcess then Exit;
+
+  FLock.Enter;
+  try
+    if FPendingOrders.TryGetValue(AOrderNo, Order) then
+    begin
+      Refund := Order^.ReservedAmount;
+      if Order^.Side > 0 then
+      begin
+        { 매수 취소: 잔여 예약금만큼 KRW 복원 }
+        //Refund := (Order^.Price * Order^.RemainingVolume) * (1 + Order^.StandardFeeRate);
+        UpdateAsset('KRW',Refund, -Refund);
+      end  else
+      begin
+        { 매도 취소: 잔여 코인 수량만큼 코인 복원 }
+        UpdateAsset(Order^.Currency, Refund, -Refund);
+      end;
+      FPendingOrders.Remove(AOrderNo);
+      Dispose(Order);
+    end;
+  finally
+    FLock.Leave;
+  end;
+end;
+
+procedure TAssetManager.ProcessTrade(const AOrderNo: string; ATradePrice, ATradeVolume, APaidFee: Double;
+  bDone:boolean);
+var
+  Order: POrderReservation;
+  ReservedPart, ActualKRW, RefundKRW, ReFund: Double;
+begin
+  if not IsProcess then Exit;
+  FLock.Enter;
+  try
+    if FPendingOrders.TryGetValue(AOrderNo, Order) then
+    begin
+      if Order^.Side > 0 then
+      begin
+        { [매수 체결 처리] }
+        ReservedPart := (Order^.Price * ATradeVolume) * (1 + Order^.StandardFeeRate);
+        Order^.ReservedAmount := Max(0, Order^.ReservedAmount - ReservedPart);
+
+        ActualKRW := (ATradePrice * ATradeVolume) + APaidFee;
+        RefundKRW := ReservedPart - ActualKRW;
+        // 1. KRW 잠금: 예약 분 풀고, 차액(환불분)은 Balance로
+        UpdateAsset('KRW',RefundKRW, -ReservedPart);
+        // 2. 코인 획득: 체결된 수량만큼 코인 Balance 증가
+        UpdateAsset(Order^.Currency, ATradeVolume, 0);
+      end
+      else
+      begin
+        { [매도 체결 처리] }
+        // 1. 매도 예약금(ReservedAmount)은 '코인 수량' 자체임
+        ReservedPart := ATradeVolume;
+        // 2. 예약된 코인 수량 잔액에서 차감
+        Order^.ReservedAmount := Max(0, Order^.ReservedAmount - ReservedPart);
+
+        // 1. 코인 차감: 잠겨있는 코인 수량 차감
+        UpdateAsset(Order^.Currency, 0, -ATradeVolume);
+        // 2. KRW 획득: 매도 대금에서 수수료를 뺀 금액 Balance 증가
+        ActualKRW := (ATradePrice * ATradeVolume) - APaidFee;
+        UpdateAsset('KRW',ActualKRW, 0);
+      end;
+
+      Order^.RemainingVolume := Order^.RemainingVolume - ATradeVolume;
+      if (Order^.RemainingVolume < EPSILON) or bDone then
+      begin
+
+        ReFund := Order^.ReservedAmount;
+        if ReFund > EPSILON then
+          if Order^.Side > 0 then
+            UpdateAsset('KRW',Refund, -Refund)
+          else
+            UpdateAsset(Order^.Currency, Refund, -Refund);
+
+        FPendingOrders.Remove(AOrderNo);
+        Dispose(Order);
+      end;
+    end;
+  finally
+    FLock.Leave;
+  end;
+end;
+
+procedure TAssetManager.UpdateAsset(const ACurrency: string; ADeltaBalance, ADeltaLocked: double);
+var
+  aAsset: TAsset;
+begin
+  if ACurrency = 'KRW' then
+    aAsset := TAccount(FAccount).Asset
+  else begin
+    aAsset  := Find(ACurrency);
+    if aAsset = nil then
+      aAsset  := New(ACurrency, FAccount);
+  end;
+
+  if aAsset <> nil then
+    aAsset.UpdateAsset(ADeltaBalance, ADeltaLocked);
+end;
+
+procedure TAssetManager.UpdateDone;
+var
+  i : integer;
+begin
+  for I := 0 to Count-1 do
+    if (not GetAsset(i).Updated) and (not GetAsset(i).IsMain) then
+      GetAsset(i).SyncAsset(0, 0, 0);
+end;
+
+procedure TAssetManager.UpdateReady;
+var
+  i : integer;
+begin
+  for I := 0 to Count-1 do
+    GetAsset(i).Updated := false;
+end;
+
+
+
+constructor TAssetManager.Create;
+begin
+  inherited Create;
+
+  FLock := TCriticalSection.Create;
+  FAssets := TCollection.Create( TAsset );
+  FPendingOrders := TDictionary<string, POrderReservation>.Create;
+
+  Sorted := True;
+end;
+
+procedure TAssetManager.CleanupStuckOrders(AMaxSeconds: Integer);
+var
+  Order: POrderReservation;
+  Key: string;
+  StuckIds: TList<string>;
+begin
+  StuckIds := TList<string>.Create;
+  try
+    // [Step 1] 짧은 Lock: UUID가 없는 주문만 선별
+    FLock.Enter;
+    try
+      for Key in FPendingOrders.Keys do
+      begin
+        Order := FPendingOrders[Key];
+        // 1. UUID가 없고, 2. 설정한 시간을 초과한 주문만 스냅샷에 추가
+        if (Order^.UUID = '') and
+           (SecondsBetween(Now, Order^.ReservedAt) > AMaxSeconds) then
+        begin
+          StuckIds.Add(Key);
+        end;
+      end;
+    finally
+      FLock.Leave;
+    end;
+    //App.Engine.ApiManager.ExManagers[(FAccount as TAccount).ExchangeKind].re
+    // [Step 2] Lock 밖에서 서버 API 호출 (비동기 처리)
+    for Key in StuckIds do
+    begin
+      // 2026년 3월 빗썸/업비트 Identifier 통합 조회 로직 실행
+      CheckServerStatusAndRecover(Key);
+    end;
+  finally
+    StuckIds.Free;
+  end;
+end;
+
+procedure TAssetManager.CheckServerStatusAndRecover(const AIdentifier: string);
+var
+  ServerUUID: string;
+begin
+  {
+    1. 해당 거래소 어댑터를 통해 Identifier로 주문 상세 정보를 조회합니다.
+       (3월 업데이트 후 빗썸 어댑터에 이 기능이 구현될 예정입니다.)
+  }
+  //ServerUUID := ExchangeAdapter.FetchUUIDByIdentifier(AIdentifier);
+
+  if ServerUUID <> '' then
+  begin
+    // 케이스 A: 서버에 주문이 살아있음 -> UUID 매핑 및 정상 궤도 진입
+//    ConfirmOrder(AIdentifier, ServerUUID);
+    // 필요 시 추가로 주문 상세 상태(체결 여부)를 확인하여 ProcessTrade 호출
+  end
+  else
+  begin
+    {
+      케이스 B: 서버에 주문이 없음
+      네트워크 오류로 주문이 안 나갔거나, 이미 취소된 경우입니다.
+      로컬에서 묶인 자산을 안전하게 롤백합니다.
+    }
+    ProcessCancel(AIdentifier);
+  end;
+end;
+
+procedure TAssetManager.DeleteAsset(i: integer);
+begin
+  Delete(i);
+end;
+
+destructor TAssetManager.Destroy;
+var
+  Order: POrderReservation;
+begin
+  for Order in FPendingOrders.Values do
+    Dispose(Order);
+  FPendingOrders.Free;
+  FAssets.Free;
+  FLock.Free;
+  inherited;
+end;
+
+procedure TAssetManager.DoLog;
+var
+  i : integer;
+  aAsset : TAsset;
+begin
+  Exit;
+  for I := 0 to Count-1 do
+  begin
+    aAsset  := GetAsset(i);
+    if aAsset <> nil then
+      App.DebugLog('%s : %s, %.4f, %.4f, %.4f', [ TAccount(aAsset.Account).Name,
+        aAsset.Currency, aAsset.Balance, aAsset.Locked, aAsset.Available] );
+  end;
+end;
+
+function TAssetManager.Find(sCurrency: string): TAsset;
+begin
+  Result := GetAsset(IndexOf(sCurrency));
+end;
+
+function TAssetManager.GetAsset(i: integer): TAsset;
+begin
+  if (i >= 0) and (i <= Count-1) then
+    Result := TAsset(Objects[i])
+  else
+    Result := nil;
+end;
+
+
+function TAssetManager.GetTotalCoin: double;
+var
+  i : integer;
+begin
+  Result := 0;
+  for I := 0 to Count-1 do
+    if not GetAsset(i).IsMain then
+      if GetAsset(i).Symbol <> nil then
+        Result := Result + ( GetAsset(i).Balance * GetAsset(i).Symbol.Last );
+end;
+
+procedure TAssetManager.init;
+var
+  i : integer;
+begin
+  for I := 0 to Count-1 do
+    GetAsset(i).init;
+end;
+
+function TAssetManager.IsProcess: boolean;
+begin
+  if FAccount = nil then Exit (false);
+
+  if TAccount(FAccount).ExchangeKind = ekBinance then
+    Result := false
+  else
+    Result := true;
+end;
+
+procedure TAssetManager.LoadOrder(ASide: integer; const ACurrency,
+  AOrderNo: string; APrice, AVolume, ALocked: Double);
+var
+  NewOrder: POrderReservation;
+  ReservedQty: Double;
+begin
+  if not IsProcess then Exit;
+
+  FLock.Enter;
+  try
+    System.New(NewOrder);
+
+    NewOrder^.Side := ASide;
+    NewOrder^.Currency := ACurrency;
+    NewOrder^.Price := APrice;
+    NewOrder^.OriginalVolume := AVolume;
+    NewOrder^.RemainingVolume := AVolume;
+    NewOrder^.StandardFeeRate :=
+      App.Engine.ApiConfig.GetStandardFee(TAccount(FAccount).ExchangeKind, eaSpot) / 100;
+    NewOrder^.ReservedAmount := ALocked;
+    FPendingOrders.Add(AOrderNo, NewOrder);
+
+  finally
+    FLock.Leave;
+  end;
+
+end;
+
+function TAssetManager.New(sCurrency: string; aAcnt : TObject): TAsset;
+//var
+//  sCode : string;
+begin
+  Result := FAssets.Add as TAsset;
+  Result.Currency := sCurrency;
+  Result.Account  := aAcnt;
+
+  if (TAccount(aAcnt).ExchangeKind = ekBinance) then
+    Result.Symbol := App.Engine.SymbolCore.BaseSymbols.FindSymbol(sCurrency, ekBinance,  TExchangeApiType(integer(TAccount(aAcnt).AccountType)-1) )
+  else
+    Result.Symbol := App.Engine.SymbolCore.FindSymbol(TAccount(aAcnt).ExchangeKind, sCurrency );
+
+//  sCode := '+++++';
+//  if Result.Symbol <> nil then
+//    sCode := Result.Symbol.Code;
+//
+//  App.DebugLog('Asset : %s, %s, %s, %s',[ TExchangeKindDesc[TAccount(aAcnt).ExchangeKind], sCurrency,
+//    TAccountMarketTypeDesc[TAccount(aAcnt).FAccountType], sCode] );
+
+  AddObject(sCurrency, Result);
+end;
+
+{ TAsset }
+
+//procedure TAsset.AddFill(aFillObj: TObject);
+//var
+//  aFill : TFill;
+//  dFillQty, dNewQty : double;
+//begin
+//
+//  aFill := TFill( aFillObj );
+//  dNewQty := Balance + aFill.Volume * aFill.Side     ;
+//
+//  if CheckZero( Balance ) then
+//    AvgPrice  := aFill.Price
+//  else if (Balance * dNewQty ) < 0 then
+//    AvgPrice  := aFill.Price
+//  else if CheckZero( dNewQty ) then
+//    AvgPrice  := 0
+//  else if abs( dNewQty ) > abs( Balance ) then
+//    AvgPrice  := ( AvgPrice * Balance + aFill.Price * (aFill.Price * aFill.Side )) / dNewQty;
+//
+//  Balance := Max(0, dNewQty );
+//
+//  if aFill.Side < 0 then
+//    Locked := Max( 0, Locked - aFill.Volume );
+//end;
+
+constructor TAsset.Create(aColl: TCollection);
+begin
+  inherited Create( aColl );
+
+  FLock   := TCriticalSection.Create;
+
+  IsMain  := false;
+  Symbol  := nil;
+  Account := nil;
+
+  init;
+
+  Fess  := 0;
+  MainMargin  := 0;
+  QueryedAvailable  := 0;
+
+  FMarginAvailable  := false;
+end;
+
+destructor TAsset.Destroy;
+begin
+  FLock.Free;
+  inherited;
+end;
+
+function TAsset.GetOpenAmt: double;
+begin
+  if Symbol = nil then
+    Result := 0 //Balance
+  else
+    if Symbol.Spec.FutureType = ftCoin then
+      Result := Balance * CalcDiv(1,Symbol.Last) * Symbol.Spec.PointValue
+    else
+      Result := Balance * Symbol.Last;
+end;
+
+procedure TAsset.init;
+begin
+
+  Balance   := 0;
+  Locked    := 0;
+  Available := 0;
+  QueryedAvailable := 0;
+
+  InitMargin  := 0;
+  MainMargin  := 0;
+  //TotBalance  := 0;
+
+//  Fess      : double;
+//  // only binance
+//  MainMargin: double;
+//  //
+//  AvgPrice  : double;
+end;
+
+function TAsset.Represet: string;
+begin
+  Result := Format('%s : %.8n = %.8n + %.8n', [Currency, Balance, LocKed, Available ]);
+end;
+
+
+procedure TAsset.SyncAsset(ADeltaBalance, ADeltaLocked, AAvgPrice: Double);
+begin
+  //if App.AppStatus > asLoad then Exit;
+  FLock.Enter;
+  try
+    Available  := ADeltaBalance;
+    Locked     := ADeltaLocked;
+    Balance    := ADeltaBalance + Locked;
+    AvgPrice   := AAvgPrice;
+    Updated    := true;
+  finally
+
+    var s : string;
+
+    case TAccount(Account).ExchangeKind of
+      ekBinance: ;
+      ekUpbit :  s := 'upbit_assets';
+      ekBithumb: s := 'bithumb_myAsset';
+    end;
+
+    App.Log(llDebug, s, '%s     B:%s, L:%s', [Currency,
+      DoubleToStr(Balance), DoubleToStr(LocKed)]);
+    FLock.Release;
+  end;
+end;
+
+
+procedure TAsset.UpdateAsset(ADeltaBalance, ADeltaLocked: Double);
+begin
+  FLock.Enter;
+  try
+    Available  := Max(0, Available + ADeltaBalance);
+    Locked     := Max(0, Locked + ADeltaLocked);
+    Balance    := Available + Locked;
+  finally
+    var s : string;
+
+    case TAccount(Account).ExchangeKind of
+      ekBinance: ;
+      ekUpbit :  s := 'upbit_assets';
+      ekBithumb: s := 'bithumb_myAsset';
+    end;
+
+    App.Log(llDebug, s, '%s +++ B:%s, L:%s', [Currency,
+      DoubleToStr(Balance), DoubleToStr(LocKed)]);
+    FLock.Release;
+  end;
+end;
+
+end.

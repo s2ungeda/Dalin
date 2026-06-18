@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BorlandProject>
+	<Transactions>
+    <Transaction>1899-12-30 00:00:00.000.567,C:\Users\USER\Documents\Embarcadero\Studio\Projects\directoryInfo\Project1.dproj=C:\Users\USER\Documents\Embarcadero\Studio\Projects\Project1.dproj</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.967,C:\Users\USER\Documents\Embarcadero\Studio\Projects\directoryInfo\Unit1.dfm=C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit1.dfm</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.300,=C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit1.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.469,=C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit1.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.424,C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit1.dfm=C:\Users\USER\Documents\Embarcadero\Studio\Projects\encrypt_test.dfm</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.871,C:\project\Dalin\makeupfiles\Project1.dproj=C:\project\Dalin\makeupfiles\makeupfiles.dproj</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.967,C:\Users\USER\Documents\Embarcadero\Studio\Projects\directoryInfo\Unit1.pas=C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit1.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.893,=C:\project\Dalin\engine\common\UEncrypts.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.762,=C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit1.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.399,=C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit1.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.425,=C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit1.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.880,=C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit1.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.424,C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit1.pas=C:\Users\USER\Documents\Embarcadero\Studio\Projects\encrypt_test.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.586,=C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit1.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.624,=C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit1.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.715,=C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit1.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.832,=C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit1.pas</Transaction>
+  </Transactions>
+</BorlandProject>

@@ -1,0 +1,279 @@
+unit URequestPools;
+
+interface
+
+uses
+  System.Classes, System.Generics.Collections, system.SysUtils,
+  REST.Client, REST.Types, System.SyncObjs,
+  UApiTypes, UTypes,
+  UOrders
+  ;
+
+type
+
+  TObjectPool<T: class> = class
+  private
+    FPool: TQueue<T>;
+    FFactory: TFunc<T>;
+    FCriticalSection: TCriticalSection;
+  public
+    constructor Create(AFactory: TFunc<T>);
+    destructor Destroy; override;
+    function Acquire: T;
+    procedure Release(AObject: T);
+    function PoolCount: Integer; // 현재 객체 풀의 개수를 반환
+  end;
+
+  TRequestTask = class
+  private
+    FRESTClient: TRESTClient;
+    FRESTRequest: TRESTRequest;
+    FRESTResponse: TRESTResponse;
+    FRequestID: Integer; // 요청에 대한 식별자
+    FOnCompleted: TProc<TRequestTask>;
+    FTaskType: TRequestTaskType;
+    FBaseUrl: string;
+
+    procedure SetCompleted(const Value: TProc<TRequestTask>); // 작업 완료 후 호출될 이벤트
+  public
+    constructor Create(ARequestID: Integer; AOnCompleted: TProc<TRequestTask>);
+    destructor Destroy; override;
+    procedure Execute(bAsync: boolean = false);
+    procedure MakeRequest; virtual; abstract;
+    procedure OnAysncCompleted(Sender: TCustomRESTRequest); virtual; abstract;
+
+    property OnCompleted: TProc<TRequestTask> read FOnCompleted write SetCompleted;
+    property RequestID: Integer read FRequestID write FRequestID;
+    property TaskType : TRequestTaskType read FTaskType write FTaskType;
+    property BaseUrl : string read FBaseUrl write FBaseUrl;
+
+    property RESTRequest: TRESTRequest read FRESTRequest;
+  end;
+
+
+  TRequestOrdDetail = class(TRequestTask)
+  private
+    FOrder : TOrder;
+    procedure SetBithumbSig(const sVal, sTime: string);
+  public
+    procedure MakeRequest; override;
+    procedure OnAysncCompleted(Sender: TCustomRESTRequest); override;
+    procedure SetParam(aOrder: TOrder);
+    procedure UnFlag;
+  end;
+
+implementation
+
+uses
+  GApp, GLibs
+  , UEncrypts
+  , IdCoderMIME, IdGlobal
+  , UBithManager
+  ;
+
+{ TObjectPool<T> }
+
+constructor TObjectPool<T>.Create(AFactory: TFunc<T>);
+begin
+  inherited Create;
+  FPool := TQueue<T>.Create;
+  FFactory := AFactory;
+  FCriticalSection := TCriticalSection.Create;
+end;
+destructor TObjectPool<T>.Destroy;
+var
+  Obj: T;
+begin
+  FCriticalSection.Enter;
+  try
+    while FPool.Count > 0 do
+    begin
+      Obj := FPool.Dequeue;
+      FreeAndNil(Obj);
+    end;
+    FPool.Free;
+  finally
+    FCriticalSection.Leave;
+    FCriticalSection.Free;
+  end;
+  inherited;
+end;
+function TObjectPool<T>.Acquire: T;
+begin
+  FCriticalSection.Enter;
+  try
+    if FPool.Count > 0 then
+      Result := FPool.Dequeue
+    else
+      Result := FFactory();
+  finally
+    FCriticalSection.Leave;
+  end;
+end;
+procedure TObjectPool<T>.Release(AObject: T);
+begin
+  FCriticalSection.Enter;
+  try
+    FPool.Enqueue(AObject);
+  finally
+    FCriticalSection.Leave;
+  end
+end;
+
+function TObjectPool<T>.PoolCount: Integer;
+begin
+  FCriticalSection.Enter;
+  try
+    Result := FPool.Count;
+  finally
+    FCriticalSection.Leave;
+  end;
+end;
+
+{ TRequestTask }
+
+constructor TRequestTask.Create(ARequestID: Integer;
+  AOnCompleted: TProc<TRequestTask>);
+begin
+  inherited Create;
+  FRequestID := ARequestID;
+  FOnCompleted := AOnCompleted;
+  FRESTClient := TRESTClient.Create('');
+  FRESTRequest := TRESTRequest.Create(FRESTClient);
+  FRESTResponse := TRESTResponse.Create(nil);
+  FRESTRequest.Client := FRESTClient;
+  FRESTRequest.Response := FRESTResponse;
+  FRESTRequest.SynchronizedEvents := False;
+
+  FBaseURL   := 'https://api.bithumb.com'; // Bithumb API의 기본 URL 설정
+end;
+
+destructor TRequestTask.Destroy;
+begin
+  FRESTRequest.Free;
+  FRESTClient.Free;
+  FRESTResponse.Free;
+  inherited;
+end;
+
+procedure TRequestTask.Execute(bAsync: boolean);
+begin
+  try
+    //FRESTRequest.ClearBody;
+    MakeRequest;
+    FRESTClient.BaseURL := FBaseUrl;
+    FRESTRequest.OnAfterExecute := OnAysncCompleted;
+    if bAsync then
+      FRESTRequest.ExecuteAsync
+    else
+      FRESTRequest.Execute;
+    //ProcessResponse(TThread.Current.ThreadID);
+  except
+    on E: Exception do
+      TThread.Synchronize(nil,
+        procedure
+        begin
+          App.Log(llError, 'Error during request execution: ' + E.Message );
+          if Assigned(FOnCompleted) then
+            FOnCompleted(Self);
+        end);
+  end;
+end;
+
+procedure TRequestTask.SetCompleted(const Value: TProc<TRequestTask>);
+begin
+  FOnCompleted := Value;
+end;
+
+
+
+{ TRequestOrdDetail }
+
+procedure TRequestOrdDetail.SetBithumbSig(const sVal, sTime: string);
+var
+  sSig, sBody : string;
+begin
+
+  sSig	:= CalculateHMACSHA512(sVal, App.Engine.ApiConfig.GetSceretKey(ekBithumb, eaSpot) );
+  sBody	:= TIdEncoderMIME.EncodeString( sSig, IndyTextEncoding_UTF8 );
+
+  with FRESTRequest do
+  begin
+    AddParameter('Api-Key',  App.Engine.ApiConfig.GetApiKey(ekBithumb, eaSpot), TRESTRequestParameterKind.pkHTTPHEADER );//, [poDoNotEncode]);
+    AddParameter('Api-Sign', sBody , TRESTRequestParameterKind.pkHTTPHEADER , [poDoNotEncode]);
+    AddParameter('Api-Nonce', sTime , TRESTRequestParameterKind.pkHTTPHEADER );
+  end;
+end;
+
+
+procedure TRequestOrdDetail.MakeRequest;
+var
+  sTime, sVal, sRsrc : string;
+begin
+  case FTaskType of
+    rttDetail:
+      begin
+        sRsrc := '/info/order_detail';
+        FRESTRequest.Resource := sRsrc;
+        FRESTRequest.Method   := rmPOST; //
+      end;
+  end;
+  //  FRESTRequest.Resource := '/info/order_detail' -->   FRESTRequest.Resource = 'info/order_detail'
+  //  맨앞의 '/' 가 없어진다. 그래서 Resource 변수를 따로 만듬..
+  sTime 	:= GetTimestamp;
+  sVal		:= EncodePath( sRsrc, Format('endPoint=%s&order_id=%s&order_currency=%s',
+    [ sRsrc, FOrder.OrderNo, FOrder.Symbol.Code ] ), sTime )  ;
+
+  SetBithumbSig(sVal, sTime);
+
+  with FRESTRequest do
+  begin
+    AddParameter('endPoint',      sRsrc, TRESTRequestParameterKind.pkREQUESTBODY);
+    AddParameter('order_id', 			FOrder.OrderNo , TRESTRequestParameterKind.pkREQUESTBODY);
+    AddParameter('order_currency',FOrder.Symbol.Code, TRESTRequestParameterKind.pkREQUESTBODY);
+  end;
+
+end;
+
+procedure TRequestOrdDetail.OnAysncCompleted(Sender: TCustomRESTRequest);
+begin
+  TThread.Queue(nil,
+    procedure
+    var
+      OutJson, OutRes : string;
+      bRes : boolean;
+    begin
+
+      try
+        bRes := true;
+        OutJson:= FRESTResponse.Content;
+        if not (FRESTResponse.StatusCode in  [200..201]) then begin
+          OutRes := Format( 'status : %d, %s', [ FRESTResponse.StatusCode, FRESTResponse.StatusText ] );
+          bRes := false;
+        end;
+      except
+        on E: Exception do begin
+          OutRes := E.Message;
+          App.Log(llError,'Error OnAysncCompleted : %s', [FRequestID, E.Message]);
+        end;
+      end;
+
+      TBithManager(App.Engine.ApiManager.ExManagers[ekBithumb]).Parse.ParseSpotOrderDetail(OutJson, FOrder.OrderNo);
+
+      if Assigned(FOnCompleted) then
+        FOnCompleted(Self);
+    end);
+end;
+
+procedure TRequestOrdDetail.SetParam(aOrder: TOrder);
+begin
+  FOrder := aOrder;
+  FOrder.QueriedDetail := true;
+end;
+
+procedure TRequestOrdDetail.UnFlag;
+begin
+  FOrder.QueriedDetail := false;
+end;
+
+end.

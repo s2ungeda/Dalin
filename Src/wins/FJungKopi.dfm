@@ -1,0 +1,49 @@
+object FrmJungKopi: TFrmJungKopi
+  Left = 0
+  Top = 0
+  Caption = 'INDEX KIP'
+  ClientHeight = 212
+  ClientWidth = 1880
+  Color = clBtnFace
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -17
+  Font.Name = 'Tahoma'
+  Font.Style = []
+  OnClose = FormClose
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  PixelsPerInch = 144
+  TextHeight = 21
+  object sgVal: TStringGrid
+    Left = 0
+    Top = 0
+    Width = 1880
+    Height = 212
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Align = alClient
+    ColCount = 25
+    DefaultColWidth = 60
+    DefaultRowHeight = 29
+    DefaultDrawing = False
+    RowCount = 8
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = clWindowText
+    Font.Height = -17
+    Font.Name = 'Tahoma'
+    Font.Style = []
+    ParentFont = False
+    TabOrder = 0
+    OnDrawCell = sgValDrawCell
+    ExplicitWidth = 1870
+    ExplicitHeight = 210
+  end
+  object Timer1: TTimer
+    OnTimer = Timer1Timer
+    Left = 448
+    Top = 64
+  end
+end

@@ -1,0 +1,87 @@
+unit URestItems;
+
+interface
+
+uses
+	System.Classes, 
+
+  REST.Types ,
+
+  URestRequests,
+
+  UApiTypes
+
+  ;
+
+type
+
+	TReqeustItem = class
+  public
+	  Req : TRequest;
+    AMethod : TRESTRequestMethod;
+    AResource : string;
+    Name : string;
+    ExKind : TExchangeKind;
+    JsonData, OutData	: string;
+  	constructor Create;
+    Destructor  Destroy; override;
+
+    procedure SetBithumbSig( const sVal, sTime : string );
+
+  end;
+
+  TBalanceRequestItem = class
+  public
+    Name : string;
+    ExKind : TExchangeKind;
+    Result : boolean;
+    constructor Create;
+  end;
+
+implementation
+
+uses
+  GApp, GLibs
+  , UEncrypts
+  , IdCoderMIME, IdGlobal
+  ;
+
+
+{ TReqeustItem }
+
+constructor TReqeustItem.Create;
+begin
+	Req := TRequest.Create;
+end;
+
+destructor TReqeustItem.Destroy;
+begin
+  Req.Free;
+  inherited;
+end;
+
+procedure TReqeustItem.SetBithumbSig(const sVal, sTime: string);
+var
+  sSig, sBody : string;
+begin
+
+  sSig	:= CalculateHMACSHA512( sVal, App.Engine.ApiConfig.GetSceretKey( ExKind, mtSpot) );
+  sBody	:= TIdEncoderMIME.EncodeString( sSig, IndyTextEncoding_UTF8 );
+
+  with Req do
+  begin
+    SetParam('Api-Key',  App.Engine.ApiConfig.GetApiKey( ExKind, mtSpot), TRESTRequestParameterKind.pkHTTPHEADER );//, [poDoNotEncode]);
+    SetParam('Api-Sign', sBody , TRESTRequestParameterKind.pkHTTPHEADER , [poDoNotEncode]);
+    SetParam('Api-Nonce', sTime , TRESTRequestParameterKind.pkHTTPHEADER );
+  end;
+end;
+
+{ TBalanceRequestItem }
+
+constructor TBalanceRequestItem.Create;
+begin
+  Result  := false;
+  Name    := '';
+end;
+
+end.

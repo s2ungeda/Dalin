@@ -1,0 +1,725 @@
+object FrmOrderLimit: TFrmOrderLimit
+  Left = 0
+  Top = 0
+  BorderStyle = bsDialog
+  Caption = #49444#51221
+  ClientHeight = 402
+  ClientWidth = 963
+  Color = clBtnFace
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = 24
+  Font.Name = 'Tahoma'
+  Font.Style = []
+  OnCreate = FormCreate
+  PixelsPerInch = 144
+  TextHeight = 24
+  object PageControl1: TPageControl
+    Left = 0
+    Top = 0
+    Width = 963
+    Height = 402
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    ActivePage = TabSheet6
+    Align = alClient
+    TabOrder = 0
+    object TabSheet1: TTabSheet
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #47784#46304#51452#47928' '#47532#49828#53356#44288#47532
+      object GroupBox3: TGroupBox
+        Left = 12
+        Top = 92
+        Width = 923
+        Height = 195
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #51452#47928' '#51228#54620
+        TabOrder = 0
+        object sgCond1: TStringGrid
+          Left = 12
+          Top = 29
+          Width = 519
+          Height = 154
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          ColCount = 3
+          DefaultColWidth = 105
+          DefaultRowHeight = 36
+          DefaultDrawing = False
+          RowCount = 4
+          ScrollBars = ssNone
+          TabOrder = 0
+          OnDrawCell = sgCondDrawCell
+          OnMouseUp = sgCondMouseUp
+          ColWidths = (
+            105
+            212
+            194)
+        end
+      end
+      object Panel2: TPanel
+        Left = 557
+        Top = 291
+        Width = 385
+        Height = 50
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        BevelOuter = bvNone
+        Caption = '`'
+        TabOrder = 1
+        object Button1: TButton
+          Left = 264
+          Top = 5
+          Width = 113
+          Height = 37
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Caption = #51201#50857
+          TabOrder = 0
+          OnClick = Button1Click
+        end
+        object Button2: TButton
+          Left = 143
+          Top = 5
+          Width = 112
+          Height = 37
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Caption = #52712#49548
+          TabOrder = 1
+          OnClick = btnCancelClick
+        end
+        object Button3: TButton
+          Left = 20
+          Top = 6
+          Width = 114
+          Height = 38
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Caption = #54869#51064
+          TabOrder = 2
+          OnClick = btnConfirmClick
+        end
+      end
+    end
+    object TabSheet2: TTabSheet
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #48152#51088#46041#51452#47928' '#47532#49828#53356
+      ImageIndex = 1
+      object Label1: TLabel
+        Left = 24
+        Top = 303
+        Width = 348
+        Height = 24
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = '* 1'#54924' '#52572#45824#51452#47928#50529', '#54840#44032#52264'  '#47564' '#48152#50689#46104#44256' '#51080#51020'.'
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clPurple
+        Font.Height = 24
+        Font.Name = 'Tahoma'
+        Font.Style = []
+        ParentFont = False
+      end
+      object GroupBox2: TGroupBox
+        Left = 12
+        Top = 92
+        Width = 930
+        Height = 195
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #51452#47928' '#51228#54620
+        TabOrder = 0
+        object sgCond: TStringGrid
+          Left = 12
+          Top = 29
+          Width = 902
+          Height = 154
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          DefaultColWidth = 105
+          DefaultRowHeight = 36
+          DefaultDrawing = False
+          RowCount = 4
+          ScrollBars = ssNone
+          TabOrder = 0
+          OnDrawCell = sgCondDrawCell
+          OnMouseUp = sgCondMouseUp
+          ColWidths = (
+            105
+            212
+            194
+            129
+            251)
+        end
+      end
+      object Panel1: TPanel
+        Left = 557
+        Top = 291
+        Width = 385
+        Height = 50
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        BevelOuter = bvNone
+        Caption = 'Panel1'
+        TabOrder = 1
+        object btnApply: TButton
+          Left = 264
+          Top = 5
+          Width = 113
+          Height = 37
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Caption = #51201#50857
+          TabOrder = 0
+          OnClick = btnApplyClick
+        end
+        object btnCancel: TButton
+          Left = 143
+          Top = 5
+          Width = 112
+          Height = 37
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Caption = #52712#49548
+          TabOrder = 1
+          OnClick = btnCancelClick
+        end
+        object btnConfirm: TButton
+          Tag = 1
+          Left = 20
+          Top = 6
+          Width = 114
+          Height = 38
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Caption = #54869#51064
+          TabOrder = 2
+          OnClick = btnConfirmClick
+        end
+      end
+    end
+    object TabSheet4: TTabSheet
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #44397#45236#51077#52636#44552#54620#46020
+      ImageIndex = 3
+      object GroupBox4: TGroupBox
+        Left = 5
+        Top = 86
+        Width = 922
+        Height = 195
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #44397#45236#44144#47000#49548' '#50896#54868' '#51077#52636#44552' '#54620#46020' ('#45800#50948':'#50613')'
+        TabOrder = 0
+        object sgDnw: TStringGrid
+          Left = 12
+          Top = 29
+          Width = 519
+          Height = 118
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          ColCount = 3
+          DefaultColWidth = 105
+          DefaultRowHeight = 36
+          RowCount = 3
+          ScrollBars = ssNone
+          TabOrder = 0
+          OnMouseUp = sgCondMouseUp
+          ColWidths = (
+            105
+            212
+            194)
+        end
+      end
+      object Panel4: TPanel
+        Left = 557
+        Top = 291
+        Width = 385
+        Height = 50
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        BevelOuter = bvNone
+        Caption = '`'
+        TabOrder = 1
+        object btnDnw: TButton
+          Left = 264
+          Top = 5
+          Width = 113
+          Height = 37
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Caption = #51201#50857
+          TabOrder = 0
+          OnClick = btnDnwClick
+        end
+        object Button8: TButton
+          Left = 143
+          Top = 5
+          Width = 112
+          Height = 37
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Caption = #52712#49548
+          TabOrder = 1
+          OnClick = btnCancelClick
+        end
+        object Button9: TButton
+          Tag = 3
+          Left = 20
+          Top = 6
+          Width = 114
+          Height = 38
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Caption = #54869#51064
+          TabOrder = 2
+          OnClick = btnConfirmClick
+        end
+      end
+    end
+    object TabSheet5: TTabSheet
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #49688#49688#47308
+      ImageIndex = 4
+      object Panel5: TPanel
+        Left = 557
+        Top = 291
+        Width = 385
+        Height = 49
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        BevelOuter = bvNone
+        Caption = '`'
+        TabOrder = 0
+        object btFeeConfirm: TButton
+          Left = 264
+          Top = 5
+          Width = 113
+          Height = 37
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Caption = #51201#50857
+          TabOrder = 0
+          OnClick = btFeeConfirmClick
+        end
+        object Button10: TButton
+          Left = 143
+          Top = 5
+          Width = 112
+          Height = 37
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Caption = #52712#49548
+          TabOrder = 1
+          OnClick = btnCancelClick
+        end
+        object Button11: TButton
+          Tag = 4
+          Left = 20
+          Top = 6
+          Width = 114
+          Height = 38
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Caption = #54869#51064
+          TabOrder = 2
+          OnClick = btnConfirmClick
+        end
+      end
+      object GroupBox5: TGroupBox
+        Left = 29
+        Top = 91
+        Width = 921
+        Height = 192
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #49688#49688#47308
+        TabOrder = 1
+        object sgFee: TStringGrid
+          Left = 12
+          Top = 29
+          Width = 857
+          Height = 117
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          ColCount = 7
+          DefaultColWidth = 120
+          DefaultRowHeight = 36
+          RowCount = 3
+          ScrollBars = ssNone
+          TabOrder = 0
+          OnMouseUp = sgCondMouseUp
+        end
+        object edtUpbitNormalFee: TLabeledEdit
+          Left = 622
+          Top = 153
+          Width = 120
+          Height = 32
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          EditLabel.Width = 85
+          EditLabel.Height = 32
+          EditLabel.Margins.Left = 5
+          EditLabel.Margins.Top = 5
+          EditLabel.Margins.Right = 5
+          EditLabel.Margins.Bottom = 5
+          EditLabel.Caption = #51068#48152#49688#49688#47308
+          LabelPosition = lpLeft
+          TabOrder = 1
+          Text = '0.05'
+        end
+        object edtBithumbNormalFee: TLabeledEdit
+          Left = 746
+          Top = 153
+          Width = 120
+          Height = 32
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          EditLabel.Width = 6
+          EditLabel.Height = 32
+          EditLabel.Margins.Left = 5
+          EditLabel.Margins.Top = 5
+          EditLabel.Margins.Right = 5
+          EditLabel.Margins.Bottom = 5
+          EditLabel.Caption = ' '
+          LabelPosition = lpLeft
+          TabOrder = 2
+          Text = '0.05'
+        end
+      end
+      object Button7: TButton
+        Left = 833
+        Top = 48
+        Width = 114
+        Height = 38
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #54028#51068#54200#51665
+        TabOrder = 2
+        OnClick = Button7Click
+      end
+      object Button12: TButton
+        Left = 710
+        Top = 48
+        Width = 114
+        Height = 38
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #54028#51068#47196#46300
+        TabOrder = 3
+        OnClick = Button12Click
+      end
+    end
+    object TabSheet6: TTabSheet
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #44144#47000#49548#48324' '#49444#51221
+      ImageIndex = 5
+      object GroupBox1: TGroupBox
+        Left = 612
+        Top = 5
+        Width = 322
+        Height = 260
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #48727#50040
+        TabOrder = 0
+        object edtKorName: TLabeledEdit
+          Left = 76
+          Top = 37
+          Width = 110
+          Height = 33
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          EditLabel.Width = 51
+          EditLabel.Height = 33
+          EditLabel.Margins.Left = 8
+          EditLabel.Margins.Top = 8
+          EditLabel.Margins.Right = 8
+          EditLabel.Margins.Bottom = 8
+          EditLabel.Caption = #54620#44544#47749
+          LabelPosition = lpLeft
+          TabOrder = 0
+          Text = ''
+        end
+        object edtEngName: TLabeledEdit
+          Left = 76
+          Top = 80
+          Width = 206
+          Height = 33
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          EditLabel.Width = 51
+          EditLabel.Height = 33
+          EditLabel.Margins.Left = 8
+          EditLabel.Margins.Top = 8
+          EditLabel.Margins.Right = 8
+          EditLabel.Margins.Bottom = 8
+          EditLabel.Caption = #50689#47928#47749
+          LabelPosition = lpLeft
+          TabOrder = 1
+          Text = ''
+        end
+      end
+      object Panel6: TPanel
+        Left = 557
+        Top = 291
+        Width = 385
+        Height = 49
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        BevelOuter = bvNone
+        Caption = '`'
+        TabOrder = 1
+        object btnExCommon: TButton
+          Tag = 5
+          Left = 264
+          Top = 5
+          Width = 113
+          Height = 37
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Caption = #51201#50857
+          TabOrder = 0
+          OnClick = btnExCommonClick
+        end
+        object Button14: TButton
+          Tag = 5
+          Left = 143
+          Top = 5
+          Width = 112
+          Height = 37
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Caption = #52712#49548
+          TabOrder = 1
+          OnClick = btnCancelClick
+        end
+        object Button15: TButton
+          Tag = 5
+          Left = 20
+          Top = 6
+          Width = 114
+          Height = 38
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Caption = #54869#51064
+          TabOrder = 2
+          OnClick = btnConfirmClick
+        end
+      end
+    end
+    object TabSheet3: TTabSheet
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #49884#49464#51452#47928#47196#44536
+      ImageIndex = 2
+      object Label2: TLabel
+        Left = 20
+        Top = 108
+        Width = 314
+        Height = 24
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #49884#49464', '#51452#47928' '#47196#44536#45716' '#52572#45824' 2 '#44060' '#53076#51064#47564' '#44032#45733
+      end
+      object CheckBox1: TCheckBox
+        Left = 17
+        Top = 8
+        Width = 93
+        Height = 25
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #47196#44536'1'
+        TabOrder = 0
+      end
+      object CheckBox2: TCheckBox
+        Left = 17
+        Top = 48
+        Width = 93
+        Height = 26
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #47196#44536'2'
+        TabOrder = 1
+      end
+      object Edit1: TEdit
+        Left = 96
+        Top = 5
+        Width = 81
+        Height = 32
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        TabOrder = 2
+        Text = 'BTC'
+      end
+      object Edit2: TEdit
+        Left = 96
+        Top = 45
+        Width = 81
+        Height = 32
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        TabOrder = 3
+        Text = 'SOL'
+      end
+      object Panel3: TPanel
+        Left = 557
+        Top = 290
+        Width = 385
+        Height = 49
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        BevelOuter = bvNone
+        Caption = 'Panel1'
+        TabOrder = 4
+        object Button4: TButton
+          Left = 264
+          Top = 5
+          Width = 113
+          Height = 37
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Caption = #51201#50857
+          TabOrder = 0
+          OnClick = Button4Click
+        end
+        object Button5: TButton
+          Left = 143
+          Top = 5
+          Width = 112
+          Height = 37
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Caption = #52712#49548
+          TabOrder = 1
+          OnClick = btnCancelClick
+        end
+        object Button6: TButton
+          Tag = 2
+          Left = 20
+          Top = 6
+          Width = 114
+          Height = 38
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Caption = #54869#51064
+          TabOrder = 2
+          OnClick = btnConfirmClick
+        end
+      end
+    end
+  end
+end

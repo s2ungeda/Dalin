@@ -1,0 +1,2456 @@
+object FrmPutKipOrder: TFrmPutKipOrder
+  Left = 27
+  Top = 55
+  Caption = 'PK '#51088#46041#51452#47928
+  ClientHeight = 1194
+  ClientWidth = 850
+  Color = clBtnFace
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -20
+  Font.Name = 'Segoe UI'
+  Font.Style = []
+  KeyPreview = True
+  Position = poDesigned
+  OnClose = FormClose
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  OnKeyDown = FormKeyDown
+  PixelsPerInch = 144
+  TextHeight = 28
+  object Panel1: TPanel
+    Left = 0
+    Top = 0
+    Width = 850
+    Height = 638
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Align = alTop
+    Color = 15201017
+    ParentBackground = False
+    TabOrder = 0
+    ExplicitWidth = 860
+    object GroupBox1: TGroupBox
+      Left = 5
+      Top = 3
+      Width = 348
+      Height = 152
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #51452#47928#51228#54620#49884#44036
+      TabOrder = 0
+      object dtLimitStart1: TDateTimePicker
+        Left = 35
+        Top = 32
+        Width = 150
+        Height = 36
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Date = 45218.000000000000000000
+        Time = 0.645288460647861900
+        Kind = dtkTime
+        TabOrder = 0
+      end
+      object dtLimitEnd1: TDateTimePicker
+        Left = 191
+        Top = 32
+        Width = 150
+        Height = 36
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Date = 45218.000000000000000000
+        Time = 0.645288460647861900
+        Kind = dtkTime
+        TabOrder = 1
+      end
+      object ckLimitTime1: TCheckBox
+        Left = 8
+        Top = 32
+        Width = 25
+        Height = 30
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        TabOrder = 2
+      end
+      object dtLimitStart2: TDateTimePicker
+        Left = 35
+        Top = 69
+        Width = 150
+        Height = 36
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Date = 45218.000000000000000000
+        Time = 0.645288460647861900
+        Kind = dtkTime
+        TabOrder = 3
+      end
+      object dtLimitEnd2: TDateTimePicker
+        Left = 191
+        Top = 69
+        Width = 150
+        Height = 36
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Date = 45218.000000000000000000
+        Time = 0.645288460647861900
+        Kind = dtkTime
+        TabOrder = 4
+      end
+      object ckLimitTime2: TCheckBox
+        Left = 8
+        Top = 69
+        Width = 25
+        Height = 30
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        TabOrder = 5
+      end
+      object dtLimitStart3: TDateTimePicker
+        Left = 35
+        Top = 107
+        Width = 150
+        Height = 36
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Date = 45218.000000000000000000
+        Time = 0.645288460647861900
+        Kind = dtkTime
+        TabOrder = 6
+      end
+      object dtLimitEnd3: TDateTimePicker
+        Left = 191
+        Top = 107
+        Width = 150
+        Height = 36
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Date = 45218.000000000000000000
+        Time = 0.645288460647861900
+        Kind = dtkTime
+        TabOrder = 7
+      end
+      object ckLimitTime3: TCheckBox
+        Left = 8
+        Top = 107
+        Width = 25
+        Height = 30
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        TabOrder = 8
+      end
+    end
+    object gbExRate: TGroupBox
+      Left = 359
+      Top = 3
+      Width = 162
+      Height = 117
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #54872#51452#47928#44032#45733#51312#44148
+      ParentBackground = False
+      TabOrder = 1
+      object Label1: TLabel
+        Left = 140
+        Top = 39
+        Width = 20
+        Height = 28
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #48516
+      end
+      object Label2: TLabel
+        Left = 140
+        Top = 75
+        Width = 16
+        Height = 28
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = '%'
+      end
+      object edtMoveAvgPeriod: TLabeledEdit
+        Left = 84
+        Top = 33
+        Width = 53
+        Height = 36
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Alignment = taRightJustify
+        EditLabel.Width = 80
+        EditLabel.Height = 36
+        EditLabel.Margins.Left = 41
+        EditLabel.Margins.Top = 41
+        EditLabel.Margins.Right = 41
+        EditLabel.Margins.Bottom = 41
+        EditLabel.Caption = #51060#46041#54217#44512
+        LabelPosition = lpLeft
+        TabOrder = 0
+        Text = ''
+        OnKeyPress = edtEnCount_1KeyPress
+      end
+      object edtExDisparity: TLabeledEdit
+        Left = 84
+        Top = 71
+        Width = 53
+        Height = 36
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Alignment = taRightJustify
+        EditLabel.Width = 60
+        EditLabel.Height = 36
+        EditLabel.Margins.Left = 41
+        EditLabel.Margins.Top = 41
+        EditLabel.Margins.Right = 41
+        EditLabel.Margins.Bottom = 41
+        EditLabel.Caption = #51060#44201#46020
+        LabelPosition = lpLeft
+        TabOrder = 1
+        Text = ''
+        OnKeyPress = edtEnKip_1KeyPress
+      end
+    end
+    object GroupBox3: TGroupBox
+      Left = 527
+      Top = 3
+      Width = 132
+      Height = 117
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #51452#47928#44032#44201#49444#51221
+      ParentBackground = False
+      TabOrder = 2
+      object Label3: TLabel
+        Left = 107
+        Top = 36
+        Width = 20
+        Height = 28
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #54001
+      end
+      object Label4: TLabel
+        Left = 107
+        Top = 75
+        Width = 20
+        Height = 28
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #54001
+      end
+      object edtFutOrdTick: TLabeledEdit
+        Left = 59
+        Top = 33
+        Width = 45
+        Height = 36
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Alignment = taRightJustify
+        EditLabel.Width = 40
+        EditLabel.Height = 36
+        EditLabel.Margins.Left = 41
+        EditLabel.Margins.Top = 41
+        EditLabel.Margins.Right = 41
+        EditLabel.Margins.Bottom = 41
+        EditLabel.Caption = #49440#47932
+        LabelPosition = lpLeft
+        TabOrder = 0
+        Text = ''
+        OnKeyPress = edtEnCount_1KeyPress
+      end
+      object edtSpotOrdTick: TLabeledEdit
+        Left = 59
+        Top = 71
+        Width = 45
+        Height = 36
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Alignment = taRightJustify
+        EditLabel.Width = 40
+        EditLabel.Height = 36
+        EditLabel.Margins.Left = 41
+        EditLabel.Margins.Top = 41
+        EditLabel.Margins.Right = 41
+        EditLabel.Margins.Bottom = 41
+        EditLabel.Caption = #54788#47932
+        LabelPosition = lpLeft
+        TabOrder = 1
+        Text = ''
+        OnKeyPress = edtEnCount_1KeyPress
+      end
+    end
+    object edtCode: TLabeledEdit
+      Left = 5
+      Top = 165
+      Width = 93
+      Height = 32
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Alignment = taCenter
+      EditLabel.Width = 5
+      EditLabel.Height = 32
+      EditLabel.Margins.Left = 62
+      EditLabel.Margins.Top = 62
+      EditLabel.Margins.Right = 62
+      EditLabel.Margins.Bottom = 62
+      EditLabel.Caption = ' '
+      Font.Charset = DEFAULT_CHARSET
+      Font.Color = clWindowText
+      Font.Height = -20
+      Font.Name = 'Tahoma'
+      Font.Style = []
+      LabelPosition = lpLeft
+      ParentFont = False
+      TabOrder = 3
+      Text = ''
+    end
+    object cbBuyEx: TComboBox
+      Left = 101
+      Top = 164
+      Width = 91
+      Height = 36
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Style = csDropDownList
+      Font.Charset = DEFAULT_CHARSET
+      Font.Color = clWindowText
+      Font.Height = -20
+      Font.Name = 'Segoe UI'
+      Font.Style = []
+      ItemIndex = 1
+      ParentFont = False
+      TabOrder = 4
+      Text = #48727#50040
+      OnChange = cbBuyExChange
+      Items.Strings = (
+        #50629#48708#53944
+        #48727#50040)
+    end
+    object cbSellEx: TComboBox
+      Left = 197
+      Top = 164
+      Width = 111
+      Height = 36
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Style = csDropDownList
+      Font.Charset = DEFAULT_CHARSET
+      Font.Color = clWindowText
+      Font.Height = -20
+      Font.Name = 'Segoe UI'
+      Font.Style = []
+      ItemIndex = 0
+      ParentFont = False
+      TabOrder = 5
+      Text = #48148#51060#45240#49828
+      Items.Strings = (
+        #48148#51060#45240#49828)
+    end
+    object plOsEstLong: TPanel
+      Left = 722
+      Top = 167
+      Width = 132
+      Height = 33
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      ParentBackground = False
+      TabOrder = 6
+    end
+    object plKrEstShort: TPanel
+      Left = 581
+      Top = 167
+      Width = 135
+      Height = 33
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      ParentBackground = False
+      TabOrder = 7
+    end
+    object Button1: TButton
+      Left = 432
+      Top = 165
+      Width = 33
+      Height = 35
+      Hint = #51333#47785#51201#50857
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #51201
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 8
+      OnClick = Button1Click
+    end
+    object gbDelay: TGroupBox
+      Left = 665
+      Top = 3
+      Width = 129
+      Height = 117
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #46364#47112#51060
+      ParentBackground = False
+      TabOrder = 9
+      object Label5: TLabel
+        Left = 5
+        Top = 36
+        Width = 40
+        Height = 28
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #49884#49464
+      end
+      object Label6: TLabel
+        Left = 5
+        Top = 74
+        Width = 40
+        Height = 28
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #54872#50984
+      end
+      object edtSiseDelay: TLabeledEdit
+        Left = 53
+        Top = 33
+        Width = 45
+        Height = 36
+        Hint = #49884#49464#46364#47112#51060
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Alignment = taRightJustify
+        EditLabel.Width = 20
+        EditLabel.Height = 36
+        EditLabel.Margins.Left = 41
+        EditLabel.Margins.Top = 41
+        EditLabel.Margins.Right = 41
+        EditLabel.Margins.Bottom = 41
+        EditLabel.Caption = #52488
+        LabelPosition = lpRight
+        ParentShowHint = False
+        ShowHint = True
+        TabOrder = 0
+        Text = ''
+        OnKeyPress = edtEnCount_1KeyPress
+      end
+      object edtExDelay: TLabeledEdit
+        Left = 53
+        Top = 71
+        Width = 45
+        Height = 36
+        Hint = #54872#50984#46364#47112#51060
+        Margins.Left = 8
+        Margins.Top = 8
+        Margins.Right = 8
+        Margins.Bottom = 8
+        Alignment = taRightJustify
+        EditLabel.Width = 20
+        EditLabel.Height = 36
+        EditLabel.Margins.Left = 41
+        EditLabel.Margins.Top = 41
+        EditLabel.Margins.Right = 41
+        EditLabel.Margins.Bottom = 41
+        EditLabel.Caption = #52488
+        LabelPosition = lpRight
+        ParentShowHint = False
+        ShowHint = True
+        TabOrder = 1
+        Text = ''
+        OnKeyPress = edtEnCount_1KeyPress
+      end
+    end
+    object btnMarginType: TButton
+      Tag = 1
+      Left = 512
+      Top = 126
+      Width = 75
+      Height = 33
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      TabOrder = 10
+      OnClick = btnMarginTypeClick
+    end
+    object btnLeverage: TButton
+      Tag = 2
+      Left = 596
+      Top = 126
+      Width = 75
+      Height = 33
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      TabOrder = 11
+      OnClick = btnMarginTypeClick
+    end
+    object plMinQty: TPanel
+      Left = 680
+      Top = 126
+      Width = 174
+      Height = 33
+      Hint = #49548#49688#51216#51088#47532#49688' , '#52572#49548#51452#47928#49688#47049
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      ParentBackground = False
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 12
+    end
+    object Memo1: TMemo
+      Left = 1016
+      Top = 167
+      Width = 390
+      Height = 370
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Lines.Strings = (
+        #45432#46993' : '#49892#54665#51473
+        #54616#45720#49353' : '#50756#47308#46120
+        #48744#44053' :  '#51092#44256#45208' '#54788#44552#48512#51313
+        #54924#49353' :  '#54620#51901#47564' '#52404#44208' '#46120
+        #46972#51076' :  '#48148#51060#45240#49828' '#51452#47928' '#44032#44201' '#48276#50948' '#52488#44284
+        #54028#46993' : '#47532#49828#53356' '#51228#54620
+        ''
+        #44144#48512#45212' '#51452#47928#50640' '#45824#54644#49436#47564' '
+        #49444#51221' '#54620' '#44050#51004#47196' '#51116#51452#47928' '#49884#46020' '#54620#45796'.'
+        ''
+        'T:Tot al('#47588#46020','#47588#49688')')
+      ScrollBars = ssVertical
+      TabOrder = 13
+    end
+    object GroupBox4: TGroupBox
+      Left = 3
+      Top = 201
+      Width = 419
+      Height = 342
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #51652#51077
+      Color = clBtnFace
+      ParentBackground = False
+      ParentColor = False
+      TabOrder = 14
+      object plEn: TPanel
+        Left = 5
+        Top = 33
+        Width = 87
+        Height = 35
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Color = clRed
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWhite
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = [fsBold]
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 0
+      end
+      object edtEnInputQty: TEdit
+        Left = 191
+        Top = 29
+        Width = 111
+        Height = 40
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Alignment = taRightJustify
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentFont = False
+        TabOrder = 1
+        OnKeyDown = edtEnKip_1KeyDown
+        OnKeyPress = edtEnKip_1KeyPress
+      end
+      object Panel3: TPanel
+        Left = 5
+        Top = 71
+        Width = 66
+        Height = 33
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = 'EN'
+        Color = clSilver
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 2
+      end
+      object Panel4: TPanel
+        Left = 74
+        Top = 71
+        Width = 135
+        Height = 33
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #51452#47928#49688#47049
+        Color = clSilver
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 3
+      end
+      object Panel5: TPanel
+        Left = 210
+        Top = 71
+        Width = 50
+        Height = 33
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #48152#48373
+        Color = clSilver
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 4
+      end
+      object Panel8: TPanel
+        Left = 365
+        Top = 71
+        Width = 45
+        Height = 33
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #49892#54665
+        Color = clSilver
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 5
+      end
+      object Panel10: TPanel
+        Left = 5
+        Top = 155
+        Width = 405
+        Height = 43
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 6
+        object edtEnKip_2: TEdit
+          Left = 0
+          Top = 0
+          Width = 66
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -24
+          Font.Name = 'Segoe UI'
+          Font.Style = [fsBold]
+          ParentFont = False
+          TabOrder = 0
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_2KeyPress
+        end
+        object edtEnOrderQty_2: TEdit
+          Left = 68
+          Top = 0
+          Width = 135
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 1
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_1KeyPress
+        end
+        object edtEnCount_2: TEdit
+          Left = 206
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 2
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnCount_1KeyPress
+        end
+        object cbEnOn_2: TCheckBox
+          Tag = 1
+          Left = 368
+          Top = 9
+          Width = 24
+          Height = 24
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Color = clBtnFace
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -20
+          Font.Name = 'Segoe UI'
+          Font.Style = []
+          ParentColor = False
+          ParentFont = False
+          TabOrder = 3
+          OnClick = cbEnOn_1Click
+        end
+        object edtEnDoneCount_2: TEdit
+          Left = 311
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Color = clBtnFace
+          NumbersOnly = True
+          ReadOnly = True
+          TabOrder = 4
+        end
+        object cbEnSide_2: TComboBox
+          Left = 257
+          Top = 0
+          Width = 51
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Style = csDropDownList
+          ItemIndex = 0
+          TabOrder = 5
+          Text = 'T'
+          Items.Strings = (
+            'T'
+            'A'
+            'B')
+        end
+      end
+      object Panel11: TPanel
+        Left = 5
+        Top = 201
+        Width = 405
+        Height = 44
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 7
+        object edtEnKip_3: TEdit
+          Left = 0
+          Top = 0
+          Width = 66
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -24
+          Font.Name = 'Segoe UI'
+          Font.Style = [fsBold]
+          ParentFont = False
+          TabOrder = 0
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_2KeyPress
+        end
+        object edtEnOrderQty_3: TEdit
+          Left = 68
+          Top = 0
+          Width = 135
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 1
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_1KeyPress
+        end
+        object edtEnCount_3: TEdit
+          Left = 206
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 2
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnCount_1KeyPress
+        end
+        object cbEnOn_3: TCheckBox
+          Tag = 2
+          Left = 368
+          Top = 9
+          Width = 24
+          Height = 24
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Color = clBtnFace
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -20
+          Font.Name = 'Segoe UI'
+          Font.Style = []
+          ParentColor = False
+          ParentFont = False
+          TabOrder = 3
+          OnClick = cbEnOn_1Click
+        end
+        object edtEnDoneCount_3: TEdit
+          Left = 311
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Color = clBtnFace
+          NumbersOnly = True
+          ReadOnly = True
+          TabOrder = 4
+        end
+        object cbEnSide_3: TComboBox
+          Left = 257
+          Top = 0
+          Width = 51
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Style = csDropDownList
+          ItemIndex = 0
+          TabOrder = 5
+          Text = 'T'
+          Items.Strings = (
+            'T'
+            'A'
+            'B')
+        end
+      end
+      object Panel12: TPanel
+        Left = 5
+        Top = 248
+        Width = 405
+        Height = 43
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 8
+        object edtEnKip_4: TEdit
+          Left = 0
+          Top = 0
+          Width = 66
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -24
+          Font.Name = 'Segoe UI'
+          Font.Style = [fsBold]
+          ParentFont = False
+          TabOrder = 0
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_2KeyPress
+        end
+        object edtEnOrderQty_4: TEdit
+          Left = 68
+          Top = 0
+          Width = 135
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 1
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_1KeyPress
+        end
+        object edtEnCount_4: TEdit
+          Left = 206
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 2
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnCount_1KeyPress
+        end
+        object cbEnOn_4: TCheckBox
+          Tag = 3
+          Left = 368
+          Top = 9
+          Width = 24
+          Height = 24
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Color = clBtnFace
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -20
+          Font.Name = 'Segoe UI'
+          Font.Style = []
+          ParentColor = False
+          ParentFont = False
+          TabOrder = 3
+          OnClick = cbEnOn_1Click
+        end
+        object edtEnDoneCount_4: TEdit
+          Left = 311
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Color = clBtnFace
+          NumbersOnly = True
+          ReadOnly = True
+          TabOrder = 4
+        end
+        object cbEnSide_4: TComboBox
+          Left = 257
+          Top = 0
+          Width = 51
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Style = csDropDownList
+          ItemIndex = 0
+          TabOrder = 5
+          Text = 'T'
+          Items.Strings = (
+            'T'
+            'A'
+            'B')
+        end
+      end
+      object Panel13: TPanel
+        Left = 5
+        Top = 294
+        Width = 405
+        Height = 44
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 9
+        object edtEnKip_5: TEdit
+          Left = 0
+          Top = 0
+          Width = 66
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -24
+          Font.Name = 'Segoe UI'
+          Font.Style = [fsBold]
+          ParentFont = False
+          TabOrder = 0
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_2KeyPress
+        end
+        object edtEnOrderQty_5: TEdit
+          Left = 68
+          Top = 0
+          Width = 135
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 1
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_1KeyPress
+        end
+        object edtEnCount_5: TEdit
+          Left = 206
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 2
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnCount_1KeyPress
+        end
+        object cbEnOn_5: TCheckBox
+          Tag = 4
+          Left = 368
+          Top = 9
+          Width = 24
+          Height = 24
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Color = clBtnFace
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -20
+          Font.Name = 'Segoe UI'
+          Font.Style = []
+          ParentColor = False
+          ParentFont = False
+          TabOrder = 3
+          OnClick = cbEnOn_1Click
+        end
+        object edtEnDoneCount_5: TEdit
+          Left = 311
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Color = clBtnFace
+          NumbersOnly = True
+          ReadOnly = True
+          TabOrder = 4
+        end
+        object cbEnSide_5: TComboBox
+          Left = 257
+          Top = 0
+          Width = 51
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Style = csDropDownList
+          ItemIndex = 0
+          TabOrder = 5
+          Text = 'T'
+          Items.Strings = (
+            'T'
+            'A'
+            'B')
+        end
+      end
+      object Panel9: TPanel
+        Left = 5
+        Top = 110
+        Width = 405
+        Height = 43
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 10
+        object edtEnKip_1: TEdit
+          Left = 0
+          Top = 0
+          Width = 66
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -24
+          Font.Name = 'Segoe UI'
+          Font.Style = [fsBold]
+          ParentFont = False
+          TabOrder = 0
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_2KeyPress
+        end
+        object edtEnOrderQty_1: TEdit
+          Left = 68
+          Top = 0
+          Width = 135
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 1
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_1KeyPress
+        end
+        object edtEnCount_1: TEdit
+          Left = 206
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 2
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnCount_1KeyPress
+        end
+        object cbEnOn_1: TCheckBox
+          Left = 368
+          Top = 9
+          Width = 24
+          Height = 24
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Color = clGradientActiveCaption
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -20
+          Font.Name = 'Segoe UI'
+          Font.Style = []
+          ParentColor = False
+          ParentFont = False
+          TabOrder = 3
+          OnClick = cbEnOn_1Click
+        end
+        object edtEnDoneCount_1: TEdit
+          Left = 311
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Color = clBtnFace
+          NumbersOnly = True
+          ReadOnly = True
+          TabOrder = 4
+        end
+        object cbEnSide_1: TComboBox
+          Left = 257
+          Top = 0
+          Width = 51
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Style = csDropDownList
+          ItemIndex = 0
+          TabOrder = 5
+          Text = 'T'
+          Items.Strings = (
+            'T'
+            'A'
+            'B')
+        end
+      end
+      object Panel2: TPanel
+        Left = 315
+        Top = 71
+        Width = 48
+        Height = 33
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #54943#49688
+        Color = clSilver
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 11
+      end
+      object Panel7: TPanel
+        Left = 263
+        Top = 71
+        Width = 49
+        Height = 33
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #47588#47588
+        Color = clSilver
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 12
+      end
+      object plEn_idx: TPanel
+        Left = 98
+        Top = 33
+        Width = 87
+        Height = 35
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Color = clRed
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWhite
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = [fsBold]
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 13
+      end
+    end
+    object GroupBox5: TGroupBox
+      Left = 432
+      Top = 201
+      Width = 422
+      Height = 342
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #52397#49328
+      Color = clBtnFace
+      ParentBackground = False
+      ParentColor = False
+      TabOrder = 15
+      object plEx: TPanel
+        Left = 5
+        Top = 33
+        Width = 87
+        Height = 33
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Color = clBlue
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWhite
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = [fsBold]
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 0
+      end
+      object edtExInputQty: TEdit
+        Left = 191
+        Top = 29
+        Width = 111
+        Height = 40
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Alignment = taRightJustify
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentFont = False
+        TabOrder = 1
+        OnKeyDown = edtEnKip_1KeyDown
+        OnKeyPress = edtEnKip_1KeyPress
+      end
+      object Panel21: TPanel
+        Left = 5
+        Top = 71
+        Width = 66
+        Height = 33
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = 'EX'
+        Color = clSilver
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 2
+      end
+      object Panel22: TPanel
+        Left = 74
+        Top = 71
+        Width = 135
+        Height = 33
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #51452#47928#49688#47049
+        Color = clSilver
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 3
+      end
+      object Panel23: TPanel
+        Left = 210
+        Top = 71
+        Width = 50
+        Height = 33
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #48152#48373
+        Color = clSilver
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 4
+      end
+      object Panel25: TPanel
+        Left = 365
+        Top = 71
+        Width = 45
+        Height = 33
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #49892#54665
+        Color = clSilver
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 5
+      end
+      object Panel26: TPanel
+        Left = 5
+        Top = 108
+        Width = 405
+        Height = 44
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 6
+        object edtExKip_1: TEdit
+          Left = 0
+          Top = 0
+          Width = 65
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -24
+          Font.Name = 'Segoe UI'
+          Font.Style = [fsBold]
+          ParentFont = False
+          TabOrder = 0
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_2KeyPress
+        end
+        object edtExOrderQty_1: TEdit
+          Left = 68
+          Top = 0
+          Width = 135
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 1
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_1KeyPress
+        end
+        object edtExCount_1: TEdit
+          Left = 206
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 2
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnCount_1KeyPress
+        end
+        object cbExOn_1: TCheckBox
+          Left = 368
+          Top = 9
+          Width = 24
+          Height = 24
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -20
+          Font.Name = 'Segoe UI'
+          Font.Style = []
+          ParentFont = False
+          TabOrder = 3
+          OnClick = cbExOn_1Click
+        end
+        object edtExDoneCount_1: TEdit
+          Left = 311
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Color = clBtnFace
+          NumbersOnly = True
+          ReadOnly = True
+          TabOrder = 4
+        end
+        object cbExSide_1: TComboBox
+          Left = 257
+          Top = 0
+          Width = 51
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Style = csDropDownList
+          ItemIndex = 0
+          TabOrder = 5
+          Text = 'T'
+          Items.Strings = (
+            'T'
+            'A'
+            'B')
+        end
+      end
+      object Panel27: TPanel
+        Left = 5
+        Top = 155
+        Width = 405
+        Height = 43
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 7
+        object edtExKip_2: TEdit
+          Left = 0
+          Top = 0
+          Width = 65
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -24
+          Font.Name = 'Segoe UI'
+          Font.Style = [fsBold]
+          ParentFont = False
+          TabOrder = 0
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_2KeyPress
+        end
+        object edtExOrderQty_2: TEdit
+          Left = 68
+          Top = 0
+          Width = 135
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 1
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_1KeyPress
+        end
+        object edtExCount_2: TEdit
+          Left = 206
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 2
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnCount_1KeyPress
+        end
+        object cbExOn_2: TCheckBox
+          Tag = 1
+          Left = 368
+          Top = 9
+          Width = 24
+          Height = 24
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -20
+          Font.Name = 'Segoe UI'
+          Font.Style = []
+          ParentFont = False
+          TabOrder = 3
+          OnClick = cbExOn_1Click
+        end
+        object edtExDoneCount_2: TEdit
+          Left = 311
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Color = clBtnFace
+          NumbersOnly = True
+          ReadOnly = True
+          TabOrder = 4
+        end
+        object cbExSide_2: TComboBox
+          Left = 257
+          Top = 0
+          Width = 51
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Style = csDropDownList
+          ItemIndex = 0
+          TabOrder = 5
+          Text = 'T'
+          Items.Strings = (
+            'T'
+            'A'
+            'B')
+        end
+      end
+      object Panel28: TPanel
+        Left = 5
+        Top = 201
+        Width = 405
+        Height = 44
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 8
+        object edtExKip_3: TEdit
+          Left = 0
+          Top = 0
+          Width = 65
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -24
+          Font.Name = 'Segoe UI'
+          Font.Style = [fsBold]
+          ParentFont = False
+          TabOrder = 0
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_2KeyPress
+        end
+        object edtExOrderQty_3: TEdit
+          Left = 68
+          Top = 0
+          Width = 135
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 1
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_1KeyPress
+        end
+        object edtExCount_3: TEdit
+          Left = 206
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 2
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnCount_1KeyPress
+        end
+        object cbExOn_3: TCheckBox
+          Tag = 2
+          Left = 368
+          Top = 9
+          Width = 24
+          Height = 24
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -20
+          Font.Name = 'Segoe UI'
+          Font.Style = []
+          ParentFont = False
+          TabOrder = 3
+          OnClick = cbExOn_1Click
+        end
+        object edtExDoneCount_3: TEdit
+          Left = 311
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Color = clBtnFace
+          NumbersOnly = True
+          ReadOnly = True
+          TabOrder = 4
+        end
+        object cbExSide_3: TComboBox
+          Left = 257
+          Top = 0
+          Width = 51
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Style = csDropDownList
+          ItemIndex = 0
+          TabOrder = 5
+          Text = 'T'
+          Items.Strings = (
+            'T'
+            'A'
+            'B')
+        end
+      end
+      object Panel29: TPanel
+        Left = 5
+        Top = 248
+        Width = 405
+        Height = 43
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 9
+        object edtExKip_4: TEdit
+          Left = 0
+          Top = 0
+          Width = 65
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -24
+          Font.Name = 'Segoe UI'
+          Font.Style = [fsBold]
+          ParentFont = False
+          TabOrder = 0
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_2KeyPress
+        end
+        object edtExOrderQty_4: TEdit
+          Left = 68
+          Top = 0
+          Width = 135
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 1
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_1KeyPress
+        end
+        object edtExCount_4: TEdit
+          Left = 206
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 2
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnCount_1KeyPress
+        end
+        object cbExOn_4: TCheckBox
+          Tag = 3
+          Left = 368
+          Top = 9
+          Width = 24
+          Height = 24
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -20
+          Font.Name = 'Segoe UI'
+          Font.Style = []
+          ParentFont = False
+          TabOrder = 3
+          OnClick = cbExOn_1Click
+        end
+        object edtExDoneCount_4: TEdit
+          Left = 311
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Color = clBtnFace
+          NumbersOnly = True
+          ReadOnly = True
+          TabOrder = 4
+        end
+        object cbExSide_4: TComboBox
+          Left = 257
+          Top = 0
+          Width = 51
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Style = csDropDownList
+          ItemIndex = 0
+          TabOrder = 5
+          Text = 'T'
+          Items.Strings = (
+            'T'
+            'A'
+            'B')
+        end
+      end
+      object cbReduceOnly: TCheckBox
+        Left = 336
+        Top = 38
+        Width = 69
+        Height = 22
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = 'rdc'
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentFont = False
+        TabOrder = 10
+        OnClick = cbReduceOnlyClick
+      end
+      object Panel30: TPanel
+        Left = 5
+        Top = 294
+        Width = 405
+        Height = 44
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 11
+        object edtExKip_5: TEdit
+          Left = 0
+          Top = 0
+          Width = 65
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -24
+          Font.Name = 'Segoe UI'
+          Font.Style = [fsBold]
+          ParentFont = False
+          TabOrder = 0
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_2KeyPress
+        end
+        object edtExOrderQty_5: TEdit
+          Left = 68
+          Top = 0
+          Width = 135
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 1
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnKip_1KeyPress
+        end
+        object edtExCount_5: TEdit
+          Left = 206
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          TabOrder = 2
+          OnKeyDown = edtEnKip_1KeyDown
+          OnKeyPress = edtEnCount_1KeyPress
+        end
+        object cbExOn_5: TCheckBox
+          Tag = 4
+          Left = 368
+          Top = 9
+          Width = 24
+          Height = 24
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWindowText
+          Font.Height = -20
+          Font.Name = 'Segoe UI'
+          Font.Style = []
+          ParentFont = False
+          TabOrder = 3
+          OnClick = cbExOn_1Click
+        end
+        object edtExDoneCount_5: TEdit
+          Left = 311
+          Top = 0
+          Width = 48
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Alignment = taRightJustify
+          Color = clBtnFace
+          NumbersOnly = True
+          ReadOnly = True
+          TabOrder = 4
+        end
+        object cbExSide_5: TComboBox
+          Left = 257
+          Top = 0
+          Width = 51
+          Height = 40
+          Margins.Left = 5
+          Margins.Top = 5
+          Margins.Right = 5
+          Margins.Bottom = 5
+          Style = csDropDownList
+          ItemIndex = 0
+          TabOrder = 5
+          Text = 'T'
+          Items.Strings = (
+            'T'
+            'A'
+            'B')
+        end
+      end
+      object Panel6: TPanel
+        Left = 315
+        Top = 71
+        Width = 48
+        Height = 33
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #54943#49688
+        Color = clSilver
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 12
+      end
+      object Panel14: TPanel
+        Left = 263
+        Top = 71
+        Width = 49
+        Height = 33
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Caption = #47588#47588
+        Color = clSilver
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWindowText
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 13
+      end
+      object plEx_idx: TPanel
+        Left = 98
+        Top = 33
+        Width = 87
+        Height = 33
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Color = clBlue
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = clWhite
+        Font.Height = -24
+        Font.Name = 'Segoe UI'
+        Font.Style = [fsBold]
+        ParentBackground = False
+        ParentFont = False
+        TabOrder = 14
+      end
+    end
+    object Button3: TButton
+      Left = 512
+      Top = 165
+      Width = 60
+      Height = 32
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #49444#51221
+      Font.Charset = DEFAULT_CHARSET
+      Font.Color = clWindowText
+      Font.Height = -20
+      Font.Name = 'Segoe UI'
+      Font.Style = []
+      ParentFont = False
+      TabOrder = 16
+      OnClick = Button3Click
+    end
+    object StatusBar1: TStatusBar
+      Left = 1
+      Top = 547
+      Width = 848
+      Height = 30
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Panels = <
+        item
+          Alignment = taCenter
+          Text = #44396#48516
+          Width = 50
+        end
+        item
+          Alignment = taCenter
+          Text = #52404#44208#54217#44512
+          Width = 120
+        end
+        item
+          Alignment = taCenter
+          Text = #52509#52404#44208#49688#47049
+          Width = 200
+        end
+        item
+          Alignment = taCenter
+          Text = #52509#52404#44208#44552#50529
+          Width = 200
+        end
+        item
+          Alignment = taCenter
+          Text = #44397#45236'/'#54644#50808#51092#44256
+          Width = 101
+        end>
+      ExplicitLeft = 2
+      ExplicitTop = 546
+      ExplicitWidth = 856
+    end
+    object stExit: TStatusBar
+      Left = 1
+      Top = 607
+      Width = 848
+      Height = 30
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Panels = <
+        item
+          Alignment = taCenter
+          Text = #52397#49328
+          Width = 50
+        end
+        item
+          Alignment = taRightJustify
+          Width = 120
+        end
+        item
+          Alignment = taRightJustify
+          Width = 200
+        end
+        item
+          Alignment = taRightJustify
+          Width = 200
+        end
+        item
+          Alignment = taRightJustify
+          Width = 101
+        end>
+      ExplicitLeft = 2
+      ExplicitTop = 606
+      ExplicitWidth = 856
+    end
+    object stEntry: TStatusBar
+      Left = 1
+      Top = 577
+      Width = 848
+      Height = 30
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Panels = <
+        item
+          Alignment = taCenter
+          Text = #51652#51077
+          Width = 50
+        end
+        item
+          Alignment = taRightJustify
+          Width = 120
+        end
+        item
+          Alignment = taRightJustify
+          Width = 200
+        end
+        item
+          Alignment = taRightJustify
+          Width = 200
+        end
+        item
+          Alignment = taRightJustify
+          Width = 101
+        end>
+      ExplicitLeft = 2
+      ExplicitTop = 576
+      ExplicitWidth = 856
+    end
+    object cbFutType: TComboBox
+      Left = 311
+      Top = 164
+      Width = 115
+      Height = 36
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Style = csDropDownList
+      ItemIndex = 0
+      TabOrder = 20
+      Text = 'USD'#9442'-M'
+      Items.Strings = (
+        'USD'#9442'-M'
+        'COIN-M')
+    end
+    object Button4: TButton
+      Left = 0
+      Top = 548
+      Width = 51
+      Height = 30
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = 'Init'
+      TabOrder = 21
+      TabStop = False
+      OnClick = Button4Click
+    end
+    object cbUseIDX: TCheckBox
+      Left = 363
+      Top = 129
+      Width = 98
+      Height = 26
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = 'IDX-PK'
+      TabOrder = 22
+    end
+  end
+  object PageControl1: TPageControl
+    Left = 0
+    Top = 638
+    Width = 850
+    Height = 556
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    ActivePage = TabSheet1
+    Align = alClient
+    TabOrder = 1
+    ExplicitWidth = 860
+    ExplicitHeight = 558
+    object TabSheet1: TTabSheet
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #52404#44208#45236#50669
+      object sgOrders: TStringGrid
+        Left = 0
+        Top = 0
+        Width = 852
+        Height = 515
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Align = alClient
+        ColCount = 11
+        DefaultColWidth = 96
+        DefaultRowHeight = 29
+        FixedCols = 0
+        RowCount = 2
+        Options = [goFixedVertLine, goFixedHorzLine, goVertLine, goHorzLine, goRangeSelect, goColSizing, goFixedRowDefAlign]
+        TabOrder = 0
+        ExplicitWidth = 848
+        ExplicitHeight = 510
+        ColWidths = (
+          113
+          35
+          56
+          120
+          117
+          95
+          92
+          116
+          59
+          57
+          96)
+      end
+    end
+    object TabSheet2: TTabSheet
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #47196#44536
+      ImageIndex = 1
+      object sgLog: TStringGrid
+        Left = 0
+        Top = 0
+        Width = 852
+        Height = 515
+        Margins.Left = 5
+        Margins.Top = 5
+        Margins.Right = 5
+        Margins.Bottom = 5
+        Align = alClient
+        ColCount = 2
+        DefaultColWidth = 96
+        DefaultRowHeight = 29
+        RowCount = 2
+        Options = [goFixedVertLine, goFixedHorzLine, goVertLine, goHorzLine, goRangeSelect, goColSizing, goFixedRowDefAlign]
+        PopupMenu = PopupMenu1
+        TabOrder = 0
+        ExplicitWidth = 848
+        ExplicitHeight = 510
+        ColWidths = (
+          144
+          684)
+      end
+    end
+  end
+  object Timer1: TTimer
+    OnTimer = Timer1Timer
+    Left = 233
+    Top = 714
+  end
+  object PopupMenu1: TPopupMenu
+    Left = 308
+    Top = 711
+    object N1: TMenuItem
+      Caption = #47196#44536#51204#52404' '#49325#51228
+      OnClick = N1Click
+    end
+    object TMenuItem
+    end
+  end
+  object DustTimer: TTimer
+    Enabled = False
+    OnTimer = DustTimerTimer
+    Left = 180
+    Top = 708
+  end
+end

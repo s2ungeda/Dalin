@@ -1,0 +1,318 @@
+unit UApiTypes;
+
+interface
+
+uses
+  System.SysUtils,
+  UTypes ,
+  USecureString
+  ;
+
+type
+
+
+  TExchangeKind   = ( ekBinance , ekUpbit, ekBithumb );
+  TMarketType     = ( mtSpot, mtFutures );
+  TFuturesType    = ( ftUsdt, ftCoin );
+  TExchangeApiType= ( eaSpot, eaFutUsdt, eaFutCoin );
+
+  TExchangeKinds = Set of TExchangeKind;
+
+  TAccountMarketType  = (amAll, amSpot, {amMargin,} amFuture, amFutureCm );
+  // 주요 종목
+  TMajorSymbolKind = (msBTC, msETH, msXRP);
+  // 주요 매매 종목
+  TMajorTradeSymbol = (tsBTC, tsETH, tsXRP, tsADA);//tsSOL);
+
+  TRequestType    = ( rtNewOrder , rtCnlOrder, rtOrderList, rtPosition,
+  	rtBalance, rtAbleOrder, rtOrdDetail, rtTradeAmt,
+    rtOrderBook, rtDnwState
+     );
+  // account settle currency
+  TSettleCurType = ( scNone, scKRW, scUSDT, scUSDC, scBTC );
+
+  TFeeType = (ftMaker, ftTaker);
+  // socket kind
+  TExchangeSocketKind   = ( eskQtBinance, eskTrdBinance, eskUpbit, eskBithumb );
+
+  TRequestTaskType = (rttDetail);
+
+	// 소켓, Rest 구분을 위해..
+  TDivInfo = record
+ 		Kind 		: TExchangeKind;
+    Market 	: TMarketType;
+    //Division: integer;    	// 0 : public   1 : 주문   2 : 주문외 privatge
+    Index		: integer;
+    WaitTime: integer;
+  end;
+
+  TApiKey = record
+    Sec : TSecureString;
+    Key : string;
+
+    procedure SetSec(const s: string);
+    function  Secret : string;
+  end;
+
+
+  TApiInfo = record
+    BaseUrl    : string;
+    Prepare    : string;
+    Port       : integer;
+    MarketType : TMarketType;
+    // only bithumb
+    ApiKey      : array [0..1] of TApiKey;
+    // 웹소켓
+    WSUrl       : string;
+    // only binance future usd-m
+    WSApiUrl    : string;
+
+    Fee : array [TSettleCurType, TFeeType] of double;
+
+    StandardFeeRate : double;
+  end;
+
+  TExchangeInfo = record
+    Name : string;
+    Code : string;
+    IsMargin : boolean;
+    IsFuture : boolean;
+    IsFutCm  : boolean;
+    IsDomestic : boolean;
+    Index   : integer;
+
+    ApiInfo   : array [ TExchangeApiType] of TApiInfo;
+
+    procedure SetInfo( i:integer; stName : string ; isDome, isFut, isFutCm: boolean );
+
+    // iDiv,
+    function GetTradeFee(aEaType: TExchangeApiType; aSType: TSettleCurType; feeType: TFeeType) : double;
+  end;
+
+  TQuoteOrderLog = record
+    Use : boolean;
+    Code: string;
+    procedure Init;
+  end;
+
+  // 기본 주문 리스크 관리용
+  TDefOrderLimit = record
+    OneTimeLimit : integer;    // 1회 최대주문금액..
+    LestrictArea : integer;    // 주문제한 영역
+  end;
+
+  // 반자동 주문 리스크 관리용..
+  TLimitItem = record
+    OneTimeLimit : integer;   // 1회 최대주문금액..
+    OneDayLimit  : integer;   // 1일 최대주문금액
+    SpreadRate   : integer;
+    BusyHogaRate : integer;
+
+  end;
+
+  TApiOrderLimit = record
+    DefOrderLimit : array [ TExchangeKind ] of TDefOrderLimit;
+    OrderLimit : array [TExchangeKind] of TLimitItem;
+    StartTime  : TDateTime;
+    EndTime    : TDateTime;
+  end;
+
+  TAccountDnwLimit = record
+    DepositLimit : array [ TExchangeKind ] of integer;
+    WidthDrawLimit : array [ TExchangeKind ] of integer;
+  end;
+
+  // 출금 파라미터
+  TWithdrawParam = record
+    qty : string;
+    addr1 : string;
+    addr2 : string;
+    currency : string;
+    nettype : string;
+    // 이하 bithumb
+    exname  : string; // 거래소 영문
+    custtype : string;
+    korname : string;
+    engname : string;
+
+    procedure Clear;
+
+    function Represent: string;
+  end;
+
+  TCoinDnwItem = record
+  public
+    exKind   : TExchangeKind;
+    exchange : string;
+    code      : string;
+    time      : TDateTime;
+    gubun     : string;
+    qty, fee : string;
+    state    : string;
+  end;
+
+  function GetSettleType( sCur : string): TSettleCurType;
+  function EnableSettleStr(sSettle: string; e: TExchangeKind = ekBinance) : boolean;
+  function ExKindToStr( aKind : TExchangeKind ) : string;
+  function MarketToStr( aType : TMarketType ) : string;
+  function ExistExType( aExStr : string; var aExKind : TExchangeKind   ) : boolean;
+
+  function ExApiToMarket( eaType : TExchangeApiType ) : TMarketType;
+
+  function CompareDoubleInc(Item1, Item2: double): Integer;
+
+implementation
+
+uses
+  UApiConsts
+  ;
+{ TExchangeInfo }
+
+//function TExchangeInfo.GetApiInfo(mtType: TMarketType;
+//  ftType: TFuturesType): TApiInfo;
+//begin
+//  case mtType of
+//    mtSpot: Result := SpotInfo;
+//    mtFutures: Result := FutInfo[ftUsdt] ;
+//  end;
+//end;
+//
+
+function CompareDoubleInc(Item1, Item2: double): Integer;
+begin
+  if Item1=Item2 then begin
+    Result := 0;
+  end else if Item1>Item2 then begin
+    Result := -1
+  end else begin
+    Result := 1;
+  end;
+end;
+
+function TExchangeInfo.GetTradeFee(aEaType: TExchangeApiType;
+  aSType: TSettleCurType; feeType: TFeeType): double;
+begin
+  Result := ApiInfo[aEaType].Fee[aSType, feeType];
+end;
+
+procedure TExchangeInfo.SetInfo(i:integer; stName: string; isDome, isFut, isFutCm : boolean);
+begin
+  Index := i;
+  Name  := stName  ;
+  IsFutCm := isFutCm;
+  IsFuture := isFut;
+  IsDomestic := isDome;
+end;            
+
+
+function GetSettleType( sCur : string): TSettleCurType;
+begin
+  if sCur = 'KRW' then
+    Result := scKRW
+  else if sCur = 'USDT' then
+    Result := scUSDT
+  else if sCur = 'BTC' then
+    Result := scBTC
+  else if sCur = 'USDC' then
+    Result := scUSDC
+  else
+    Result := scNone;
+end;
+
+function EnableSettleStr(sSettle: string; e: TExchangeKind) : boolean;
+var
+  i: TSettleCurType;
+begin
+  Result := false;
+
+  i := GetSettleType(sSettle);
+
+  case i of
+    scNone, scBTC: Exit;
+  end;
+
+  case e of
+    ekBinance: if i in [scUSDT, scUSDC] then Result := true ;
+    else Result := i = scKRW;
+  end;
+end;
+
+function ExKindToStr( aKind : TExchangeKind ) : string;
+begin
+  Result := TExchangeKindDesc[ aKind ];
+end;
+
+function MarketToStr( aType : TMarketType ) : string;
+begin
+  Result := TMarketTypeDesc[ aType ];
+end;
+
+function ExistExType( aExStr : string; var aExKind : TExchangeKind   ) : boolean;
+var
+  i : TExchangeKind;
+begin
+  Result := false;
+
+  for I := ekBinance to High(TExchangeKindShortDesc) do
+    if TExchangeKindShortDesc[i] = aExStr then
+    begin
+      aExKind := i;
+      Result  := true;
+      break;
+    end;
+end;
+
+function ExApiToMarket( eaType : TExchangeApiType ) : TMarketType;
+begin
+  case eaType of
+    eaSpot: Result := mtSpot;
+    eaFutUsdt,
+    eaFutCoin: Result := mtFutures;
+  end;
+end;
+
+{ TWithdrawParam }
+
+procedure TWithdrawParam.Clear;
+begin
+  qty := '';
+  addr1 := '';
+  addr2 := '';
+  currency := '';
+  nettype := '';
+  // 이하 bithumb
+  exname  := '';
+  custtype := '';
+  korname := '';
+  engname := '';
+end;
+
+
+
+function TWithdrawParam.Represent: string;
+begin
+  Result := Format('%s 출금 : %s, %s', [currency, exname, qty]);
+end;
+
+{ TQuoteOrderLog }
+
+procedure TQuoteOrderLog.Init;
+begin
+  Use := false;
+  Code:= '';
+end;
+
+{ TApiKey }
+
+function TApiKey.Secret: string;
+begin
+  Result := Sec.Reveal;
+end;
+
+procedure TApiKey.SetSec(const s: string);
+begin
+  if s <> '' then
+    sec.Assign(s);
+end;
+
+end.

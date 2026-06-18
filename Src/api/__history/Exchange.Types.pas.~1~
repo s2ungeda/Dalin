@@ -1,0 +1,36 @@
+unit Exchange.Types;
+
+interface
+
+type
+  { 표준 자산 모델 }
+  TAssetInfo = record
+    Symbol: string;
+    Available: Currency;
+    Locked: Currency;
+    Total: Currency;
+    AvgPrice: Double;
+  end;
+
+  { 주문 예약 추적 모델 }
+  POrderReservation = ^TOrderReservation;
+  TOrderReservation = record
+    Identifier: string;
+    UUID: string;
+    Price: Currency;
+    OriginalVolume: Double;
+    RemainingVolume: Double;
+    ReservedAmount: Currency;
+    StandardFeeRate: Double;
+  end;
+
+  { 거래소 어댑터 인터페이스 }
+  IExchangeAdapter = interface
+    ['{A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C5D}']
+    function GetExchangeName: string;
+    function ParseAssetResponse(const AJsonResponse: string): TArray<TAssetInfo>;
+  end;
+
+implementation
+
+end.

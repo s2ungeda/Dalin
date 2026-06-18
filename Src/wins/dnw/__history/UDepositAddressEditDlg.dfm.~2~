@@ -1,0 +1,205 @@
+object DepositAddressEditDlg: TDepositAddressEditDlg
+  Left = 0
+  Top = 0
+  BorderStyle = bsDialog
+  Caption = #51452#49548' '#52628#44032
+  ClientHeight = 450
+  ClientWidth = 615
+  Color = clWhite
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -18
+  Font.Name = 'Segoe UI'
+  Font.Style = []
+  Position = poOwnerFormCenter
+  PixelsPerInch = 144
+  TextHeight = 25
+  object LblExchange: TLabel
+    Left = 24
+    Top = 24
+    Width = 54
+    Height = 25
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = #44144#47000#49548
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = clGray
+    Font.Height = -18
+    Font.Name = 'Segoe UI'
+    Font.Style = []
+    ParentFont = False
+  end
+  object LblCoin: TLabel
+    Left = 24
+    Top = 105
+    Width = 36
+    Height = 25
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = #53076#51064
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = clGray
+    Font.Height = -18
+    Font.Name = 'Segoe UI'
+    Font.Style = []
+    ParentFont = False
+  end
+  object LblAddress: TLabel
+    Left = 24
+    Top = 186
+    Width = 77
+    Height = 25
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = #51077#44552' '#51452#49548
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = clGray
+    Font.Height = -18
+    Font.Name = 'Segoe UI'
+    Font.Style = []
+    ParentFont = False
+  end
+  object LblMemo: TLabel
+    Left = 24
+    Top = 267
+    Width = 201
+    Height = 25
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = #47700#47784' / '#53468#44536' (XRP, EOS '#46321')'
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = clGray
+    Font.Height = -18
+    Font.Name = 'Segoe UI'
+    Font.Style = []
+    ParentFont = False
+  end
+  object Label1: TLabel
+    Left = 312
+    Top = 105
+    Width = 72
+    Height = 25
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = #45348#53944#50892#53356
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = clGray
+    Font.Height = -18
+    Font.Name = 'Segoe UI'
+    Font.Style = []
+    ParentFont = False
+  end
+  object CboExchange: TComboBox
+    Left = 24
+    Top = 51
+    Width = 552
+    Height = 33
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Style = csDropDownList
+    TabOrder = 0
+  end
+  object CboNetwork: TComboBox
+    Left = 312
+    Top = 132
+    Width = 264
+    Height = 33
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Style = csDropDownList
+    TabOrder = 1
+  end
+  object EdtAddress: TEdit
+    Left = 24
+    Top = 213
+    Width = 552
+    Height = 30
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = clWindowText
+    Font.Height = -18
+    Font.Name = 'Consolas'
+    Font.Style = []
+    ParentFont = False
+    TabOrder = 2
+  end
+  object EdtMemo: TEdit
+    Left = 24
+    Top = 294
+    Width = 552
+    Height = 30
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = clWindowText
+    Font.Height = -18
+    Font.Name = 'Consolas'
+    Font.Style = []
+    ParentFont = False
+    TabOrder = 3
+  end
+  object BtnCancel: TButton
+    Left = 330
+    Top = 378
+    Width = 114
+    Height = 45
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = #52712#49548
+    TabOrder = 4
+    OnClick = BtnCancelClick
+  end
+  object BtnSave: TButton
+    Left = 456
+    Top = 378
+    Width = 120
+    Height = 45
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Caption = #51200#51109
+    Default = True
+    TabOrder = 5
+    OnClick = BtnSaveClick
+  end
+  object edtCoin: TEdit
+    Left = 24
+    Top = 132
+    Width = 229
+    Height = 30
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = clWindowText
+    Font.Height = -18
+    Font.Name = 'Consolas'
+    Font.Style = []
+    ParentFont = False
+    TabOrder = 6
+    OnKeyDown = edtCoinKeyDown
+  end
+end

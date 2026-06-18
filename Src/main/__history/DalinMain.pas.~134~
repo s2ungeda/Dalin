@@ -1,0 +1,1179 @@
+unit DalinMain;
+interface
+uses
+  Winapi.Windows, Winapi.Messages
+  , System.SysUtils, System.Variants, System.Classes, System.IniFiles, System.DateUtils
+  , Vcl.Graphics,  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls ,
+
+  UStorage,
+
+  NMainMenu,
+
+  UTypes, Vcl.ExtCtrls, Vcl.ComCtrls, Vcl.Mask, Vcl.Grids, IdBaseComponent,
+  IdAntiFreezeBase, IdAntiFreeze,
+
+  IntegrityMonitorThread
+  ;
+
+const
+  RegRootKey = HKEY_CURRENT_USER;
+  RegOpenKeyIni = '\SOFTWARE\DALIN\';
+  QWS_CNT = 4;
+  SG_ROW_CNT = 8;
+  EX_ROW = 3;   // 환율 로우.
+  RowName : array [0..SG_ROW_CNT-1] of string = ('Bin 시세 F', 'Upbit 시세', 'Bthmb 시세', '환율',
+    'Bin SND F','Bin RCV F','Upbit 체결','Bthmb 체결');
+
+type
+  TFrmDalinMain = class(TForm)
+    QryTimer: TTimer;
+    stsBar: TStatusBar;
+    Panel1: TPanel;
+    edtExInterval: TLabeledEdit;
+    Button1: TButton;
+    Edit1: TEdit;
+    cbManual: TCheckBox;
+    Button2: TButton;
+    CheckBox1: TCheckBox;
+    sg: TStringGrid;
+    procedure FormCreate(Sender: TObject);
+    procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure FormDestroy(Sender: TObject);
+
+    procedure QryTimerTimer(Sender: TObject);
+    procedure Button1Click(Sender: TObject);
+    procedure stsBarDrawPanel(StatusBar: TStatusBar; Panel: TStatusPanel;
+      const Rect: TRect);
+    procedure FormActivate(Sender: TObject);
+    procedure FormDeactivate(Sender: TObject);
+  private
+    { Private declarations }
+    FExRate : integer;
+    FDnw    : integer;
+    FLogDate: TDateTime;
+    FStartDate : TDate;
+
+    FMonitorThread: TIntegrityMonitorThread;
+
+    FMax    : array [0..QWS_CNT-1] of integer;
+    FCurrenctID : integer;
+    FRestCheck: boolean;
+    FExRateCheck: boolean;
+    FDetectedMsg: string;
+
+    procedure CheckRest;
+    procedure init;
+    procedure initControls;
+
+    function CheckDpkFile: boolean;
+    function IsRealyClose: boolean;
+    function GetEntropy  : boolean;
+
+    procedure SetEnv;
+    procedure GetExRate( bInit : boolean );
+    procedure DalinStatusEvent( asType : TAppStatus );
+    procedure ReadExRate( bInit : boolean = false );
+    procedure AppException(Sender: TObject; E: Exception);
+    function GetInterval: integer;
+    function GetRect(oRect: TRect): TRect;
+    procedure DoSiseLog;
+
+
+    procedure finMonitorThread;
+    procedure AntiDebugEvent(const S: string);
+
+  public
+    { Public declarations }
+    procedure IntegrityMonitor;
+    procedure Start;
+    procedure ExecuteSubApp; overload;
+    procedure ExecuteSubApp(idx: integer); overload;
+
+    procedure CloseSubApp;
+    procedure SetValue;
+    procedure LoadEnv(aStorage: TStorage);
+    procedure SaveEnv(aStorage: TStorage);
+
+    procedure SaveWindows;
+
+    procedure SaveRegedit( iDiv : integer = 0 );
+    procedure LoadRegedit;
+//		procedure OnExRateMessage(var msg: TMessage); message wm_CopyData;
+    procedure OnExRateMessage(var msg: TMessage); message WM_EXRATE_MESSAGE;
+    procedure OnDetectedDebug(var msg: TMessage); message WM_DETECTEDDEBUGER;
+
+    property RestCheck : boolean read FRestCheck;
+    property ExRateCheck : boolean read FExRateCheck;
+    property DetectedMsg: string  read FDetectedMsg write FDetectedMsg;
+
+  end;
+
+var
+  FrmDalinMain : TFrmDalinMain;
+
+implementation
+{$R *.dfm}
+uses
+  GApp , GLibs ,  Registry,
+  UDalinStatusEvent, UBinanceFutures
+  , UApiTypes
+  , UApiConsts, UConsts
+  , System.Threading, System.IOUtils
+  , FInputEntropy
+  , USimpleShareMemory
+
+;
+
+
+procedure TFrmDalinMain.SaveRegedit( iDiv : integer = 0 );
+var
+  Reg: TRegistry;
+begin
+  Reg := TRegistry.Create;
+  with Reg do
+  try
+    RootKey := RegRootKey;
+    if OpenKey(RegOpenKeyIni, True) then begin
+
+      with App.Engine.ApiConfig.OrderLimit do
+      begin
+        // 기본 주문 리스크
+        if( iDiv = 0) or ( iDiv = 1 ) then
+        begin
+          WriteInteger('DefOneTimeLimit_Bin', DefOrderLimit[ekBinance].OneTimeLimit );
+          WriteInteger('LestrictArea_Bin', DefOrderLimit[ekBinance].LestrictArea );
+
+          WriteInteger('DefOneTimeLimit_Upt', DefOrderLimit[ekUpbit].OneTimeLimit );
+          WriteInteger('LestrictArea_Upt', DefOrderLimit[ekUpbit].LestrictArea );
+
+          WriteInteger('DefOneTimeLimit_Bth', DefOrderLimit[ekBithumb].OneTimeLimit );
+          WriteInteger('LestrictArea_Bth', DefOrderLimit[ekBithumb].LestrictArea );
+        end;
+
+        // 반자동 주문 리스크
+        if( iDiv = 0 ) or ( iDiv = 2 ) then
+        begin
+          WriteInteger('OneTimeLimit_Bin', OrderLimit[ekBinance].OneTimeLimit );
+          WriteInteger('OneDayLimit_Bin', OrderLimit[ekBinance].OneDayLimit );
+          WriteInteger('SpreadRate_Bin', OrderLimit[ekBinance].SpreadRate );
+          WriteInteger('BusyHogaRate_Bin', OrderLimit[ekBinance].BusyHogaRate );
+
+          WriteInteger('OneTimeLimit_Upt', OrderLimit[ekUpbit].OneTimeLimit );
+          WriteInteger('OneDayLimit_Upt', OrderLimit[ekUpbit].OneDayLimit );
+          WriteInteger('SpreadRate_Upt', OrderLimit[ekUpbit].SpreadRate );
+          WriteInteger('BusyHogaRate_Upt', OrderLimit[ekUpbit].BusyHogaRate );
+
+          WriteInteger('OneTimeLimit_Bth', OrderLimit[ekBithumb].OneTimeLimit );
+          WriteInteger('OneDayLimit_Bth', OrderLimit[ekBithumb].OneDayLimit );
+          WriteInteger('SpreadRate_Bth', OrderLimit[ekBithumb].SpreadRate );
+          WriteInteger('BusyHogaRate_Bth', OrderLimit[ekBithumb].BusyHogaRate );
+
+          WriteFloat('StartTime', double(StartTime) );
+          WriteFloat('EndTime', double(EndTime) );
+        end;
+      end;
+
+      if iDiv = 3 then
+        with App.Engine.ApiConfig do
+        begin
+          WriteString('QuoteOrderLog1', QuoteOrderLog[0].Code);
+          WriteString('QuoteOrderLog2', QuoteOrderLog[1].Code);
+        end;
+
+      if iDiv = 4 then
+       with App.Engine.ApiConfig.DnwLimit do
+       begin
+         WriteInteger('DepositLimit_Upt', DepositLimit[ekUpbit] );
+         WriteInteger('WithDrawLimit_Upt', WidthDrawLimit[ekUpbit]);
+
+         WriteInteger('DepositLimit_Bth', DepositLimit[ekBithumb]);
+         WriteInteger('WithDrawLimit_Bth', WidthDrawLimit[ekBithumb]);
+       end;
+
+//      if iDiv = 5 then
+//        with App.Engine.ApiManager do
+//        begin
+//          WriteString('bstt', App.Engine.ApiConfig.FeeToStr(ekBinance, eaSpot,    scUSDT, ftTaker));
+//          WriteString('bsct', App.Engine.ApiConfig.FeeToStr(ekBinance, eaSpot,    scUSDC, ftTaker));
+//          WriteString('bftt', App.Engine.ApiConfig.FeeToStr(ekBinance, eaFutUsdt, scUSDT, ftTaker));
+//          WriteString('bfct', App.Engine.ApiConfig.FeeToStr(ekBinance, eaFutUsdt, scUSDC, ftTaker));
+//          WriteString('uskt', App.Engine.ApiConfig.FeeToStr(ekUpbit,   eaSpot,    scKRW,  ftTaker));
+//          WriteString('bskt', App.Engine.ApiConfig.FeeToStr(ekBithumb, eaSpot,    scKRW,  ftTaker));
+//
+//          WriteString('bstm', App.Engine.ApiConfig.FeeToStr(ekBinance, eaSpot,    scUSDT, ftMaker));
+//          WriteString('bscm', App.Engine.ApiConfig.FeeToStr(ekBinance, eaSpot,    scUSDC, ftMaker));
+//          WriteString('bftm', App.Engine.ApiConfig.FeeToStr(ekBinance, eaFutUsdt, scUSDT, ftMaker));
+//          WriteString('bfcm', App.Engine.ApiConfig.FeeToStr(ekBinance, eaFutUsdt, scUSDC, ftMaker));
+//          WriteString('uskm', App.Engine.ApiConfig.FeeToStr(ekUpbit,   eaSpot,    scKRW,  ftMaker));
+//          WriteString('bskm', App.Engine.ApiConfig.FeeToStr(ekBithumb, eaSpot,    scKRW,  ftMaker));
+//        end;
+
+    end;
+  finally
+    Free;
+  end;
+end;
+
+
+procedure TFrmDalinMain.SaveWindows;
+begin
+  App.WindSaved := true;
+  App.Engine.FormBroker.Save( ComposeFilePath( [App.DataDir, App.Config.DATA_FILE] ) );
+  // dll 화면 save
+  //App.Engine.DllFormLoader.Save( ComposeFilePath( [App.DataDir, App.Config.DATA_FILE2] ) )
+end;
+
+procedure TFrmDalinMain.LoadRegedit;
+var
+  Reg: TRegistry;
+  stToDay : string;
+  item : TLimitItem;
+begin
+  Reg := TRegistry.Create;
+  with Reg do
+  try
+    RootKey := RegRootKey;
+    if OpenKey(RegOpenKeyIni, True) then begin
+
+      with App.Engine.ApiConfig.OrderLimit do
+      begin
+
+        // 기본 주문 리스크
+        if ValueExists('DefOneTimeLimit_Bin' ) then
+          App.Engine.ApiConfig.OrderLimit.DefOrderLimit[ekBinance].OneTimeLimit := ReadInteger('DefOneTimeLimit_Bin')
+        else App.Engine.ApiConfig.OrderLimit.DefOrderLimit[ekBinance].OneTimeLimit := 40000;
+        if ValueExists('LestrictArea_Bin' ) then
+          App.Engine.ApiConfig.OrderLimit.DefOrderLimit[ekBinance].LestrictArea := ReadInteger('LestrictArea_Bin')
+        else App.Engine.ApiConfig.OrderLimit.DefOrderLimit[ekBinance].LestrictArea := 5;
+
+        if ValueExists('DefOneTimeLimit_Upt' ) then
+          App.Engine.ApiConfig.OrderLimit.DefOrderLimit[ekUpbit].OneTimeLimit := ReadInteger('DefOneTimeLimit_Upt')
+        else App.Engine.ApiConfig.OrderLimit.DefOrderLimit[ekUpbit].OneTimeLimit := 50000000;
+        if ValueExists('LestrictArea_Upt' ) then
+          App.Engine.ApiConfig.OrderLimit.DefOrderLimit[ekUpbit].LestrictArea := ReadInteger('LestrictArea_Upt')
+        else App.Engine.ApiConfig.OrderLimit.DefOrderLimit[ekUpbit].LestrictArea := 5;
+
+        if ValueExists('DefOneTimeLimit_Bth' ) then
+          App.Engine.ApiConfig.OrderLimit.DefOrderLimit[ekBithumb].OneTimeLimit := ReadInteger('DefOneTimeLimit_Bth')
+        else App.Engine.ApiConfig.OrderLimit.DefOrderLimit[ekBithumb].OneTimeLimit := 50000000;
+        if ValueExists('LestrictArea_Bth' ) then
+          App.Engine.ApiConfig.OrderLimit.DefOrderLimit[ekBithumb].LestrictArea := ReadInteger('LestrictArea_Bth')
+        else App.Engine.ApiConfig.OrderLimit.DefOrderLimit[ekBithumb].LestrictArea := 5;
+
+        // 반자동 주문 리스크..
+        if ValueExists('OneTimeLimit_Bin' ) then
+          App.Engine.ApiConfig.OrderLimit.OrderLimit[ekBinance].OneTimeLimit := ReadInteger('OneTimeLimit_Bin')
+        else App.Engine.ApiConfig.OrderLimit.OrderLimit[ekBinance].OneTimeLimit := 10000;
+        if ValueExists('OneDayLimit_Bin' ) then
+          App.Engine.ApiConfig.OrderLimit.OrderLimit[ekBinance].OneDayLimit := ReadInteger('OneDayLimit_Bin')
+        else App.Engine.ApiConfig.OrderLimit.OrderLimit[ekBinance].OneDayLimit := 50000;
+        if ValueExists('SpreadRate_Bin' ) then
+          App.Engine.ApiConfig.OrderLimit.OrderLimit[ekBinance].SpreadRate := ReadInteger('SpreadRate_Bin')
+        else App.Engine.ApiConfig.OrderLimit.OrderLimit[ekBinance].SpreadRate := 5;
+        if ValueExists('BusyHogaRate_Bin' ) then
+          App.Engine.ApiConfig.OrderLimit.OrderLimit[ekBinance].BusyHogaRate := ReadInteger('BusyHogaRate_Bin')
+        else  App.Engine.ApiConfig.OrderLimit.OrderLimit[ekBinance].BusyHogaRate := 2;
+
+        if ValueExists('OneTimeLimit_Upt' ) then
+          App.Engine.ApiConfig.OrderLimit.OrderLimit[ekUpbit].OneTimeLimit := ReadInteger('OneTimeLimit_Upt')
+        else App.Engine.ApiConfig.OrderLimit.OrderLimit[ekUpbit].OneTimeLimit := 30000000;
+        if ValueExists('OneDayLimit_Upt' ) then
+          App.Engine.ApiConfig.OrderLimit.OrderLimit[ekUpbit].OneDayLimit := ReadInteger('OneDayLimit_Upt')
+        else App.Engine.ApiConfig.OrderLimit.OrderLimit[ekUpbit].OneDayLimit := 500000000;
+        if ValueExists('SpreadRate_Upt' ) then
+          App.Engine.ApiConfig.OrderLimit.OrderLimit[ekUpbit].SpreadRate := ReadInteger('SpreadRate_Upt')
+        else App.Engine.ApiConfig.OrderLimit.OrderLimit[ekUpbit].SpreadRate := 5;
+        if ValueExists('BusyHogaRate_Upt' ) then
+          App.Engine.ApiConfig.OrderLimit.OrderLimit[ekUpbit].BusyHogaRate := ReadInteger('BusyHogaRate_Upt')
+        else  App.Engine.ApiConfig.OrderLimit.OrderLimit[ekUpbit].BusyHogaRate := 2;
+
+        if ValueExists('OneTimeLimit_Bth' ) then
+          App.Engine.ApiConfig.OrderLimit.OrderLimit[ekBithumb].OneTimeLimit := ReadInteger('OneTimeLimit_Bth')
+        else App.Engine.ApiConfig.OrderLimit.OrderLimit[ekBithumb].OneTimeLimit := 30000000;
+        if ValueExists('OneDayLimit_Bth' ) then
+          App.Engine.ApiConfig.OrderLimit.OrderLimit[ekBithumb].OneDayLimit := ReadInteger('OneDayLimit_Bth')
+        else App.Engine.ApiConfig.OrderLimit.OrderLimit[ekBithumb].OneDayLimit := 500000000;
+        if ValueExists('SpreadRate_Bth' ) then
+          App.Engine.ApiConfig.OrderLimit.OrderLimit[ekBithumb].SpreadRate := ReadInteger('SpreadRate_Bth')
+        else App.Engine.ApiConfig.OrderLimit.OrderLimit[ekBithumb].SpreadRate := 5;
+        if ValueExists('BusyHogaRate_Bth' ) then
+          App.Engine.ApiConfig.OrderLimit.OrderLimit[ekBithumb].BusyHogaRate := ReadInteger('BusyHogaRate_Bth')
+        else  App.Engine.ApiConfig.OrderLimit.OrderLimit[ekBithumb].BusyHogaRate := 2;
+
+        if ValueExists('StartTime' ) then  StartTime := TDateTime( ReadFloat('StartTime'))
+        else StartTime := now;
+        if ValueExists('EndTime' ) then  EndTime := TDateTime( ReadFloat('EndTime') )
+        else EndTime := now;
+
+        if ValueExists('QuoteOrderLog1') then App.Engine.ApiConfig.QuoteOrderLog[0].Code := ReadString('QuoteOrderLog1')
+        else App.Engine.ApiConfig.QuoteOrderLog[0].Code := '';
+        if ValueExists('QuoteOrderLog2') then App.Engine.ApiConfig.QuoteOrderLog[1].Code := ReadString('QuoteOrderLog2')
+        else App.Engine.ApiConfig.QuoteOrderLog[1].Code := '';
+
+
+        if ValueExists('DepositLimit_Upt' ) then
+          App.Engine.ApiConfig.DnwLimit.DepositLimit[ekUpbit] := ReadInteger('DepositLimit_Upt')
+        else App.Engine.ApiConfig.DnwLimit.DepositLimit[ekUpbit] := 1;
+        if ValueExists('WithDrawLimit_Upt' ) then
+          App.Engine.ApiConfig.DnwLimit.WidthDrawLimit[ekUpbit] := ReadInteger('WithDrawLimit_Upt')
+        else App.Engine.ApiConfig.DnwLimit.WidthDrawLimit[ekUpbit] := 1;
+
+        if ValueExists('DepositLimit_Bth' ) then
+          App.Engine.ApiConfig.DnwLimit.DepositLimit[ekBithumb] := ReadInteger('DepositLimit_Bth')
+        else App.Engine.ApiConfig.DnwLimit.DepositLimit[ekBithumb] := 1;
+        if ValueExists('WithDrawLimit_Bth' ) then
+          App.Engine.ApiConfig.DnwLimit.WidthDrawLimit[ekBithumb] := ReadInteger('WithDrawLimit_Bth')
+        else  App.Engine.ApiConfig.DnwLimit.WidthDrawLimit[ekBithumb] := 1;
+
+//        // 수수료
+//        if ValueExists('bstt') then App.Engine.ApiConfig.SetFee(ekBinance, eaSpot,    scUSDT, ftTaker, ReadString('bstt'))
+//                               else App.Engine.ApiConfig.SetFee(ekBinance, eaSpot,    scUSDT, ftTaker, '0.05');
+//        if ValueExists('bsct') then App.Engine.ApiConfig.SetFee(ekBinance, eaSpot,    scUSDC, ftTaker, ReadString('bsct'))
+//                               else App.Engine.ApiConfig.SetFee(ekBinance, eaSpot,    scUSDC, ftTaker, '0.05');
+//        if ValueExists('bftt') then App.Engine.ApiConfig.SetFee(ekBinance, eaFutUsdt, scUSDT, ftTaker, ReadString('bftt'))
+//                               else App.Engine.ApiConfig.SetFee(ekBinance, eaFutUsdt, scUSDT, ftTaker, '0.05');
+//        if ValueExists('bfct') then App.Engine.ApiConfig.SetFee(ekBinance, eaFutUsdt, scUSDC, ftTaker, ReadString('bfct'))
+//                               else App.Engine.ApiConfig.SetFee(ekBinance, eaFutUsdt, scUSDC, ftTaker, '0.05');
+//        if ValueExists('uskt') then App.Engine.ApiConfig.SetFee(ekUpbit, eaSpot,    scKRW,  ftTaker, ReadString('uskt'))
+//                               else App.Engine.ApiConfig.SetFee(ekUpbit, eaSpot,    scKRW,  ftTaker, '0.05');
+//        if ValueExists('bskt') then App.Engine.ApiConfig.SetFee(ekBithumb, eaSpot,    scKRW,  ftTaker, ReadString('bskt'))
+//                               else App.Engine.ApiConfig.SetFee(ekBithumb, eaSpot,    scKRW,  ftTaker, '0.05');
+//
+//
+//        if ValueExists('bstm') then App.Engine.ApiConfig.SetFee(ekBinance, eaSpot,    scUSDT, ftMaker, ReadString('bstm'))
+//                               else App.Engine.ApiConfig.SetFee(ekBinance, eaSpot,    scUSDT, ftMaker, '0.05');
+//        if ValueExists('bscm') then App.Engine.ApiConfig.SetFee(ekBinance, eaSpot,    scUSDC, ftMaker, ReadString('bscm'))
+//                               else App.Engine.ApiConfig.SetFee(ekBinance, eaSpot,    scUSDC, ftMaker, '0.05');
+//        if ValueExists('bftm') then App.Engine.ApiConfig.SetFee(ekBinance, eaFutUsdt, scUSDT, ftMaker, ReadString('bftm'))
+//                               else App.Engine.ApiConfig.SetFee(ekBinance, eaFutUsdt, scUSDT, ftMaker, '0.05');
+//        if ValueExists('bftm') then App.Engine.ApiConfig.SetFee(ekBinance, eaFutUsdt, scUSDC, ftMaker, ReadString('bftm'))
+//                               else App.Engine.ApiConfig.SetFee(ekBinance, eaFutUsdt, scUSDC, ftMaker, '0.05');
+//        if ValueExists('uskm') then App.Engine.ApiConfig.SetFee(ekUpbit, eaSpot,    scKRW,  ftMaker, ReadString('uskm'))
+//                               else App.Engine.ApiConfig.SetFee(ekUpbit, eaSpot,    scKRW,  ftMaker, '0.05');
+//        if ValueExists('bskm') then App.Engine.ApiConfig.SetFee(ekBithumb, eaSpot,    scKRW,  ftMaker, ReadString('bskm'))
+//                               else App.Engine.ApiConfig.SetFee(ekBithumb, eaSpot,    scKRW,  ftMaker, '0.05');
+      end;
+    end;
+  finally
+    Free;
+  end;
+end;
+
+
+procedure TFrmDalinMain.AntiDebugEvent(const S: string);
+begin
+  FDetectedMsg := s;
+  caption :=   FDetectedMsg;
+end;
+
+procedure TFrmDalinMain.AppException(Sender: TObject; E: Exception);
+begin
+  //App.log( llError, 'Application Error : ' + E.Message );
+  //gEnv.AppMsg( WIN_ERR, 'Application Error : ' + E.Message );
+end;
+
+procedure TFrmDalinMain.FormCreate(Sender: TObject);
+begin
+
+  Application.OnException := AppException;
+  Application.HintPause := 10;
+  FCurrenctID := 0;
+
+  init;
+
+  if not App.LoadConfig then
+  begin
+    ShowMessage('환경설정 파일을 읽을수 없음');
+    PostMessage(Handle, WM_CLOSE, 0, 0);
+    Exit;
+
+  end;
+  // 필수 디렉토리 생성..
+  SetEnv;
+
+  if not CheckDpkFile  then
+  begin
+    PostMessage(Handle, WM_CLOSE, 0, 0);
+    Exit;
+  end;
+
+{$IFDEF DEBUG}
+
+  App.Entropy.Assign('0001');
+
+{$ELSE}
+
+  if not GetEntropy then
+  begin
+    ShowMessage('입력값이 없습니다.');
+    PostMessage(Handle, WM_CLOSE, 0, 0);
+    Exit;
+  end;
+
+{$ENDIF}
+
+
+  if not App.LoadKeys then
+  begin
+    ShowMessage('Key 정보를 로드 할수 없음.');
+    PostMessage(Handle, WM_CLOSE, 0, 0);
+    Exit;
+  end;
+
+  FCurrenctID := GetCurrentThreadId;
+  App.Log(llInfo, '', '---start---');
+
+  Caption := Format('%s-%s ver.%s', [Caption  , ifThenStr( App.Config.TradeMod, 'T', 'Q'),
+    FileVersionToStr(Application.ExeName)]);
+
+  stsBar.Panels[0].Text := FormatDateTime('MM-dd HH:NN',now) ;
+
+  FRestCheck  := true;
+  FExRateCheck:= true;
+
+end;
+
+procedure TFrmDalinMain.DalinStatusEvent(asType: TAppStatus);
+begin
+  AppStatusEvent(asType);
+end;
+
+procedure TFrmDalinMain.ExecuteSubApp;
+var
+  i : integer;
+begin
+  for I := 0 to High(App.Config.PrcsInfo) do
+    if App.Config.PrcsInfo[i].Active then
+      ExecuteSubApp(i);
+end;
+
+procedure TFrmDalinMain.ExecuteSubApp(idx: integer);
+var
+  sName : string;
+  sMsg  : AnsiString;
+begin
+
+  if idx = 1 then begin
+    // rest 일때
+    sName := Format('DLKP:%s',[FormatDateTime('nn:ss.zzz', now)]);
+    TSimpleShareMemory.Write(sName, AnsiString(App.Entropy.Reveal));
+    ExecuteApp( Handle, App.Config.PrcsInfo[idx].ClassName, App.Config.PrcsInfo[idx].AppName, sName);
+  end else
+    ExecuteApp( Handle, App.Config.PrcsInfo[idx].ClassName, App.Config.PrcsInfo[idx].AppName  );
+end;
+
+
+procedure TFrmDalinMain.finMonitorThread;
+begin
+  if Assigned(FMonitorThread) then
+  begin
+    FMonitorThread.Terminate;
+    FMonitorThread.WaitFor;
+    FMonitorThread.Free;
+    FMonitorThread  := nil;
+  end;
+end;
+
+function TFrmDalinMain.CheckDpkFile: boolean;
+var
+  sDir: string;
+begin
+
+  if not FileExists(App.DataDir + '/' + APK_FILE) then
+  begin
+    //if MessageDlg('Key 파일이 없습니다. Key 파일 만들고 다시 실행하세요', mtInformation, [mbYes, mbNo], 0) = mrYes then
+    if MessageBox(0, 'Key 파일이 없습니다. Key 파일 만들고 다시 실행하세요', '알림', MB_YESNO or MB_ICONINFORMATION or MB_TOPMOST) = mrYes then
+    begin
+      ExecuteApp( Handle, App.Config.PrcsInfo[2].ClassName
+        , App.Config.PrcsInfo[2].AppName  );
+    end else
+    begin
+      ShowMessage('Key 파일 없이는 실행불가. 종료합니다..');
+      Exit (false);
+    end;
+  end else
+    Result := true;
+end;
+
+procedure TFrmDalinMain.CheckRest;
+var
+  aH : THandle;
+begin
+  // REST 떠있나 체크..
+  if (App.AppStatus >= asShow) then
+  begin
+    aH := FindWindow( PChar(App.Config.PrcsInfo[1].ClassName), nil );
+    if aH <= 0 then
+    begin
+      if FRestCheck then begin
+        FRestCheck := false;
+        ShowMessage('Rest.exe 가 실행되지 않았습니다'+#13+#10+'국내 거래소로 주문이 불가한 상태입니다.');
+      end;
+    end else
+      FRestCheck := true;
+  end;
+
+  // ExRate 떠있나 체크..
+  if (App.AppStatus >= asShow) then
+  begin
+    aH := FindWindow( PChar(App.Config.PrcsInfo[0].ClassName), nil );
+    if aH <= 0 then
+    begin
+      if FExRateCheck then begin
+        FExRateCheck := false;
+        ShowMessage('ExRate.exe 가 실행되지 않았습니다'+#13+#10+'환율정보를 알수 없습니다..');
+      end;
+    end else
+      FExRateCheck := true;
+  end;
+
+end;
+
+procedure TFrmDalinMain.CloseSubApp;
+var
+  i : integer;
+begin
+
+  for I := 0 to 1 do
+    if App.Config.PrcsInfo[i].Active then
+      if App.Config.PrcsInfo[i].ClassName <> 'TFrmExRate' then
+        CloseApp( App.Config.PrcsInfo[i].ClassName );
+end;
+
+procedure TFrmDalinMain.FormActivate(Sender: TObject);
+begin
+//  SetWindowPos(Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NoMove or SWP_NoSize);
+end;
+
+procedure TFrmDalinMain.FormClose(Sender: TObject; var Action: TCloseAction);
+var
+  i : integer;
+begin
+  if not IsRealyClose then
+  begin
+    Action := caNone;
+    Exit;
+  end;
+
+  App.AppStatus := asClose;
+
+  QryTimer.Enabled := false;
+  // 각조 타이머 조회 종료
+  App.Engine.ApiManager.OrderDetailRequest(false);
+
+  if App.AppStatus > asLoad then
+    if gAOConfig <> nil then
+      gAOConfig.SaveEnv;
+//      App.Engine.FormBroker.Save( ComposeFilePath( [App.DataDir, App.Config.DATA_FILE] ) );
+
+  App.Engine.SymbolCore.PreUnSubscribe;
+
+  for i := ComponentCount-1 downto 0 do
+    if Components[i] is TForm then
+      Components[i].Free;
+
+  //App.Engine.DllFormLoader.FreeDll;
+
+  App.Log(llInfo, '', '--- Form Saved ---');
+  App.Engine.ApiManager.DisConnectAll;
+  App.Log(llInfo, '', '--- DisConnectAll ---');
+
+  CloseSubApp;
+
+  finMonitorThread;
+
+  Action := caFree;
+end;
+
+
+procedure TFrmDalinMain.FormDeactivate(Sender: TObject);
+begin
+// SetWindowPos(Handle, HWND_NOTOPMOST, 0, 0, 0, 0,
+//                     SWP_NoMove or SWP_NoSize);
+end;
+
+procedure TFrmDalinMain.FormDestroy(Sender: TObject);
+begin
+  //
+  App.Free;
+end;
+
+function TFrmDalinMain.GetEntropy: boolean;
+var
+  aF : TForm2;
+begin
+  Result := false;
+  aF := TForm2.Create(Self);
+  try
+    if aF.Open then
+      App.Entropy.Assign(af.edtInput.Text);
+
+    Result := not App.Entropy.IsEmpty;
+  finally
+    af.Free;
+  end;
+end;
+
+procedure TFrmDalinMain.GetExRate( bInit : boolean );
+begin
+  ReadExRate( bInit );
+//  stsBar.Panels[0].Text := Format(' %.2f', [ App.Engine.ApiManager.ExRate.GetExRate ] );
+end;
+
+procedure TFrmDalinMain.init;
+var
+  a : integer;
+begin
+  FMonitorThread  := nil;
+  App := TApp.Create;
+  FExRate := 0;
+  FDnw    := 0;
+
+  for a:= 0 to QWS_CNT-1 do
+    FMax[a] := 0;
+
+  FLogDate := now;
+  FStartDate  := Date;
+
+  initControls;
+end;
+
+
+procedure TFrmDalinMain.initControls;
+var
+  I: integer;
+begin
+  with sg do begin
+    RowCount := SG_ROW_CNT;
+    for I := 0 to SG_ROW_CNT-1 do
+      Cells[0, i] := RowName[i];
+  end;
+//  begin
+////    Cells[0,0]  := 'Bin 시세 S';
+//    Cells[0,0]  := 'Bin 시세 F';
+////    Cells[0,2]  := 'Bin 시세 F2';
+//    Cells[0,1]  := '업비트';
+//    Cells[0,2]  := '빗썸';
+//
+//    Cells[0,3]  := '환율';
+//
+//    Cells[0,4]  := 'Bin SND F';
+//    Cells[0,5]  := 'Bin RCV F';
+////    Cells[0,8]  := 'Bin 주문 F2';
+//    Cells[0,6]  := 'Upbit 체결';
+//    Cells[0,7]  := 'Bthm  체결';
+//  end;
+end;
+
+procedure TFrmDalinMain.IntegrityMonitor;
+begin
+  FMonitorThread := TIntegrityMonitorThread.Create(Self);
+  FMonitorThread.OnTerminateEvent := AntiDebugEvent;
+end;
+
+function  TFrmDalinMain.IsRealyClose : boolean;
+var
+  stLog : string;
+  I: TExchangeKind;
+  j: TExchangeApiType;
+  bExist : boolean;
+begin
+
+  bExist := false;
+  for I := ekBinance to High(TExchangeKind) do
+    if (App.Engine.TradeCore.Orders[i].ActiveOrders.Count > 0) or
+       (App.Engine.TradeCore.Orders[i].NewOrders.Count > 0) then
+    begin
+      bExist := true;
+      break;
+    end;
+
+  if bExist then
+  begin
+    stLog  := '미체결 주문이 존재합니다. 종료하시겠습니까?';
+    if (MessageDlg( stLog, mtInformation, [mbNo, mbYes], 0) = mrYes ) then
+      Result := true
+    else
+      Result := false;
+  end
+  else
+    Result := true;
+end;
+
+procedure TFrmDalinMain.SetEnv;
+begin
+  if not DirectoryExists(App.DataDir) then CreateDir(App.DataDir);
+//  if not DirectoryExists(App.QuoteDir) then CreateDir(App.QuoteDir);
+  if not DirectoryExists(App.LogDir) then CreateDir(App.LogDir);
+
+  App.OnAppStatusEvent := DalinStatusEvent;
+
+  if App.Config.VerifyMod then
+  begin
+    Panel1.Visible  := true;
+  end;
+
+end;
+
+procedure TFrmDalinMain.SetValue;
+begin
+  GetExRate( true );
+  QryTimer.Enabled := true;
+  // 구독/취소 이벤트 연결..
+  // 실행시 전종목 구독 으로 변경.
+  App.Engine.QuoteBroker.SetEvent;
+end;
+
+
+procedure TFrmDalinMain.QryTimerTimer(Sender: TObject);
+var
+  I, iRow: integer;
+  sTmp : string;
+  esk  : TExchangeSocketKind;
+  dmavg: double;
+  dtNow: TDateTime;
+  iTmp : array [0..QWS_CNT-1] of integer;
+begin
+
+  if FExRate >= GetInterval then
+  begin
+    FExRate := 0;
+    TTask.Run( procedure
+      begin
+        GetExRate( false );
+      end );
+
+//    DoSiseLog;
+  end;
+  inc(FExRate);
+
+  TTask.Run(procedure
+    begin
+      CheckRest;
+    end
+  );
+
+  if FDnw > 5 then
+  begin
+    if not App.Config.TradeMod then
+      DoSiseLog;
+    FDnw := 0;
+  end;
+
+  inc(FDnw);    iRow := 0;
+
+  with sg do
+  begin
+
+    Cells[1,iRow]  := IntToStr( App.Engine.ApiManager.ExManagers[ekBinance].QuoteSock[1].ConnectTry );
+    Cells[2,iRow]  := IntTostr( App.Engine.ApiManager.ExManagers[ekBinance].QuoteSock[1].RcvCnt );
+    Cells[5,iRow]  := App.Engine.ApiManager.ExManagers[ekBinance].QuoteSock[1].GetSockState;
+    inc(iRow);
+    Cells[1,iRow]  := IntToStr( App.Engine.ApiManager.ExManagers[ekUpbit].QuoteSock[0].ConnectTry );
+    Cells[2,iRow]  := IntTostr( App.Engine.ApiManager.ExManagers[ekUpbit].QuoteSock[0].RcvCnt );
+    Cells[5,iRow]  := App.Engine.ApiManager.ExManagers[ekUpbit].QuoteSock[0].GetSockState;
+    inc(iRow);
+    Cells[1,iRow]  := IntToStr( App.Engine.ApiManager.ExManagers[ekBithumb].QuoteSock[0].ConnectTry );
+    Cells[2,iRow]  := IntTostr( App.Engine.ApiManager.ExManagers[ekBithumb].QuoteSock[0].RcvCnt );
+    Cells[5,iRow]  := App.Engine.ApiManager.ExManagers[ekBithumb].QuoteSock[0].GetSockState;
+
+    //바이낸스
+    // --> usdt-m wesocketapi
+    iRow := EX_ROW+1;
+    Cells[1,iRow]  := IntToStr(TBinanceFutures(App.Engine.ApiManager.ExManagers[ekBinance].Exchanges[eaFutUsdt]).WsApi.ConnectTry );
+    Cells[2,iRow]  := IntTostr(TBinanceFutures(App.Engine.ApiManager.ExManagers[ekBinance].Exchanges[eaFutUsdt]).WsApi.RcvCnt );
+    Cells[3,iRow]  := IntTostr(TBinanceFutures(App.Engine.ApiManager.ExManagers[ekBinance].Exchanges[eaFutUsdt]).WsApi.LimitCnt(1) );
+    Cells[4,iRow]  := IntTostr(TBinanceFutures(App.Engine.ApiManager.ExManagers[ekBinance].Exchanges[eaFutUsdt]).WsApi.LimitCnt(2) );
+    Cells[5,iRow]  := TBinanceFutures(App.Engine.ApiManager.ExManagers[ekBinance].Exchanges[eaFutUsdt]).WsApi.GetSockState;
+    inc(iRow);
+    // usd-m
+    Cells[1,iRow]  := IntToStr( App.Engine.ApiManager.ExManagers[ekBinance].TradeSock[1].ConnectTry );
+    Cells[2,iRow]  := IntTostr( App.Engine.ApiManager.ExManagers[ekBinance].TradeSock[1].RcvCnt );
+    Cells[5,iRow]  := App.Engine.ApiManager.ExManagers[ekBinance].TradeSock[1].GetSockState;
+    inc(iRow);
+    //upbit 체결
+    Cells[1,iRow]  := IntToStr( App.Engine.ApiManager.ExManagers[ekUpbit].TradeSock[0].ConnectTry );
+    Cells[2,iRow]  := IntTostr( App.Engine.ApiManager.ExManagers[ekUpbit].TradeSock[0].RcvCnt );
+    Cells[5,iRow]  := App.Engine.ApiManager.ExManagers[ekUpbit].TradeSock[0].GetSockState;
+    inc(iRow);
+    //bithumb 체결
+    Cells[1,iRow]  := IntToStr( App.Engine.ApiManager.ExManagers[ekBithumb].TradeSock[0].ConnectTry );
+    Cells[2,iRow]  := IntTostr( App.Engine.ApiManager.ExManagers[ekBithumb].TradeSock[0].RcvCnt );
+    Cells[5,iRow]  := App.Engine.ApiManager.ExManagers[ekBithumb].TradeSock[0].GetSockState;
+
+    //Cells[1, EX_ROW]  := App.Engine.ApiManager.ExRate.LastUpdateBetween.ToString;
+    Cells[2, EX_ROW]  := Format('%.2n', [App.Engine.ApiManager.ExRate.GetExRate]);
+    dmavg := App.Engine.ApiManager.ExRate.GetAvgExRate(15);
+    if CheckZero(dmavg) then
+      Cells[5,EX_ROW]  := Format('%.2f', [ App.Engine.ApiManager.ExRate.GetExRate] )
+    else
+      Cells[5,EX_ROW]  := Format('%.2f', [ abs(App.Engine.ApiManager.ExRate.GetExRate - dmavg) / dmavg * 100 ] );
+
+    dtNow := now;
+
+//    iTmp[0] := SecondsBetween(dtNow, App.Engine.ApiManager.ExManagers[ekBinance].QuoteSock[0].LiveTime);
+    iTmp[0] := SecondsBetween(dtNow, App.Engine.ApiManager.ExManagers[ekBinance].QuoteSock[1].LiveTime);
+  //  iTmp[2] := SecondsBetween(dtNow, App.Engine.ApiManager.ExManagers[ekBinance].QuoteSock[2].LiveTime);
+    iTmp[1] := SecondsBetween(dtNow, App.Engine.ApiManager.ExManagers[ekUpbit].QuoteSock[0].LiveTime);
+    iTmp[2] := SecondsBetween(dtNow, App.Engine.ApiManager.ExManagers[ekBithumb].QuoteSock[0].LiveTime);
+    iTmp[3] := SecondsBetween(dtNow, App.Engine.ApiManager.ExRate.LastTime );
+
+    if App.AppStatus >= asShow then
+      for i := 0 to High(iTmp) do
+      begin
+        if FMax[i]<iTmp[i] then
+          FMax[i] := iTmp[i];
+
+        Cells[3,i]  := IntToStr( iTmp[i]);
+        Cells[4,i]  := IntToStr( FMax[i]);
+      end;
+  end;
+
+  stsBar.Panels[1].Text := FormatDateTime('yyyy-mm-dd hh:nn:ss', now) ;
+  stsBar.Panels[2].Text := Format('S(%d) R(%d)', [
+    App.Engine.SharedManager.SndCount, App.Engine.SharedManager.RcvCount
+     ]  );
+
+end;
+
+function TFrmDalinMain.GetInterval : integer;
+begin
+  Result := StrToIntDef( edtExInterval.Text, 10 ) ;
+end;
+
+procedure TFrmDalinMain.Button1Click(Sender: TObject);
+begin
+  GetExRate( false );
+  QryTimer.Interval :=  GetInterval;
+end;
+
+
+
+procedure TFrmDalinMain.SaveEnv( aStorage : TStorage );
+begin
+  if aStorage = nil then Exit;
+
+  aStorage.FieldByName('Left').AsInteger := Left;
+  aStorage.FieldByName('Top').AsInteger := Top;
+  aStorage.FieldByName('width').AsInteger := Width;
+  aStorage.FieldByName('Height').AsInteger := Height;
+
+  aStorage.FieldByName('ExRateInterval').AsString := edtExInterval.Text;
+  aStorage.FieldByName('mExRate').AsString := edit1.Text  ;
+  aStorage.FieldByName('UseManual').AsBoolean := cbManual.Checked;
+
+end;
+
+procedure TFrmDalinMain.LoadEnv( aStorage : TStorage );
+var
+  isSave : boolean;
+begin
+  if aStorage = nil then Exit;
+  Left  := aStorage.FieldByName('Left').AsInteger;
+  Top   := aStorage.FieldByName('Top').AsInteger;
+
+  Width := aStorage.FieldByName('width').AsInteger;
+  Height:= aStorage.FieldByName('Height').AsInteger;
+
+  edtExInterval.Text  := aStorage.FieldByName('ExRateInterval').AsStringDef( '10');
+  edit1.Text          := aStorage.FieldByName('mExRate').AsStringDef('0');
+  cbManual.Checked    := aStorage.FieldByName('UseManual').AsBooleanDef(false);
+end;
+
+
+
+procedure TFrmDalinMain.DoSiseLog;
+var
+  tNow : TDateTime;
+  sData: array of String;
+  sFileName, sLog : string;
+  i, idx : integer;
+  //aSymbol : TSymbol;
+
+  procedure PutData( val : string );
+  begin
+    sData[idx] := val;
+    inc(idx);
+  end;
+
+begin
+
+  const iPre = 3;
+
+  tNow := now;
+
+  SetLength( sData, 28 );      idx := 0;
+
+  PutData(FormatDateTime(' yyyy-mm-dd', tNow ));
+  PutData(FormatDateTime(' hh:nn:ss', tNow ));
+
+  with App.Engine do
+  begin
+    PutData( FmtString( 2, ApiManager.ExRate.Value, 1) );
+
+    PutData( FmtString( 2, SymbolCore.MainSymbols[msBTC][ekUpbit].WDCPrice, 1) );
+    PutData( FmtString( 3, SymbolCore.MainSymbols[msBTC][ekUpbit].KimpPrice, 1) );
+    PutData( FmtString( 3, SymbolCore.MainSymbols[msBTC][ekBithumb].KimpPrice, 1) );
+
+    PutData( FmtString( 3, SymbolCore.MainSymbols[msXRP][ekUpbit].KimpPrice, 1) );
+    PutData( FmtString( 3, SymbolCore.MainSymbols[msXRP][ekBithumb].KimpPrice, 1) );
+
+    PutData( FmtString( 3, ApiManager.ExManagers[ekUpbit].TopAmtSymbols[0].KimpPrice, 1) );
+    PutData( FmtString( 3, ApiManager.ExManagers[ekUpbit].TopAmtSymbols[1].KimpPrice, 1) );
+
+    PutData( FmtString( 3, ApiManager.ExManagers[ekBithumb].TopAmtSymbols[0].KimpPrice, 1) );
+    PutData( FmtString( 3, ApiManager.ExManagers[ekBithumb].TopAmtSymbols[1].KimpPrice, 1) );
+
+    // 이하 SP
+    PutData( Format('%.*f', [ iPre, SymbolCore.MainSymbols[msBTC][ekUpbit].SPValue[0] ]) ) ;
+    PutData( Format('%.*f', [ iPre, SymbolCore.MainSymbols[msBTC][ekUpbit].SPValue[1] ]) ) ;
+
+    PutData( Format('%.*f', [ iPre, SymbolCore.MainSymbols[msXRP][ekUpbit].SPValue[0] ]) ) ;
+    PutData( Format('%.*f', [ iPre, SymbolCore.MainSymbols[msXRP][ekUpbit].SPValue[1] ]) ) ;
+    // U1
+    PutData( Format('%.*f', [ iPre, ApiManager.ExManagers[ekUpbit].TopAmtSymbols[0].SPValue[0] ]) ) ;
+    PutData( Format('%.*f', [ iPre, ApiManager.ExManagers[ekUpbit].TopAmtSymbols[0].SPValue[1] ]) ) ;
+    // U2
+    PutData( Format('%.*f', [ iPre, ApiManager.ExManagers[ekUpbit].TopAmtSymbols[1].SPValue[0] ]) ) ;
+    PutData( Format('%.*f', [ iPre, ApiManager.ExManagers[ekUpbit].TopAmtSymbols[1].SPValue[1] ]) ) ;
+//    // B1
+//    PutData( Format('%.*f', [ iPre, ApiManager.ExManagers[ekBithumb].TopAmtSymbols[0].SPValue[0] ]) ) ;
+//    PutData( Format('%.*f', [ iPre, ApiManager.ExManagers[ekBithumb].TopAmtSymbols[0].SPValue[1] ]) ) ;
+//    // B2
+//    PutData( Format('%.*f', [ iPre, ApiManager.ExManagers[ekBithumb].TopAmtSymbols[1].SPValue[0] ]) ) ;
+//    PutData( Format('%.*f', [ iPre, ApiManager.ExManagers[ekBithumb].TopAmtSymbols[1].SPValue[1] ]) ) ;
+
+    PutData( IntToStr(SecondsBetween(tNow, ApiManager.ExManagers[ekBinance].QuoteSock[1].LiveTime) ));
+    PutData( IntToStr(SecondsBetween(tNow, ApiManager.ExManagers[ekUpbit].QuoteSock[0].LiveTime) ));
+    PutData( IntToStr(SecondsBetween(tNow, ApiManager.ExManagers[ekBithumb].QuoteSock[0].LiveTime) ));
+    PutData( IntToStr(SecondsBetween(tNow, ApiManager.ExRate.LastTime) ));
+
+    PutData( ApiManager.ExManagers[ekUpbit].TopAmtSymbols[0].Spec.BaseCode ) ;
+    PutData( ApiManager.ExManagers[ekUpbit].TopAmtSymbols[1].Spec.BaseCode ) ;
+    PutData( ApiManager.ExManagers[ekBithumb].TopAmtSymbols[0].Spec.BaseCode ) ;
+    PutData( ApiManager.ExManagers[ekBithumb].TopAmtSymbols[1].Spec.BaseCode ) ;
+
+  end;
+
+  sLog := '';
+  for I := 0 to High(sData) do
+    if i > 0 then
+      sLog := sLog + ',' + sData[i]
+    else
+      sLog := sData[i];
+
+  sFileName := Format( 'KWSP_%s', [ FormatDateTime('yyyy-mm-dd',  FLogDate ) ] );
+
+  App.Log(llInfo, sFileName,  sLog );
+
+  i := DaysBetween( tNow, FLogDate);
+  if i > 7 then
+    FLogDate := tNow;
+
+//  App.Log(llInfo, 'Sise_Delay', ' %s , %.2f, %.2f, %.2f, %.2f, %.2f, %d , %.2f, %.2f, %.2f, %.2f, %.2f, %d ', [
+//    FormatDatetime('yyyy-mm-dd hh:nn:ss', now)
+//    ,App.ExData[ekUpbit].Delay.DelayMS
+//    ,App.Engine.SymbolCore.MainSymbols[msBTC][ekUpbit].DelayMS/1000
+//    ,App.Engine.SymbolCore.MainSymbols[msXRP][ekUpbit].DelayMS/1000
+//    ,App.Engine.ApiManager.ExManagers[ekUpbit].TopAmtSymbols[0].DelayMS/1000
+//    ,App.Engine.ApiManager.ExManagers[ekUpbit].TopAmtSymbols[1].DelayMS/1000
+//    ,App.Engine.ApiManager.ExManagers[ekUpbit].QuoteSock[0].ConnectTry
+//
+//    ,App.ExData[ekBithumb].Delay.DelayMS
+//    ,App.Engine.SymbolCore.MainSymbols[msBTC][ekBithumb].DelayMS/1000
+//    ,App.Engine.SymbolCore.MainSymbols[msXRP][ekBithumb].DelayMS/1000
+//    ,App.Engine.ApiManager.ExManagers[ekBithumb].TopAmtSymbols[0].DelayMS/1000
+//    ,App.Engine.ApiManager.ExManagers[ekBithumb].TopAmtSymbols[1].DelayMS/1000
+//    ,App.Engine.ApiManager.ExManagers[ekBithumb].QuoteSock[0].ConnectTry
+//  ]  );
+end;
+
+procedure TFrmDalinMain.ReadExRate(bInit: Boolean);
+var
+  FileName, DataPath: string;
+  Lines: TArray<string>;
+  Line: string;
+  DataParts: TArray<string>;
+begin
+  // 1. 수동 입력 모드 처리
+  if cbManual.Checked and (not bInit) then
+  begin
+    App.Engine.ApiManager.ExRate.Value := StrToFloatDef(edit1.Text, App.Engine.ApiManager.ExRate.Value);
+    Exit;
+  end;
+
+  DataPath := TPath.Combine(ExtractFilePath(ParamStr(0)), 'Data');
+
+  // 2. 전체 파일 경로 결정 (문자열 변수에 저장)
+  FileName := TPath.Combine(DataPath, 'exchangeRate.log');
+
+  // 3. 파일 존재 여부 확인
+  if not TFile.Exists(FileName) then Exit;
+
+  try
+    // 4. 파일 읽기 (TFile.ReadAllLines는 파일을 열고, 읽고, 닫는 과정을 자동으로 처리)
+    // 메모리 효율을 위해 모든 라인을 배열로 가져옵니다.
+    Lines := TFile.ReadAllLines(FileName, TEncoding.UTF8);
+
+    // 5. 데이터 파싱
+    for Line in Lines do
+    begin
+      if Line.IsEmpty then Continue;
+
+      DataParts := Line.Split([',']);
+
+      if Length(DataParts) = 2 then
+      begin
+        // GetStrToTime은 사용자 정의 함수로 유지, 데이터 업데이트
+        App.Engine.ApiManager.ExRate.LastTime := GetStrToTime(DataParts[0], 0);
+        App.Engine.ApiManager.ExRate.Value := StrToFloatDef(DataParts[1], 0);
+      end;
+    end;
+
+  except
+    on E: Exception do
+    begin
+      // 6. 에러 로깅 (IsErrorOccur 대신 표준 예외 처리 사용)
+      App.Log(llError, Format('Order No File IO Error: %s (File: %s)', [E.Message, FileName]));
+    end;
+  end;
+end;
+         {
+procedure TFrmDalinMain.ReadExRate( bInit : boolean );
+var
+  f : TextFile;  bOK : boolean;
+  stData, FileName : string;
+  bExist : boolean;
+
+  dTmp : double;
+  function IsErrorOccur(iRes: integer; st: string): Boolean;
+  begin
+    Result := true;
+
+    if iRes <> 0 then begin
+      App.Log(llError, 'Order No File IO Error ( '+ st + InttoStr( GetLastError ) +' ) ');
+      Result := false;
+    end;
+  end;
+
+begin
+
+  if (cbManual.Checked) and ( not bInit ) then
+  begin
+    dTmp :=  App.Engine.ApiManager.ExRate.Value;
+    App.Engine.ApiManager.ExRate.Value := StrToFloatDef( edit1.Text, dtmp);
+    Exit;
+  end;
+
+  FileName := ExtractFilePath(ParamStr(0))+'Data\';
+  FileName := FileName + 'exchangeRate.log';
+
+  bExist  := FileExists(FileName);
+
+  if not bExist then
+    Exit;
+
+  AssignFile( f, FileName );
+  {$I-}    {
+  Reset( f );
+  bOK := IsErrorOccur(IOResult, 'Reset');    // 런타임시 IO 에러 체크..
+  {$I+}
+          {
+  if not bOK then
+  begin
+    CloseFile(f);
+    Exit;
+  end;
+
+  Try
+    While( not Eoln(f) ) do
+    Begin
+      {$I-}         {
+      ReadLn( f, stData );
+      bOK := IsErrorOccur(IOResult, 'ReadLn');    // 런타임시 IO 에러 체크..
+      {$I+}            {
+      If not bOK then ConTinue;
+      // stData : 07:36:23,1417.00
+      var tmp  : TArray<string>;
+      var iLen : integer;
+      tmp := stData.Split([',']);
+
+      iLen:= Length(tmp);
+      if iLen = 2 then begin
+        App.Engine.ApiManager.ExRate.LastTime := GetStrToTime( tmp[0], 0 );
+        App.Engine.ApiManager.ExRate.Value := StrToFloat( tmp[1]);
+      end;
+
+    End;
+
+  finally
+    CloseFile(f);
+  end;
+end;
+        }
+
+procedure TFrmDalinMain.Start;
+begin
+  if FCurrenctID > 0 then
+    App.AppStatus := asinit;
+end;
+
+function TFrmDalinMain.GetRect( oRect : TRect ) : TRect ;
+begin
+  Result := Rect( oRect.Left, oRect.Top, oRect.Right, oRect.Bottom );
+end;
+
+procedure TFrmDalinMain.stsBarDrawPanel(StatusBar: TStatusBar;
+  Panel: TStatusPanel; const Rect: TRect);
+  var
+    oRect : TRect;
+begin
+  if stsBar.Tag >= 0 then begin
+    StatusBar.Canvas.Brush.Color := clBtnFace;
+    StatusBar.Canvas.Font.Color := clBlack;
+  end
+  else if stsBar.Tag < 0 then begin
+    StatusBar.Canvas.Brush.Color := clRed;
+    StatusBar.Canvas.Font.Color := clWhite;
+  end;
+
+  StatusBar.Canvas.FillRect( Rect );
+  oRect := GetRect( Rect );
+  DrawText( stsBar.Canvas.Handle, PChar( stsBar.Panels[2].Text ),
+    Length( stsBar.Panels[2].Text ),
+    oRect, DT_VCENTER or DT_LEFT )    ;
+end;
+
+procedure TFrmDalinMain.OnDetectedDebug(var msg: TMessage);
+begin
+  finMonitorThread;
+
+  ShowMessage('디버거 탐지 - '+ FDetectedMsg + ' ! 종료합니다.');
+
+  App.Log(llError, '디버거 탐지 - '+ FDetectedMsg + ' ! 종료합니다.');
+
+  Close;
+end;
+
+procedure TFrmDalinMain.OnExRateMessage(var msg: TMessage);
+begin
+  // 상태 메세지
+  if msg.WParam = 100 then
+  begin
+    if msg.LParam = 99 then begin
+      stsBar.Panels[2].Text := 'ExRate : Closed';
+      stsBar.Tag := -1;
+    end
+    else begin
+      stsBar.Panels[2].Text := 'ExRate : Open';
+      stsBar.Tag := 0;
+    end;
+  end;
+//	copyDataStruct := Pointer(Msg.LParam);  	
+//	Filename := PChar(copyDataStruct.lpData);
+//  caption  := FileName + ' ' + intTostr(msg.WParam);
+end;
+
+
+
+end.

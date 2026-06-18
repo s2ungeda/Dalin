@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BorlandProject>
+	<Transactions>
+    <Transaction>1899-12-30 00:00:00.000.647,C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit2.pas=C:\project\Dalin_20260102\api\exRate\Unit2.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.035,=C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit2.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.647,C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit2.dfm=C:\project\Dalin_20260102\api\exRate\Unit2.dfm</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.877,C:\project\Dalin_20260102\api\exRate\Project2.dproj=C:\project\Dalin_20260102\api\exRate\exRate.dproj</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.586,C:\Users\USER\Documents\Embarcadero\Studio\Projects\Project2.dproj=C:\project\Dalin_20260102\api\exRate\Project2.dproj</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.264,C:\project\Dalin_2026\exRate.dproj=C:\project\Dalin_2026\Src\app\exRate\exRate.dproj</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.408,=C:\project\Dalin_20260102\api\exRate\UQueryExRate.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.794,C:\project\Dalin_2026\Src\app\exRate\exRate.dproj=C:\project\Dalin_2026\exRate.dproj</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.788,=C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit2.pas</Transaction>
+    <Transaction>1899-12-30 00:00:00.000.190,=C:\Users\USER\Documents\Embarcadero\Studio\Projects\Unit2.pas</Transaction>
+  </Transactions>
+</BorlandProject>

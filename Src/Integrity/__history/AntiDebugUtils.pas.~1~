@@ -1,0 +1,68 @@
+unit AntiDebugUtils;
+
+interface
+
+function IsDebuggerPresentDelphi: Boolean;
+function IsRemoteDebuggerPresentDelphi: Boolean;
+function HasHardwareBreakpoints: Boolean;
+function IsBeingDebugged: Boolean;
+
+implementation
+
+uses
+  Windows,
+  SysUtils ,
+  Dialogs
+  ;
+
+function IsDebuggerPresentDelphi: Boolean;
+begin
+  Result := Windows.IsDebuggerPresent;
+end;
+
+function IsRemoteDebuggerPresentDelphi: Boolean;
+var
+  IsRemotePresent: BOOL;
+begin
+  Result := False;
+  if CheckRemoteDebuggerPresent(GetCurrentProcess, IsRemotePresent) then
+    Result := IsRemotePresent;
+end;
+
+function HasHardwareBreakpoints: Boolean;
+var
+  ctx: CONTEXT;
+begin
+  Result := False;
+  ZeroMemory(@ctx, SizeOf(ctx));
+  ctx.ContextFlags := CONTEXT_DEBUG_REGISTERS;
+
+  if GetThreadContext(GetCurrentThread, ctx) then
+  begin
+    if (ctx.Dr0 <> 0) or (ctx.Dr1 <> 0) or (ctx.Dr2 <> 0) or (ctx.Dr3 <> 0) then
+      Result := True;
+  end;
+end;
+
+function IsBeingDebugged: Boolean;
+var
+  d1, d2, d3: boolean;
+begin
+//  Result := IsDebuggerPresentDelphi or
+//            IsRemoteDebuggerPresentDelphi or
+//            HasHardwareBreakpoints;
+
+  d1 := IsDebuggerPresentDelphi;
+  d2 := IsRemoteDebuggerPresentDelphi;
+  d3 := HasHardwareBreakpoints;
+
+
+  ShowMessage(Format(
+    'DebuggerPresent=%s\nRemote=%s\nHWBP=%s',
+    [BoolToStr(d1, True), BoolToStr(d2, True), BoolToStr(d3, True)]));
+
+  Result := d1 or d2 or d3;
+end;
+
+end.
+

@@ -1,0 +1,27 @@
+unit UExchangeData;
+
+interface
+
+uses
+  System.Classes, System.SysUtils
+  , UApiTypes
+  ;
+
+type
+
+  TDelayInfo = record
+    DelayMS : double;
+    BTCMS   : double;
+    ETHMS   : double;
+    XRPMS   : double;
+  end;
+
+  TExchangeData = record
+    DelayMS : TDelayInfo;
+  end;
+
+  TExhcnageDataArray = array [ TExchangeKind] of  TExchangeData;
+
+implementation
+
+end.

@@ -1,0 +1,380 @@
+unit UDirectSounds;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.DirectSound, Winapi.ActiveX, Winapi.MMSystem,
+  System.Classes, System.SysUtils, System.Generics.Collections;
+
+type
+  TSoundItem = class
+  private
+    FBuffer: IDirectSoundBuffer;
+    FLastPlayTick: UInt64;
+    FMinInterval: UInt64;
+    FName: string;
+  public
+    constructor Create(ABuffer: IDirectSoundBuffer; const AName: string; AInterval: UInt64 = 0);
+    destructor Destroy; override;
+    procedure Play;
+    procedure SetVolume(AVolume: Integer);
+    property Name: string read FName;
+  end;
+
+  TDirectSoundManager = class
+  private
+    FDirectSound: IDirectSound8;
+    FSounds: TObjectList<TSoundItem>;
+    FDefaultInterval: UInt64;
+    function CreateBufferFromFile(const FileName: string): IDirectSoundBuffer;
+    function CreateBufferFromMemory(WaveData: Pointer; DataSize: DWORD;
+      var WaveFormat: TWaveFormatEx): IDirectSoundBuffer;
+  public
+    constructor Create(WindowHandle: HWND; ADefaultInterval: UInt64 = 20);
+    destructor Destroy; override;
+
+    // 사운드 관리
+    function AddSound(const FileName: string; const SoundName: string;
+                      AInterval: Integer = -1): Integer;  // -1이면 기본값 사용
+    procedure ReplaceSound(Index: Integer; const FileName: string;
+                           const SoundName: string; AInterval: Integer = -1);
+    procedure ClearSounds;
+    function SoundCount: Integer;
+    function GetSoundName(Index: Integer): string;
+
+    // 재생
+    procedure PlaySound(Index: Integer);
+    procedure SetVolume(Index: Integer; AVolume: Integer);
+
+    // 상태
+    function IsHealthy: Boolean;
+  end;
+
+implementation
+
+{ TSoundItem }
+
+constructor TSoundItem.Create(ABuffer: IDirectSoundBuffer; const AName: string;
+  AInterval: UInt64);
+begin
+  inherited Create;
+  FBuffer := ABuffer;
+  FName := AName;
+  FMinInterval := AInterval;
+  FLastPlayTick := 0;
+end;
+
+destructor TSoundItem.Destroy;
+begin
+  if FBuffer <> nil then
+  begin
+    try
+      FBuffer.Stop;
+      FBuffer := nil;
+    except
+      // 무시
+    end;
+  end;
+  inherited;
+end;
+
+procedure TSoundItem.Play;
+var
+  CurrentTick: UInt64;
+begin
+  if FBuffer = nil then Exit;
+
+  CurrentTick := GetTickCount64;
+
+  // Rate Limit
+  if (FMinInterval > 0) and ((CurrentTick - FLastPlayTick) < FMinInterval) then
+    Exit;
+
+  FBuffer.SetCurrentPosition(0);
+  if Succeeded(FBuffer.Play(0, 0, 0)) then
+    FLastPlayTick := CurrentTick;
+end;
+
+procedure TSoundItem.SetVolume(AVolume: Integer);
+begin
+  if FBuffer = nil then Exit;
+
+  if AVolume > 0 then AVolume := 0;
+  if AVolume < -10000 then AVolume := -10000;
+
+  FBuffer.SetVolume(AVolume);
+end;
+
+{ TDirectSoundManager }
+
+constructor TDirectSoundManager.Create(WindowHandle: HWND; ADefaultInterval: UInt64);
+var
+  HR: HRESULT;
+begin
+  inherited Create;
+  FSounds := TObjectList<TSoundItem>.Create(True);  // OwnsObjects
+  FDefaultInterval := ADefaultInterval;
+
+  HR := DirectSoundCreate8(nil, FDirectSound, nil);
+  if Failed(HR) then
+    raise Exception.Create('DirectSound 초기화 실패: ' + IntToHex(HR, 8));
+
+  HR := FDirectSound.SetCooperativeLevel(WindowHandle, DSSCL_PRIORITY);
+  if Failed(HR) then
+  begin
+    FDirectSound := nil;
+    raise Exception.Create('SetCooperativeLevel 실패: ' + IntToHex(HR, 8));
+  end;
+end;
+
+destructor TDirectSoundManager.Destroy;
+begin
+  // 사운드 리스트 해제
+  FreeAndNil(FSounds);
+
+  // DirectSound 해제
+  FDirectSound := nil;
+
+  inherited;
+end;
+
+function TDirectSoundManager.CreateBufferFromFile(const FileName: string): IDirectSoundBuffer;
+
+  function ChunkIs(const ID: array of AnsiChar; const Match: AnsiString): Boolean;
+  begin
+    Result := CompareMem(@ID[0], @Match[1], 4);
+  end;
+
+var
+  Stream: TFileStream;
+  ChunkID: array[0..3] of AnsiChar;
+  ChunkSize: DWORD;
+  WaveFormat: TWaveFormatEx;
+  FmtChunk: packed record
+    wFormatTag: WORD;
+    nChannels: WORD;
+    nSamplesPerSec: DWORD;
+    nAvgBytesPerSec: DWORD;
+    nBlockAlign: WORD;
+    wBitsPerSample: WORD;
+  end;
+  cbSize: WORD;
+  WaveData: Pointer;
+  DataSize: DWORD;
+  FmtFound, DataFound: Boolean;
+begin
+  Result := nil;
+  WaveData := nil;
+
+  if not FileExists(FileName) then Exit;
+
+  Stream := TFileStream.Create(FileName, fmOpenRead or fmShareDenyWrite);
+  try
+    if Stream.Size < 44 then Exit;
+
+    Stream.Read(ChunkID, 4);
+    if not ChunkIs(ChunkID, 'RIFF') then Exit;
+
+    Stream.Read(ChunkSize, 4);
+
+    Stream.Read(ChunkID, 4);
+    if not ChunkIs(ChunkID, 'WAVE') then Exit;
+
+    FmtFound := False;
+    DataFound := False;
+    DataSize := 0;
+
+    while (Stream.Position < Stream.Size) and (not (FmtFound and DataFound)) do
+    begin
+      if Stream.Size - Stream.Position < 8 then Break;
+
+      if Stream.Read(ChunkID, 4) < 4 then Break;
+      Stream.Read(ChunkSize, 4);
+
+      if ChunkIs(ChunkID, 'fmt ') then
+      begin
+        if ChunkSize < 16 then Exit;
+
+        Stream.Read(FmtChunk, 16);
+
+        if FmtChunk.wFormatTag <> WAVE_FORMAT_PCM then Exit;
+
+        WaveFormat.wFormatTag := FmtChunk.wFormatTag;
+        WaveFormat.nChannels := FmtChunk.nChannels;
+        WaveFormat.nSamplesPerSec := FmtChunk.nSamplesPerSec;
+        WaveFormat.nAvgBytesPerSec := FmtChunk.nAvgBytesPerSec;
+        WaveFormat.nBlockAlign := FmtChunk.nBlockAlign;
+        WaveFormat.wBitsPerSample := FmtChunk.wBitsPerSample;
+
+        if ChunkSize >= 18 then
+        begin
+          Stream.Read(cbSize, 2);
+          WaveFormat.cbSize := cbSize;
+
+          if ChunkSize > 18 then
+            Stream.Seek(ChunkSize - 18, soCurrent);
+        end
+        else
+        begin
+          WaveFormat.cbSize := 0;
+
+          if ChunkSize > 16 then
+            Stream.Seek(ChunkSize - 16, soCurrent);
+        end;
+
+        FmtFound := True;
+      end
+      else if ChunkIs(ChunkID, 'data') then
+      begin
+        DataSize := ChunkSize;
+        if DataSize > 0 then
+        begin
+          GetMem(WaveData, DataSize);
+          Stream.Read(WaveData^, DataSize);
+          DataFound := True;
+        end;
+      end
+      else
+      begin
+        if ChunkSize > 0 then
+          Stream.Seek(ChunkSize, soCurrent);
+      end;
+    end;
+
+    if FmtFound and DataFound and (WaveData <> nil) and (DataSize > 0) then
+      Result := CreateBufferFromMemory(WaveData, DataSize, WaveFormat);
+
+  finally
+    if WaveData <> nil then
+      FreeMem(WaveData);
+    Stream.Free;
+  end;
+end;
+
+function TDirectSoundManager.CreateBufferFromMemory(WaveData: Pointer;
+  DataSize: DWORD; var WaveFormat: TWaveFormatEx): IDirectSoundBuffer;
+var
+  DSBD: TDSBufferDesc;
+  P1, P2: Pointer;
+  S1, S2: DWORD;
+  HR: HRESULT;
+  SafeFormat: TWaveFormatEx;
+begin
+  Result := nil;
+
+  if (WaveData = nil) or (DataSize = 0) then Exit;
+
+  SafeFormat := WaveFormat;
+  SafeFormat.cbSize := 0;
+
+  ZeroMemory(@DSBD, SizeOf(TDSBufferDesc));
+  DSBD.dwSize := SizeOf(TDSBufferDesc);
+  DSBD.dwFlags := DSBCAPS_CTRLVOLUME or DSBCAPS_GLOBALFOCUS;
+  DSBD.dwBufferBytes := DataSize;
+  DSBD.lpwfxFormat := @SafeFormat;
+
+  HR := FDirectSound.CreateSoundBuffer(DSBD, Result, nil);
+  if Failed(HR) then Exit;
+
+  P2 := nil;
+  S2 := 0;
+
+  HR := Result.Lock(0, DataSize, @P1, @S1, @P2, @S2, 0);
+  if Failed(HR) then
+  begin
+    Result := nil;
+    Exit;
+  end;
+
+  try
+    Move(WaveData^, P1^, S1);
+
+    if (P2 <> nil) and (S2 > 0) then
+      Move(Pointer(NativeUInt(WaveData) + S1)^, P2^, S2);
+  finally
+    Result.Unlock(P1, S1, P2, S2);
+  end;
+end;
+
+function TDirectSoundManager.AddSound(const FileName: string;
+  const SoundName: string; AInterval: Integer): Integer;
+var
+  Buffer: IDirectSoundBuffer;
+  Sound: TSoundItem;
+  EffectiveInterval: UInt64;
+begin
+  Result := -1;
+
+  Buffer := CreateBufferFromFile(FileName);
+  if Buffer = nil then Exit;
+
+  // -1이면 기본값 사용
+  if AInterval < 0 then
+    EffectiveInterval := FDefaultInterval
+  else
+    EffectiveInterval := UInt64(AInterval);
+
+  Sound := TSoundItem.Create(Buffer, SoundName, EffectiveInterval);
+  Result := FSounds.Add(Sound);
+end;
+
+procedure TDirectSoundManager.ReplaceSound(Index: Integer; const FileName: string;
+  const SoundName: string; AInterval: Integer);
+var
+  Buffer: IDirectSoundBuffer;
+  NewSound: TSoundItem;
+  EffectiveInterval: UInt64;
+begin
+  if (Index < 0) or (Index >= FSounds.Count) then Exit;
+
+  Buffer := CreateBufferFromFile(FileName);
+  if Buffer = nil then Exit;
+
+  // -1이면 기본값 사용
+  if AInterval < 0 then
+    EffectiveInterval := FDefaultInterval
+  else
+    EffectiveInterval := UInt64(AInterval);
+
+  NewSound := TSoundItem.Create(Buffer, SoundName, EffectiveInterval);
+
+  // OwnsObjects=True이므로 대입 시 기존 객체 자동 해제
+  FSounds[Index] := NewSound;
+end;
+
+procedure TDirectSoundManager.ClearSounds;
+begin
+  FSounds.Clear;
+end;
+
+function TDirectSoundManager.SoundCount: Integer;
+begin
+  Result := FSounds.Count;
+end;
+
+function TDirectSoundManager.GetSoundName(Index: Integer): string;
+begin
+  if (Index >= 0) and (Index < FSounds.Count) then
+    Result := FSounds[Index].Name
+  else
+    Result := '';
+end;
+
+procedure TDirectSoundManager.PlaySound(Index: Integer);
+begin
+  if (Index >= 0) and (Index < FSounds.Count) then
+    FSounds[Index].Play;
+end;
+
+procedure TDirectSoundManager.SetVolume(Index: Integer; AVolume: Integer);
+begin
+  if (Index >= 0) and (Index < FSounds.Count) then
+    FSounds[Index].SetVolume(AVolume);
+end;
+
+function TDirectSoundManager.IsHealthy: Boolean;
+begin
+  Result := (FDirectSound <> nil);
+end;
+
+end.

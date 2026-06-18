@@ -1,0 +1,292 @@
+unit UFills;
+
+interface
+
+uses
+	System.Classes, System.SysUtils,
+
+	UAccounts, USymbols, UDecimalHelper, 
+
+  UApiTypes
+
+  ;  
+  
+type
+
+  TFill = class(TCollectionItem)
+  private
+    FSymbol: TSymbol;
+    FPrice: Double;
+    FEventTime: TDateTime;
+    FFillTime: TDateTime;
+    FOrderNo: string;
+    FVolume: Double;
+    FAccount: TAccount;
+    FFillNo: string;
+    FSide: integer;
+    //
+    FFee: double;
+
+    FPriceBI: TBigint;
+    FVolumeBI: TBigint;
+    FFeeBI: TBigint;
+    FOrder: TObject;
+    FProcVol: double;
+    //
+
+  public
+    constructor Create(Coll: TCollection); override;
+
+    function Represent : string;
+
+    procedure Assign( aFill : TFill );
+
+    procedure SetPrice(const Value: string);
+    procedure SetVolume(const Value: string);
+    procedure SetFee(const Value: string);
+
+    property FillNo: string read FFillNo;
+    property FillTime	: TDateTime read FFillTime;
+    property EventTime: TDateTime read FEventTime;
+    property OrderNo: string read FOrderNo;
+    property Account: TAccount read FAccount;
+    property Symbol: TSymbol read FSymbol;
+    property Volume: Double read FVolume;
+    property Price: Double read FPrice;
+    property Side : integer read FSide;    
+
+    property VolumeBI : TBigint read FVolumeBI;
+    property PriceBI	: TBigint read FPriceBI;
+    property FeeBI	: TBigint read FFeeBI;
+
+    property Fee	: double read FFee write FFee;
+
+    property Order: TObject read FOrder write FOrder;
+    // 특별한 목적으로 다용도로 사용...
+    property ProcVol: double read FProcVol write FProcVol;
+  end;
+
+  TFills = class(TCollection)
+  private
+    function Represent: String;
+    function GetFill(i: Integer): TFill;
+  public
+    constructor Create;
+
+    function New(sFillNo: string; dtFillTime, dtEventTime: TDateTime; sOrderNo: string;
+      aOrder: TObject; dVolume: double; dPrice: Double ): TFill; overload;
+    function New(sFillNo: string; dtFillTime, dtEventTime: TDateTime; sOrderNo: string;
+      aOrder: TObject; sVolume: string; sPrice: string ): TFill; overload;
+
+    function Find( aAccount : TAccount; aSymbol : TSymbol; sFillNo : string ): TFill;
+
+    property Fills[i:Integer]: TFill read GetFill; default;
+  end;
+
+  TFillList = class(TList)
+  private
+    FLastFill: TFill;
+    function GetFill(i: Integer): TFill;
+  public
+    procedure AddFill(aFill: TFill);
+    // order 에 있는 fills 에 찾을때
+    function Find( sFillNo : string ): TFill;    
+    property Fills[i:Integer]: TFill read GetFill; default;
+    property LastFill : TFill read FLastFill;
+  end;  
+
+implementation
+
+uses
+  GLibs
+  , UOrders
+  ;
+
+{ TFill }
+
+procedure TFill.Assign(aFill: TFill);
+begin
+  FFillNo := aFill.FillNo;
+  FFillTime := aFill.FFillTime;
+  FOrderNo := aFill.FOrderNo;
+    //
+  FAccount := aFill.FAccount;
+  FSymbol := aFill.FSymbol;
+  FVolume := aFill.FVolume;
+  FPrice := aFill.FPrice;
+end;
+
+constructor TFill.Create(Coll: TCollection);
+begin
+  inherited Create(Coll);
+
+  FFillNo := '';
+  FFillTime := 0.0;
+  FEventTime:= 0.0;
+  FOrderNo := '';
+    //
+  FAccount := nil;
+  FSymbol := nil;
+  FVolume := 0;
+  FPrice := 0;
+    //
+  FOrder := nil;
+end;
+
+function TFill.Represent: String;
+var
+  stAccount, stSymbol: String;
+begin
+    // account code
+  if FAccount <> nil then
+    stAccount := FAccount.Name
+  else
+    stAccount := 'nil';
+
+    // symbol code
+  if FSymbol <> nil then
+    stSymbol := FSymbol.Code
+  else
+    stSymbol := 'nil';
+
+    // represent
+  Result := Format('(%s,%s,%s,%s)',
+                   [ifThenStr(FSide>0,'매수','매도'),
+                   FSymbol.QtyToStr(FVolume), FSymbol.PriceToStr(FPrice),
+                   FOrderNo]);
+
+end;
+
+procedure TFill.SetFee(const Value: string);
+begin
+	FFeeBI.convert( Value);
+  FFee	:= FFeeBI.ToDouble;
+end;
+
+procedure TFill.SetPrice(const Value: string);
+begin
+	FPriceBI.convert( Value);
+  FPrice	:= FPriceBI.ToDouble;
+end;
+
+
+procedure TFill.SetVolume(const Value: string);
+begin
+	FVolumeBI.convert( Value);
+  FVolume	:= FVolumeBI.ToDouble;
+end;      
+
+{ TFills }
+
+constructor TFills.Create;
+begin
+  inherited Create(TFill);
+end;
+
+function TFills.Find(aAccount: TAccount; aSymbol: TSymbol;
+  sFillNo: string): TFill;
+var
+  i : integer;
+begin
+  result := nil;
+  for i := Count-1 downto 0 do
+    if (Fills[i].Account = aAccount) and
+      ( Fills[i].Symbol  = aSymbol)  and
+      ( Fills[i].FFillNo = sFillNo ) then
+      begin
+        Result := Fills[i];
+        break;
+      end; 
+
+end;
+
+function TFills.GetFill(i: Integer): TFill;
+begin
+  if (i >= 0) and (i <= Count-1) then
+    Result := Items[i] as TFill
+  else
+    Result := nil;
+end;
+
+function TFills.New(sFillNo: string; dtFillTime, dtEventTime: TDateTime;
+  sOrderNo: string; aOrder: TObject; dVolume : double; dPrice: Double): TFill;
+  var o: TOrder;
+begin
+  o := aOrder as TOrder;
+
+  Result := Add as TFill;
+
+  Result.FFillNo  	:= sFillNo;
+  Result.FFillTime 	:= dtFillTime;
+  Result.FOrderNo   := sOrderNo;
+  Result.FAccount   := o.Account;
+  Result.FSymbol  	:= o.Symbol;
+  Result.FVolume  	:= dVolume;
+  Result.FPrice   	:= dPrice;
+  Result.FEventTime := dtEventTime;
+  Result.FSide       := o.Side;
+  Result.Order      := aOrder;
+
+  Result.ProcVol    := dVolume;
+end;
+
+function TFills.New(sFillNo: string; dtFillTime, dtEventTime: TDateTime;
+  sOrderNo: string; aOrder: TObject; sVolume : string; sPrice: string): TFill;
+  var o: TOrder;
+begin
+  o := aOrder as TOrder;
+
+  Result := Add as TFill;
+
+  Result.FFillNo  	:= sFillNo;
+  Result.FFillTime 	:= dtFillTime;
+  Result.FOrderNo   := sOrderNo;
+  Result.FAccount   := o.Account;
+  Result.FSymbol  	:= o.Symbol;
+  Result.SetVolume( sVolume );
+  Result.SetPrice( sPrice );
+  Result.FEventTime := dtEventTime;
+  Result.FSide      := o.Side;
+  Result.Order      := aOrder;
+
+  Result.ProcVol    := Result.Volume;
+end;
+
+function TFills.Represent: String;
+begin
+
+end;
+
+{ TFillList }
+
+procedure TFillList.AddFill(aFill: TFill);
+begin
+  if IndexOf(aFill) < 0 then
+  begin
+    Add(aFill);
+    FLastFill := aFill;
+  end;
+end;
+
+function TFillList.Find(sFillNo: string): TFill;
+var
+  i : integer;
+begin
+  result := nil;
+  for i := Count-1 downto 0 do
+    if ( Fills[i].FFillNo = sFillNo ) then
+    begin
+      Result := Fills[i];
+      break;
+    end; 
+end;
+
+function TFillList.GetFill(i: Integer): TFill;
+begin
+  if (i >= 0) and (i <= Count-1) then
+    Result := TFill(Items[i])
+  else
+    Result := nil;
+end;
+
+end.

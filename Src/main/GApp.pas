@@ -1,0 +1,601 @@
+unit GApp;
+
+interface
+
+uses
+  system.SysUtils,  Windows,
+
+  UDalinEngine, ULogWriter , ULogThread, UConfig,  UTypes , UApiTypes
+  , UExchangeData
+  , FServerMessage, FAutoOrderConfig
+  , USecureString
+  , UDirectSounds
+  ;
+
+type
+
+  TApp = class
+  private
+    FEngine : TDalinEngine;
+    FLog    : TLogger;
+    FRootDir: string;
+    FLogDir: string;
+    FQuoteDir: string;
+    FConfig: TConfig;
+    FDataDir: string;
+    FAppStatus: TAppStatus;
+    FOnAppStatusEvent: TAppStatusEvent;
+    FErrorString: string;
+    FStop: boolean;
+    FExData: TExhcnageDataArray;
+    FAppNumber: int64;
+    FWinSaved: boolean;
+
+    FEntropy: TSecureString;
+    FSndMngr: TDirectSoundManager;
+
+    // 사운드  인덱스..
+    FFirstSound : integer;
+    FThreadID: Cardinal;
+
+    // 임시
+    FExInfo  : array of TExchangeInfo;
+    FDomeCnt, FOSCnt : integer;
+
+    function  IsLogLevel(lLevel: TLogLevel): boolean;
+
+    procedure CopyExchangeConfig;
+    procedure SetAppStatus(const Value: TAppStatus);
+    procedure PushLog(lLevel: TLogLevel; stPreFix, stData: string);
+    function LoadExchangeConfig: boolean;
+    function LoadFees: boolean;
+
+  public
+
+    LogItems:    array [TLogLevel] of TAppLogItems;
+    QuoteState : array [TExchangeSocketKind] of Boolean;
+
+    constructor Create;
+    destructor  Destroy; override;
+
+    function LoadConfig : boolean;
+    function SetDirInfo : boolean;
+    function LoadKeys   : boolean;
+
+    procedure LoadAOConfig;
+    procedure LoadSound;
+
+    procedure Log( lLevel : TLogLevel; stPrefix, stData : string ); overload;
+    procedure Log(lLevel : TLogLevel; stData : string ); overload;
+    procedure Log(lLevel : TLogLevel; const fmt: string; const Args: array of const ); overload;
+    procedure Log(lLevel : TLogLevel; stPrefix : string; const fmt: string; const Args: array of const ); overload;
+    procedure Log(lfType: TLogFileType; stPrefix : string;
+      const fmt: string; const Args: array of const ); overload;
+    procedure QuoteLog(aExKind : TExchangeKind; aExApiType : TExchangeApiType; const sCode : string; const fmt: string; const Args: array of const );
+    procedure QuoteLogForce(aExKind : TExchangeKind; aExApiType : TExchangeApiType; const sCode : string; const fmt: string; const Args: array of const );
+
+    procedure DebugLog( const fmt: string; const Args: array of const ); overload;
+    procedure DebugLog( const fmt: string ); overload;
+
+    procedure SetEntropy(const s: string);
+
+    function GetPrecision : integer;
+    function GetNumber : int64;
+
+    function Init: boolean;
+
+    property Engine : TDalinEngine read FEngine;
+
+    property  Entropy : TSecureString read FEntropy;
+    property AppNumber : int64  read FAppNumber;
+    property ThreadID: Cardinal read FThreadID write FThreadID;
+
+    property  Config : TConfig read FConfig ;
+    property  LogDir : string read FLogDir write FLogDir;
+    property  RootDir: string read FRootDir write FRootDir;
+    property  QuoteDir : string read FQuoteDir write FQuoteDir;
+    property  DataDir  : string read FDataDir write FDataDir;
+
+    property  WindSaved: boolean read FWinSaved write FWinSaved;
+
+    property  ExData : TExhcnageDataArray read FExData write FExData;
+      // 소켓 어느 하나라도 끊기면 Stop
+    property  Stop   : boolean read FStop write FStop;
+
+    property  ErrorString : string read FErrorString write FErrorString;
+      // type
+    property  AppStatus : TAppStatus read FAppStatus write SetAppStatus;
+      // event
+    property  OnAppStatusEvent : TAppStatusEvent read FOnAppStatusEvent write FOnAppStatusEvent;
+
+    property  SndMngr : TDirectSoundManager read FSndMngr;
+
+  end;
+
+  procedure PlaySound(idx: integer = 0);
+
+var
+  App : TApp;
+  gMessage: TFrmServerMessage;
+  gAOConfig: TFrmAutoOrderConfig;
+  crts: TRTLCriticalSection;
+
+implementation
+
+uses
+  Math, GLibs   ,
+  UApiConsts,  UEncrypts,
+  UConsts
+  , System.StrUtils
+  , system.IniFiles
+  ;
+
+{ TApp }
+
+
+procedure PlaySound(idx: integer );
+begin
+  App.SndMngr.PlaySound(idx);
+end;
+
+procedure TApp.CopyExchangeConfig;
+begin
+
+end;
+
+constructor TApp.Create;
+var
+  alv : TLogLevel;
+  ek: TExchangeSocketKind;
+begin
+
+  FEngine   := nil;
+
+  FAppStatus := asNone;
+  FStop     := false;
+  FWinSaved := false;
+
+  FEntropy  := TSecureString.Create;
+
+  FAppNumber  := Floor( now );
+
+  //FEngine := TDalinEngine.Create;
+  FLog    := TLogger.Create('',
+                           65536,      // Capacity
+                           INFINITE,   // PushTimeout (백프레셔 허용)
+                           300,        // PopTimeout (종료 체크 주기)
+                           300        // FlushEveryN
+                           );
+
+  for alv := llError to High(TLogLevel) do
+    LogItems[alv] := TAppLogItems.Create;
+
+  for ek := eskQtBinance to High(TExchangeSocketKind) do
+    QuoteState[ek]  := true;
+
+  gMessage   := TFrmServerMessage.Create(nil);
+
+  // 사운드
+  FFirstSound := -1;
+  FSndMngr  := TDirectSoundManager.Create;
+end;
+
+
+destructor TApp.Destroy;
+var
+  alv : TLogLevel;
+begin
+
+  FSndMngr.Free;
+
+  if FEngine <> nil then
+    FEngine.Free;
+
+  App.Log(llInfo, '', '--- Engine free ---');
+
+  FLog.Free;
+
+  FEntropy.Free;
+
+  if gMessage <> nil then
+    gMessage.Free;
+
+  if gAOConfig <> nil then
+    gAOConfig.Free;
+
+  for alv := llError to High(TLogLevel) do
+    LogItems[alv].Free;
+
+  inherited;
+end;
+
+
+function TApp.GetPrecision: integer;
+begin
+  if FConfig.VerifyMod then
+    Result := 3
+  else
+    Result := 2;
+end;
+
+procedure TApp.LoadAOConfig;
+begin
+  gAOConfig  := TFrmAutoOrderConfig.Create(nil);
+
+  LoadSound;
+end;
+
+function TApp.LoadConfig: boolean;
+begin
+  if not FConfig.LoadConfig then Exit(false);
+  if not LoadExchangeConfig then Exit(false);
+
+  Result := SetDirInfo;
+  FLog.LogDir := FLogDir;
+end;
+
+function TApp.LoadExchangeConfig: boolean;
+var
+  pIniFile : TIniFile;
+  stDir : string;
+  iCnt : integer;
+  I: Integer;
+  j : TExchangeApiType;
+
+  //ApiInfo : ^TApiInfo;
+begin
+  result := true;
+
+  FDomeCnt := 0; FOSCnt := 0;
+
+  stDir := ExtractFilePath( paramstr(0) )+'Config\';
+  pIniFile := TIniFile.Create(stDir + 'exchange.txt' );
+  try
+    try
+      /////////////////////////////////////////////////////////////
+
+      iCnt := pIniFile.ReadInteger('Exchange', 'Count', 0);
+      SetLength(FExInfo, iCnt );
+
+      for I := 0 to iCnt-1 do
+      begin
+        stDir := Format('Exchange_%d', [i]);
+        FExInfo[i].SetInfo(  i,
+          pIniFile.ReadString(stDir, 'name', 'Sauri')
+          , pIniFile.ReadInteger(stDir, 'domestic',0 ) = 1
+          , pIniFile.ReadInteger(stDir, 'fut', 0 ) = 1
+          , pIniFile.ReadInteger(stDir, 'futcm', 0) = 1
+        ) ;
+
+        if FExInfo[i].IsDomestic then inc( FDomeCnt )
+        else inc( FOSCnt );
+      end;
+
+      for I := 0 to iCnt-1 do
+      begin
+        for j := eaSpot to High(TExchangeApiType) do
+        begin
+
+            if (j <> eaSpot) and (not FExInfo[i].IsFuture) then continue;
+
+            stDir := Format( '%s_%s', [ FExInfo[i].Name, ifThenStr( j = eaSpot,'spot', 'future')  ] );
+
+            if TExchangeKind(i) = ekBinance then begin
+              if j = eaFutCoin then stDir := stDir+'_cm';
+              if (not App.Config.RunMod) {and ( j = eaSpot)} then stDir := stDir + '_Test';
+            end;
+
+            FExInfo[i].ApiInfo[j].BaseUrl  :=  pIniFile.ReadString( stDir, 'Url', 'Sauri');
+            FExInfo[i].ApiInfo[j].Prepare  :=  pIniFile.ReadString( stDir, 'PrePare', 'Sauri');
+            FExInfo[i].ApiInfo[j].Port     :=  pIniFile.ReadInteger(stDir, 'Port', 443 );
+
+            FExInfo[i].ApiInfo[j].WSUrl    :=  pIniFile.ReadString( stDir, 'WSocket', 'Sauri' );
+            FExInfo[i].ApiInfo[j].WSApiUrl :=  pIniFile.ReadString( stDir, 'WSApi', 'Sauri' );
+
+        end;
+      end;
+    except
+      result := false;
+    end;
+  finally
+    pIniFile.Free;
+  end;
+end;
+
+function TApp.LoadFees: boolean;
+begin
+
+end;
+
+function TApp.LoadKeys: boolean;
+var
+  stEx, stDiv, stKey, stDir: string;
+  KeyArr : TArray<string>;
+  I, iCnt: Integer;
+  ek : TExchangeKind;  ea: TExchangeApiType;
+begin
+
+  Result := false;
+  stDir := FDataDir +'\'+APK_FILE;
+  if not FileExists(stDir) then Exit;
+
+  if not LoadEncryptedKeyFromFile(stDir, FEntropy, KeyArr) then
+    Exit;
+
+  //iCnt := integer(High(TExchangeKind));
+  for i := 0 to High(Engine.ApiConfig.ExchangeInfo) do
+    for ea := eaSpot to High(TExchangeApiType) do begin
+      Engine.ApiConfig.ExchangeInfo[i].ApiInfo[ea].ApiKey[0].Sec := TSecureString.Create;
+      Engine.ApiConfig.ExchangeInfo[i].ApiInfo[ea].ApiKey[1].Sec := TSecureString.Create;
+    end;
+
+  for I := 0 to High(KeyArr) do
+  begin
+    if KeyArr[i].IsEmpty then continue;
+
+    stKey:= KeyArr[i];
+
+    stEx := LeftStr(stKey, 3);
+    stDiv:= MidStr(stKey, 4, 3);
+
+
+    if stEx = 'BNS' then begin
+      if stDiv = 'API' then
+        FEngine.ApiConfig.ExchangeInfo[0].ApiInfo[eaSpot].ApiKey[0].Key := Copy(stKey, 7, Length(stKey))
+      else if stDiv = 'SEC' then
+        FEngine.ApiConfig.ExchangeInfo[0].ApiInfo[eaSpot].ApiKey[0].SetSec(Copy(stKey, 7, Length(stKey)));
+    end
+    else if stEx = 'BNF' then begin
+      if stDiv = 'API' then begin
+        FEngine.ApiConfig.ExchangeInfo[0].ApiInfo[eaFutUsdt].ApiKey[0].Key := Copy(stKey, 7, Length(stKey));
+        FEngine.ApiConfig.ExchangeInfo[0].ApiInfo[eaFutCoin].ApiKey[0].Key := Copy(stKey, 7, Length(stKey));
+      end
+      else if stDiv = 'SEC' then begin
+        FEngine.ApiConfig.ExchangeInfo[0].ApiInfo[eaFutUsdt].ApiKey[0].SetSec(Copy(stKey, 7, Length(stKey)));
+        FEngine.ApiConfig.ExchangeInfo[0].ApiInfo[eaFutCoin].ApiKey[0].SetSec(Copy(stKey, 7, Length(stKey)));
+      end;
+    end
+    else if stEx = 'UPS' then begin
+      if stDiv = 'API' then
+        FEngine.ApiConfig.ExchangeInfo[1].ApiInfo[eaSpot].ApiKey[0].Key := Copy(stKey, 7, Length(stKey))
+      else if stDiv = 'SEC' then
+        FEngine.ApiConfig.ExchangeInfo[1].ApiInfo[eaSpot].ApiKey[0].SetSec(Copy(stKey, 7, Length(stKey)));
+    end
+    else if stEx = 'BT1' then begin
+      if stDiv = 'API' then
+        FEngine.ApiConfig.ExchangeInfo[2].ApiInfo[eaSpot].ApiKey[0].Key := Copy(stKey, 7, Length(stKey))
+      else if stDiv = 'SEC' then
+        FEngine.ApiConfig.ExchangeInfo[2].ApiInfo[eaSpot].ApiKey[0].SetSec(Copy(stKey, 7, Length(stKey)));
+    end
+    else if stEx = 'BT2' then begin
+      if stDiv = 'API' then
+        FEngine.ApiConfig.ExchangeInfo[2].ApiInfo[eaSpot].ApiKey[1].Key := Copy(stKey, 7, Length(stKey))
+      else if stDiv = 'SEC' then
+        FEngine.ApiConfig.ExchangeInfo[2].ApiInfo[eaSpot].ApiKey[1].SetSec(Copy(stKey, 7, Length(stKey)));
+    end;
+  end;
+
+  Result := true;
+end;
+
+procedure TApp.LoadSound;
+begin
+  if gAOConfig <> nil then
+  begin
+    FFirstSound := FSndMngr.AddSound(gAOConfig.Result.FillSound, FIRST_ORDER);
+  end;
+end;
+
+procedure TApp.SetAppStatus(const Value: TAppStatus);
+begin
+
+  if Assigned( OnAppStatusEvent ) then
+    if FAppStatus <> Value then
+    begin
+//      if Engine.AppStatus = asLoad then
+
+//        Exit;
+
+
+      FAppStatus :=  Value;
+      Log(llInfo, 'App status is %s ', [ TAppStatusDesc[Value] ] );
+      OnAppStatusEvent( Value );
+    end;
+
+end;
+
+function TApp.SetDirInfo: boolean;
+begin
+  Result := true;
+  try
+    FRootDir  := AppDir;
+    FLogDir   := ComposeFilePath([FRootDir, FConfig.LOG_DIR]);
+    FQuoteDir := ComposeFilePath([FRootDir, FConfig.QUOTE_DIR]);
+    FDataDir  := ComposeFilePath([FRootDir, FConfig.DATA_DIR]);
+  except
+    Result := false;
+  end;
+end;
+
+procedure TApp.SetEntropy(const s: string);
+begin
+  FEntropy.Assign(s);
+end;
+
+
+function TApp.Init: boolean;
+begin
+  Result := false;
+  try
+    FEngine := TDalinEngine.Create;
+  finally
+    Result := FEngine <> nil;
+
+    if Result then
+    begin
+      FEngine.ApiConfig.SetExchangeConfig(FExInfo);
+      FEngine.ApiConfig.LoadFees;
+    end;
+  end;
+end;
+
+function TApp.IsLogLevel( lLevel : TLogLevel ) : boolean;
+begin
+
+  if Integer(lLevel) <= FConfig.LOG_LEVEL then
+    result := true
+  else
+    result := false;
+
+  if FLog = nil then
+    result := false;
+end;
+
+////  LOG
+
+procedure TApp.PushLog(lLevel : TLogLevel; stPreFix, stData: string);
+var
+  aLog : TAppLogItem;
+begin
+  aLog := nil;
+
+  case lLevel of
+    llError,
+    llWarning:
+      begin
+        aLog := LogItems[lLevel].New(lLevel);
+        with aLog do
+        begin
+//          LogSource := stSource;
+          LogTitle  := stPreFix;
+          LogDesc   := stData;
+//          LogData   := stData;
+        end;
+
+      end;
+    else exit;
+  end;
+
+  if (aLog <> nil) and ( gMessage <> nil ) then begin
+    PostMessage( gMessage.Handle, WM_LOGARRIVED, Integer( lLevel ), 0);
+
+    if FAppStatus < asLoad then
+      gMessage.Show;
+  end;
+end;
+
+procedure TApp.QuoteLog(aExKind : TExchangeKind; aExApiType : TExchangeApiType; const sCode : string;
+  const fmt: string; const Args: array of const);
+  var
+    stPrefix : string;
+begin
+//
+  case aExApiType of
+    eaSpot: if aExKind = ekBinance then Exit;
+    eaFutUsdt: ;
+    eaFutCoin: Exit;
+  end;
+
+  stPrefix  := sCode + '_' + TExchangeKindShortDesc[aExKind] + '_Quote' ;
+
+  with App.Engine.ApiConfig do
+  if (QuoteOrderLog[0].Use and (QuoteOrderLog[0].Code = sCode)) or
+     (QuoteOrderLog[1].Use and (QuoteOrderLog[1].Code = sCode)) then
+    FLog.Log(llInfo, stPreFix, Format( fmt, Args ) );
+end;
+
+procedure TApp.QuoteLogForce(aExKind: TExchangeKind;
+  aExApiType: TExchangeApiType; const sCode, fmt: string;
+  const Args: array of const);
+  var
+    stPrefix : string;
+begin
+  Exit;
+//
+//  case aExApiType of
+//    eaSpot: if aExKind = ekBinance then Exit;
+//    eaFutUsdt: ;
+//    eaFutCoin: Exit;
+//  end;
+
+  stPrefix  := sCode + '_' + TExchangeKindShortDesc[aExKind] + '_Quote' ;
+
+//  with App.Engine.ApiConfig do
+//  if (QuoteOrderLog[0].Use and (QuoteOrderLog[0].Code = sCode)) or
+//     (QuoteOrderLog[1].Use and (QuoteOrderLog[1].Code = sCode)) then
+    FLog.Log(llInfo, stPreFix, Format( fmt, Args ) );
+
+end;
+
+procedure TApp.Log(lLevel : TLogLevel; stPrefix: string; const fmt: string;
+  const Args: array of const);
+begin
+  if IsLogLevel(lLevel) then begin
+    PushLog(lLevel, stPrefix, Format( fmt, Args ));
+    FLog.Log(lLevel, stPrefix, Format( fmt, Args ) );
+  end;
+end;
+
+procedure TApp.Log(lLevel: TLogLevel; stData: string);
+begin
+  if IsLogLevel(lLevel) then begin
+    PushLog(lLevel, '', stData);
+    FLog.Log(lLevel, '', stData);
+  end;
+end;
+
+procedure TApp.Log(lLevel: TLogLevel; const fmt: string;
+  const Args: array of const);
+begin
+  if IsLogLevel(lLevel) then begin
+    PushLog(lLevel, '', Format( fmt, Args ));
+    FLog.Log(lLevel, '', Format( fmt, Args ) );
+  end;
+end;
+
+procedure TApp.Log(lLevel : TLogLevel; stPrefix, stData: string);
+begin
+  if IsLogLevel(lLevel) then begin
+    PushLog(lLevel, stPrefix, stData);
+    FLog.Log(lLevel, stPrefix, stData);
+  end;
+end;
+
+////
+
+procedure TApp.DebugLog(const fmt: string; const Args: array of const);
+begin
+  if IsLogLevel(llDebug) then
+    FLog.Log(llDebug, '', Format( fmt, Args ) );
+end;
+
+procedure TApp.DebugLog(const fmt: string);
+begin
+  if IsLogLevel(llDebug) then
+    FLog.Log(llDebug, '', Format( '%s', [fmt] ) );
+end;
+
+function TApp.GetNumber : int64;
+begin
+  EnterCriticalSection(crts);
+  try
+    Result := FAppNumber;
+    inc(FAppNumber);
+  finally
+    LeaveCriticalSection(crts);
+  end;
+end;
+
+procedure TApp.Log(lfType: TLogFileType; stPrefix: string;
+  const fmt: string; const Args: array of const);
+begin
+  FLog.Log(llInfo, lfType, stPrefix, Format( fmt, Args ) );
+end;
+
+initialization
+  InitializeCriticalSection(crts);
+
+finalization
+  DeleteCriticalSection(crts);
+
+end.

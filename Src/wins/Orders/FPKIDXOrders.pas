@@ -1,0 +1,1225 @@
+unit FPKIDXOrders;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
+  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.ExtCtrls, Vcl.StdCtrls,
+  Vcl.Buttons, System.ImageList, Vcl.ImgList, Vcl.ComCtrls, Vcl.Grids,
+
+  UStorage, UOrderParams, UApiTypes, UTypes,
+
+  USymbols, UPositions, UAccounts, UOrders, UAssets, UPKIDXOrders, UDistributor,
+  Vcl.Menus
+  ;
+
+const
+  titleCnt = 10;
+  logTitle : array [0..titleCnt-1] of string = (
+    'Time','PK','P-I', '실PK','실PI', '매도','매수','체결량','환율','체결차');
+  logTitleWidths : array [0..titleCnt-1] of integer =
+    (65, 35, 35, 35, 50, 70, 70, 60, 60, 60);
+
+  PKCNT = 5;
+
+type
+
+  TPKControls = record
+    btnRun  : TSpeedButton;
+    ckPK, ckPKIDX, ckExDisparity: TCheckBox;
+    cbMethod: TComboBox;
+    edtPK, edtPKIDX, edtExDisparity, edtOrderQty, edtRepeat, edtCount : TEdit;
+
+    procedure SetEnabled(bEnable: boolean);
+  end;
+
+  TFrmPKIDXOrders = class(TForm)
+{$REGION '-- controls --'}
+    Panel1: TPanel;
+    Panel2: TPanel;
+    cbBuyEx: TComboBox;
+    cbSellEx: TComboBox;
+    edtCode: TEdit;
+    Button1: TButton;
+    GroupBox1: TGroupBox;
+    Panel3: TPanel;
+    btnRun_0: TSpeedButton;
+    ckPK_0: TCheckBox;
+    ckPKIDX_0: TCheckBox;
+    ckExDisparity_0: TCheckBox;
+    edtOrderQty_0: TEdit;
+    edtRepeat_0: TEdit;
+    cbMethod_0: TComboBox;
+    edtCount_0: TEdit;
+    edtPk_0: TEdit;
+    edtPKIDX_0: TEdit;
+    edtExDisparity_0: TEdit;
+    Panel4: TPanel;
+    Panel5: TPanel;
+    Panel6: TPanel;
+    Panel7: TPanel;
+    Panel8: TPanel;
+    Panel9: TPanel;
+    Panel10: TPanel;
+    Panel11: TPanel;
+    Panel12: TPanel;
+    plDomes: TPanel;
+    plInter: TPanel;
+    plPK1: TPanel;
+    plPK2: TPanel;
+    plPI1: TPanel;
+    edtOrderQty: TEdit;
+    plPI2: TPanel;
+    Button2: TButton;
+    StatusBar1: TStatusBar;
+    stInter: TStatusBar;
+    stDomes: TStatusBar;
+    btnInit: TButton;
+    sg: TStringGrid;
+    Panel19: TPanel;
+    btnRun_1: TSpeedButton;
+    ckPK_1: TCheckBox;
+    ckPKIDX_1: TCheckBox;
+    ckExDisparity_1: TCheckBox;
+    edtOrderQty_1: TEdit;
+    edtRepeat_1: TEdit;
+    cbMethod_1: TComboBox;
+    edtCount_1: TEdit;
+    edtPK_1: TEdit;
+    edtPKIDX_1: TEdit;
+    edtExDisparity_1: TEdit;
+    Panel20: TPanel;
+    btnRun_2: TSpeedButton;
+    ckPK_2: TCheckBox;
+    ckPKIDX_2: TCheckBox;
+    ckExDisparity_2: TCheckBox;
+    edtOrderQty_2: TEdit;
+    edtRepeat_2: TEdit;
+    cbMethod_2: TComboBox;
+    edtCount_2: TEdit;
+    edtPK_2: TEdit;
+    edtPKIDX_2: TEdit;
+    edtExDisparity_2: TEdit;
+    Panel21: TPanel;
+    btnRun_3: TSpeedButton;
+    ckPK_3: TCheckBox;
+    ckPKIDX_3: TCheckBox;
+    ckExDisparity_3: TCheckBox;
+    edtOrderQty_3: TEdit;
+    edtRepeat_3: TEdit;
+    cbMethod_3: TComboBox;
+    edtCount_3: TEdit;
+    edtPK_3: TEdit;
+    edtPKIDX_3: TEdit;
+    edtExDisparity_3: TEdit;
+    Panel22: TPanel;
+    btnRun_4: TSpeedButton;
+    ckPK_4: TCheckBox;
+    ckPKIDX_4: TCheckBox;
+    ckExDisparity_4: TCheckBox;
+    edtOrderQty_4: TEdit;
+    edtRepeat_4: TEdit;
+    cbMethod_4: TComboBox;
+    edtCount_4: TEdit;
+    edtPK_4: TEdit;
+    edtPKIDX_4: TEdit;
+    edtExDisparity_4: TEdit;
+    stNotice: TStatusBar;
+    Timer1: TTimer;
+    PopupMenu1: TPopupMenu;
+    Export1: TMenuItem;
+    dlgSave: TSaveDialog;
+    N1: TMenuItem;
+    StatusBar2: TStatusBar;
+    ShowBalLog: TMenuItem;
+{$ENDREGION}
+    procedure FormCreate(Sender: TObject);
+    procedure btnRun_0Click(Sender: TObject);
+    procedure edtPk_0KeyDown(Sender: TObject; var Key: Word;
+      Shift: TShiftState);
+    procedure edtPk_0KeyPress(Sender: TObject; var Key: Char);
+    procedure edtOrderQty_0KeyPress(Sender: TObject; var Key: Char);
+    procedure Button2Click(Sender: TObject);
+    procedure cbBuyExChange(Sender: TObject);
+    procedure Button1Click(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+    procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure Timer1Timer(Sender: TObject);
+    procedure stNoticeDrawPanel(StatusBar: TStatusBar; Panel: TStatusPanel;
+      const Rect: TRect);
+    procedure cbMethod_0Change(Sender: TObject);
+    procedure btnInitClick(Sender: TObject);
+    procedure Export1Click(Sender: TObject);
+    procedure N1Click(Sender: TObject);
+  private
+    FEntry: boolean;
+//    FCommData: TPICommonData;
+    FExKind : array [TPositionType] of TExchangeKind;
+    FSymbols: TSymbolArray;
+    //
+    FKrEstPrice: TEstPriceArray;
+    FOsEstPrice: TEstPriceArray;
+    // 진입/청산 PK, IDX
+    FPIPrice : TPIPriceArray;
+    FPosition: TPosition;
+    FMinQty  : double;
+
+    FPKIdxOrders: TPKIdxOrders;
+    { Private declarations }
+    procedure InitControls;
+
+    procedure SetEnableUnitContorls(iTag: integer; bEnable : boolean);
+
+    procedure SetSymbols ;
+    function Stop(iTag: integer) : TPKIdxOrderItem;
+
+    procedure ResetValue;
+    procedure InitPrice;
+    procedure CalcPIPrice; overload;
+    procedure CalcPIPrice(aoType: TAutoOrderType); overload;
+    procedure CalcEntryPKPrice;
+    procedure CalcExitPKPrice;
+    procedure CheckDust;
+
+    function CheckProcTime : boolean;
+    function MakeName : string;
+
+    procedure UpdateCalcedPrice;
+    procedure UpdateTradeAmt;
+
+    procedure DomesQuoteProc(Sender, Receiver: TObject; DataID: Integer;
+                    DataObj: TObject; EventID: TDistributorID);
+    procedure InterQuoteProc(Sender, Receiver: TObject; DataID: Integer;
+                    DataObj: TObject; EventID: TDistributorID);
+
+    procedure TradeProc(Sender, Receiver: TObject; DataID: Integer;
+                    DataObj: TObject; EventID: TDistributorID);
+
+    procedure OnPosition( aPos : TPosition );
+    procedure OnKipNotify(Sender: TObject; Value: string);
+    procedure OnNotifyDone(Sender: TObject);
+
+    function CalcCustomUsdt: double;
+    function CreateNStart(iTag: integer): boolean ;
+
+    function GetBaseOrderQty(var dQty, dQty2: double): boolean;
+    function GetAOType : TAutoOrderType;
+    procedure DoQuote(aSymbol: TSymbol; bOS: boolean);
+
+  public
+    { Public declarations }
+    Controls: array [0..PKCNT-1] of TPKControls;
+    constructor Create(AOwner: TComponent; bEntry: boolean); reintroduce;
+
+    procedure LoadEnv( aStorage : TStorage );
+    procedure SaveEnv( aStorage : TStorage );
+
+    procedure OnNotifyDust(Sender: TObject; aOrder: TOrder);
+
+    property Entry: boolean read FEntry;
+//    property CommData: TPICommonData read FCommData;
+    property PKIdxOrders: TPKIdxOrders read FPKIdxOrders;
+    property AOType : TAutoOrderType read GetAOType;
+    property Position: TPosition read FPosition;
+  end;
+
+var
+  FrmPKIDXOrders: TFrmPKIDXOrders;
+
+implementation
+
+uses
+  GApp, GLibs
+  , Clipbrd, Math
+  , System.DateUtils
+  , UConsts, UApiConsts, UDecimalHelper, UPutKipItems
+  , UQuoteBroker
+  ;
+
+{$R *.dfm}
+
+procedure TFrmPKIDXOrders.btnInitClick(Sender: TObject);
+begin
+  //
+  if MessageDlgPos( '데이타 초기화?', mtConfirmation, [mbYes,mbNo], 0, Left,Top+btnInit.Top) = mrYes then
+    FPKIdxOrders.InitReport;
+end;
+
+procedure TFrmPKIDXOrders.btnRun_0Click(Sender: TObject);
+var
+  iTag : integer;
+  aItem: TPKIdxOrderItem;
+begin
+  //
+  try
+    with (Sender as TSpeedButton) do
+    begin
+      iTag := Tag;
+      if not Down then begin
+        if not CreateNStart(iTag) then begin
+          Down := true;
+          Exit;
+        end;
+        Tpanel(TCheckBox(Sender).Parent).Color := clYellow;
+      end else
+      begin
+
+        aItem := Stop(iTag);
+        if aItem <> nil then
+          Enabled := false;
+
+        Tpanel(TCheckBox(Sender).Parent).Color := clBtnFace;
+        SetEnableUnitContorls(iTag, Down);
+      end;
+    end;
+  finally
+    // Down = true -> Stop
+    with (Sender as TSpeedButton) do
+      if Down then
+        Caption := '▶'
+      else
+        Caption := '■';
+  end;
+end;
+
+procedure TFrmPKIDXOrders.Button1Click(Sender: TObject);
+begin
+  SetSymbols;
+  ResetValue;
+  InitPrice;
+end;
+
+procedure TFrmPKIDXOrders.Button2Click(Sender: TObject);
+begin
+  gAOConfig.ShowAOConfig;
+end;
+
+function TFrmPKIDXOrders.CalcCustomUsdt: double;
+begin
+  Result := 0;
+  if App.Engine.SymbolCore.Tethers[FExKind[ptLong]] <> nil then
+    Result := App.Engine.SymbolCore.Tethers[FExKind[ptLong]].GetCustomIndex
+end;
+
+function TFrmPKIDXOrders.GetAOType: TAutoOrderType;
+begin
+  if FEntry then
+    Result := aoEntry
+  else
+    Result := aoExit;
+end;
+
+function TFrmPKIDXOrders.GetBaseOrderQty(var dQty, dQty2: double): boolean;
+var
+  dTmp : double;
+begin
+  if not TryStrToFloat(edtOrderQty.Text, dTmp) then Exit (false);
+
+  dQty  := dTmp + gAOConfig.Result.SafeMarginQty[FSymbols[scDomes].Spec.ExchangeType];
+  dQty2 := dTmp + gAOConfig.Result.SafeMarginQty[ekBinance];
+  Result := true;
+end;
+
+procedure TFrmPKIDXOrders.CalcEntryPKPrice;
+var
+  dQty, dQty2: double;
+begin
+  if not GetBaseOrderQty(dQty, dQty2) then Exit;
+  //1. 국내 매수 EstPrice, 해외 매도호가
+  //2. 국내 매수호가, 해외 매도 EstPrice
+  FKrEstPrice[ptLong] := FSymbols[scDomes].CalcEstPrice( 1, dQty);
+  FOsEstPrice[ptShort]:= FSymbols[scInter].CalcEstPrice(-1, dQty2);
+
+  if CheckZero(FSymbols[scInter].Asks[0].Price) or CheckZero(FOsEstPrice[ptShort]) then Exit;
+
+  FPIPrice[aoEntry].PK_F := ((FKrEstPrice[ptLong] / (FSymbols[scInter].Asks[0].Price * App.Engine.ApiManager.ExRate.Value)) - 1) * 100;
+  FPIPrice[aoEntry].PK_S := ((FSymbols[scDomes].Bids[0].Price / (FOsEstPrice[ptShort]* App.Engine.ApiManager.ExRate.Value)) - 1) * 100;
+
+//  App.Log(llDebug, 'eeee','PKIDXOrder : %s, %s, %s, %s', [ dQty2.ToString, FOsEstPrice[ptShort].ToString,
+//    FSymbols[scDomes].Bids[0].Price.ToString, FPIPrice[aoEntry].PK_S.ToString] );
+
+  CalcPIPrice(aoEntry);
+end;
+
+procedure TFrmPKIDXOrders.CalcExitPKPrice;
+var
+  dQty, dQty2: double;
+begin
+  if not GetBaseOrderQty(dQty, dQty2) then Exit;
+  // 1. 국내 매도 EstPrice, 해외 매수호가
+  // 2. 국내 매도호가, 해외 매수 EstPrice;
+  FKrEstPrice[ptShort] := FSymbols[scDomes].CalcEstPrice(-1, dQty);
+  FOsEstPrice[ptLong]  := FSymbols[scInter].CalcEstPrice( 1, dQty2);
+
+  if CheckZero(FSymbols[scInter].Bids[0].Price) or CheckZero(FOsEstPrice[ptLong]) then Exit;
+
+  FPIPrice[aoExit].PK_F := ((FKrEstPrice[ptShort] / (FSymbols[scInter].Bids[0].Price* App.Engine.ApiManager.ExRate.Value)) -1) * 100;
+  FPIPrice[aoExit].PK_S := ((FSymbols[scDomes].Asks[0].Price / (FOsEstPrice[ptLong] * App.Engine.ApiManager.ExRate.Value)) -1) * 100;
+
+  CalcPIPrice(aoExit);
+end;
+
+procedure TFrmPKIDXOrders.CalcPIPrice(aoType: TAutoOrderType);
+var
+  dTmp : double;
+begin
+  dTmp  := (CalcCustomUsdt / App.Engine.ApiManager.ExRate.Value) * 100 - 100;
+  FPIPrice[aoType].PI_F  := FPIPrice[aoType].PK_F - dTmp;
+  FPIPrice[aoType].PI_S  := FPIPrice[aoType].PK_S - dTmp;
+end;
+
+procedure TFrmPKIDXOrders.CalcPIPrice;
+begin
+  if  App.Engine.ApiManager.ExRate.Value <= 1 then Exit;
+
+  if FEntry then
+    CalcEntryPKPrice
+  else
+    CalcExitPKPrice;
+end;
+
+procedure TFrmPKIDXOrders.cbBuyExChange(Sender: TObject);
+var
+  idx : integer;
+  I: Integer;
+begin
+  FExKind[ptLong] := TExchangeKind(cbBuyEx.ItemIndex+1);
+
+//  if FExKind[ptLong] = ekUpbit then
+//    idx := 1
+//  else
+//    idx := 0;
+//
+//  for I := 0 to High(Controls) do
+//    Controls[i].cbMethod.ItemIndex := idx;
+end;
+
+procedure TFrmPKIDXOrders.cbMethod_0Change(Sender: TObject);
+begin
+  Exit;  // 또 풀어달라고 함...변덕.
+
+  if FExKind[ptLong] = ekUpbit then
+    if TComboBox(Sender).ItemIndex <> 1 then
+    begin
+      ShowMessage('업비티일때는 A, S 선택 불가');
+      TComboBox(Sender).ItemIndex := 1;
+    end;
+end;
+
+procedure TFrmPKIDXOrders.CheckDust;
+var
+  i : integer;
+  bRun : boolean;
+begin
+  //
+  bRun := false;
+  for I := 0 to FPKIdxOrders.Count-1 do
+    if FPKIdxOrders.KipOrders[i].Run then
+    begin
+      bRun := true;
+      break;
+    end;
+
+  if not bRun then Exit;
+
+  FPKIdxOrders.CheckDust;
+end;
+
+function TFrmPKIDXOrders.CheckProcTime: boolean;
+var
+  idx: integer;
+begin
+
+  Result := false;
+  idx := 0;
+  try
+    if not gAOConfig.CheckAutoConfig(idx) then
+      Exit;
+
+    if not gAOConfig.CheckQuoteDelay([FExKind[ptLong], FExKind[ptShort]], idx) then
+      Exit;
+
+    if not gAOConfig.CheckExRateFilter(FEntry, idx) then
+      Exit;
+
+    Result := true;
+  finally
+    stNotice.Tag  := idx;
+    stNotice.Panels[3].Text := AOWarnMsg[idx];
+  end;
+
+end;
+
+constructor TFrmPKIDXOrders.Create(AOwner: TComponent; bEntry: boolean);
+begin
+  FEntry:= bEntry;
+  inherited Create(AOwner);
+end;
+
+function TFrmPKIDXOrders.CreateNStart(iTag: integer): boolean;
+var
+  stTmp, stName : string;
+  aItem  : TPKIdxOrderItem;
+
+  dQty, dPK, dPI, dPT : double;
+  iRep, iInter, iSide: integer;
+
+  bRes : boolean;
+  dInt  : TDecimalHelper;
+
+  data : TPIData;
+  I: Integer;
+begin
+
+  if (FSymbols[scDomes] = nil) or (FSymbols[scInter] = nil) then
+  begin
+    ShowMessage( '종목선택을 먼저');
+    Exit (false );
+  end;
+
+  stTmp := Uppercase(edtCode.Text);
+  if (FSymbols[scDomes].Spec.BaseCode <> stTmp) or
+    (FSymbols[scInter].Spec.BaseCode <> stTmp)  then
+  begin
+    ShowMessage('설정된 종목과 다름, 적용버튼 안 누른듯');
+    edtCode.SetFocus;
+    Exit (false);
+  end;
+
+//  if FExKind[ptLong] = ekUpbit then
+//    if Controls[iTag].cbMethod.ItemIndex <> 1 then
+//    begin
+//      ShowMessage('업비트 일때 A, S 선택 불가');
+//      Exit (false);
+//    end;
+
+  stTmp  := ifThenStr( FEntry , 'En', 'Ex' );
+
+  bREs := TryStrToFloat(Controls[iTag].edtPK.Text, data.PK)
+      and TryStrToFloat(Controls[iTag].edtPKIDX.Text, data.PI)
+      and TryStrToFloat(Controls[iTag].edtExDisparity.Text, data.ED)
+      and TryStrToFloat(Controls[iTag].edtOrderQty.Text, data.OrderQty)
+      and TryStrToInt(Controls[iTag].edtRepeat.Text, data.RepeatCnt )
+      ;
+  data.Method := Controls[iTag].cbMethod.ItemIndex;
+
+  if not bRes then
+  begin
+    ShowMessage( '입력값이 잘못 됐음');
+    Exit (false );
+  end;
+
+  if data.RepeatCnt <= 0 then
+  begin
+    ShowMessage( '입력값이 잘못 됐음');
+    Exit (false );
+  end;
+
+  if data.OrderQty < FMinQty then
+  begin
+    ShowMessage('최소 주문수량보다 작음');
+    Exit (false);
+  end;
+
+
+  // 바이낸스 소수점 단위 체크..
+  dInt.convert(dQty);
+  if dInt.Precision > FSymbols[scInter].Spec.QtyPrecision  then
+  begin
+    ShowMessage( '주문수량 소수점 개수는 ' +  FSymbols[scInter].Spec.QtyPrecision.ToString );
+    Exit (false );
+  end;
+
+  stName := Format('%s_%s', [MakeName, stTmp] );
+
+  data.bPK  := Controls[iTag].ckPK.Checked;
+  data.bPI  := Controls[iTag].ckPKIDX.Checked;
+  data.bED  := Controls[iTag].ckExDisparity.Checked;
+
+//  aItem  := FPKIdxOrders.New(stName, iTag, FEntry, data);
+  aItem  := FPKIdxOrders.New(stName, iTag);
+  if aItem <> nil then
+  begin
+//    data.CommData.Assign(FCommData);
+    aItem.PIData.Assign(data);
+    //aItem.OnNotify    := OnLogNotify;
+    aItem.OnKipNotify := OnKipNotify;
+    aItem.OnKipDontNotify := OnNotifyDone;
+    aItem.SetSymbol( Self, FEntry, FSymbols );
+    aItem.Start;
+
+//    for I := 0 to FPKIdxOrders.Count-1 do
+//      App.DebugLog(Format('--- %d.th - %d :  %s %.2f---', [i,  iTag,
+//        ifThenStr(FPKIdxOrders.KipOrders[i].IsEntry, '진입','청산'), FPKIdxOrders[i].PIData.PK]));
+
+  end else
+  begin
+    ShowMessage( '해당 unit 을 실행 할 수 없음');
+    Exit (false );
+  end;
+
+  Result := true;
+
+  Controls[iTag].edtCount.Text := '0';
+
+  if Result then
+    SetEnableUnitContorls(iTag, false );
+
+end;
+
+procedure TFrmPKIDXOrders.edtOrderQty_0KeyPress(Sender: TObject; var Key: Char);
+begin
+  if not (CharInSet(Key , ['0'..'9','.',#8])) then
+    Key := #0;
+end;
+
+procedure TFrmPKIDXOrders.edtPk_0KeyDown(Sender: TObject; var Key: Word;
+  Shift: TShiftState);
+  var
+    sTxt : string;
+    dTmp : double;
+begin
+  if (Key = Ord('V')) and (ssCtrl in Shift) then  begin
+    sTxt  := Clipboard.AsText;
+    if TryStrToFloat( sTxt, dTmp ) then
+      (Sender as TEdit).Text := sTxt
+    else
+      ShowMessage('입력불가 : ' + sTxt );
+  end
+  else if (Key = Ord('C')) and (ssCtrl in Shift) then
+    Clipboard.AsText := (Sender as TEdit).Text;
+
+end;
+
+procedure TFrmPKIDXOrders.edtPk_0KeyPress(Sender: TObject; var Key: Char);
+begin
+  if not (CharInSet(Key , ['-','0'..'9','.',#8])) then
+    Key := #0;
+end;
+
+procedure TFrmPKIDXOrders.Export1Click(Sender: TObject);
+begin
+  dlgSave.FileName  :=  Format('%s_%s_%s_%s.csv', [TExchangeKindDesc[FExKind[ptLong]], edtCode.Text,
+    ifThenStr(FEntry,'진입','청산'), FormatDateTime('yyyy-mm-dd', now)]);
+  if dlgSave.Execute(Self.Handle) then
+    SaveToCSVFile(sg, dlgSave.FileName);
+//    Format('%s_%s_%s.csv', [edtCode.Text, ifThenStr(FEntry,'진입','청산'), FormatDateTime('yyyy-mm-dd', now)]));
+end;
+
+procedure TFrmPKIDXOrders.FormClose(Sender: TObject; var Action: TCloseAction);
+begin
+  Action := caFree;
+end;
+
+procedure TFrmPKIDXOrders.FormCreate(Sender: TObject);
+begin
+  InitControls;
+
+  FPKIdxOrders:= TPKIdxOrders.Create(Self);
+
+  FSymbols[scDomes] := nil;
+  FSymbols[scInter] := nil;
+  FPosition := nil;
+
+  ResetValue;
+
+  cbBuyExChange(nil);
+  FExKind[ptShort]  := ekBinance;
+
+  SetSymbols;
+
+  InitPrice;
+
+  App.Engine.TradeBroker.Subscribe(Self, TradeProc);
+end;
+
+procedure TFrmPKIDXOrders.FormDestroy(Sender: TObject);
+begin
+  App.Engine.QuoteBroker.Cancel(self);
+  App.Engine.TradeBroker.Unsubscribe(Self);
+
+  FPKIdxOrders.Free;
+end;
+
+procedure TFrmPKIDXOrders.InitControls;
+var
+  i : integer;
+  clBack: TColor;
+begin
+  with sg do
+  begin
+    ColCount := titleCnt;
+    for I := 0 to titleCnt-1 do
+    begin
+      Cells[i, 0] := logTitle[i];
+      ColWidths[i]:= logTitleWidths[i];
+    end;
+
+    RowCount := 1;
+    {
+    Cells[0,1]  := '09 11:57:04';
+    Cells[1,1]  := '5';
+    Cells[2,1]  := '1.23';
+    Cells[3,1]  := '1234.56';
+    Cells[4,1]  := '+ 175.200';
+    }
+  end;
+
+  if FEntry then begin
+    clBack:= clRed;
+    Caption := 'PK-IDX 진입';
+    Panel11.Caption := '진입 PK';
+    Panel10.Caption := '진입P-I';
+  end
+  else begin
+    clBack:= clBlue;
+    Caption := 'PK-IDX 청산';
+    Panel11.Caption := '청산 PK';
+    Panel10.Caption := '청산 P-I';
+  end;
+
+  plPK1.Color := clBack;
+  plPK2.Color := clBack;
+  plPI1.Color := clBack;
+  plPI2.Color := clBack;
+
+  for I := 0 to PKCNT-1 do
+  begin
+    Controls[i].btnRun  := TSpeedButton(FindComponent('btnRun_'+i.ToString));
+    Controls[i].ckPK    := TCheckBox(FindComponent('ckPK_'+i.ToString));
+    Controls[i].ckPKIDX := TCheckBox(FindComponent('ckPKIDX_'+i.ToString));
+    Controls[i].ckExDisparity := TCheckBox(FindComponent('ckExDisparity_'+i.ToString));
+    Controls[i].cbMethod  := TComboBox(FindComponent('cbMethod_'+i.ToString));
+
+    Controls[i].edtPK       := TEdit(FindComponent('edtPK_'+i.ToString));
+    Controls[i].edtPKIDX    := TEdit(FindComponent('edtPKIDX_'+i.ToString));
+    Controls[i].edtExDisparity  := TEdit(FindComponent('edtExDisparity_'+i.ToString));
+    Controls[i].edtOrderQty := TEdit(FindComponent('edtOrderQty_'+i.ToString));
+    Controls[i].edtRepeat   := TEdit(FindComponent('edtRepeat_'+i.ToString));
+    Controls[i].edtCount    := TEdit(FindComponent('edtCount_'+i.ToString));
+  end;
+
+end;
+
+procedure TFrmPKIDXOrders.InitPrice;
+begin
+  if (FSymbols[scDomes] <> nil) and ( FSymbols[scInter] <> nil) then
+  begin
+    CalcPIPrice;
+    UpdateCalcedPrice;
+  end else
+  begin
+//    Sho
+  end;
+end;
+
+procedure TFrmPKIDXOrders.InterQuoteProc(Sender, Receiver: TObject;
+  DataID: Integer; DataObj: TObject; EventID: TDistributorID);
+  var
+    aQuote : TQuote;
+begin
+  if (Receiver <> Self) or (DataObj = nil ) or (FSymbols[scInter] = nil) then Exit;
+  aQuote := DataObj as TQuote;
+  if aQuote.Symbol = FSymbols[scInter] then
+    DoQuote(FSymbols[scInter], true);
+
+end;
+
+procedure TFrmPKIDXOrders.DomesQuoteProc(Sender, Receiver: TObject;
+  DataID: Integer; DataObj: TObject; EventID: TDistributorID);
+  var
+    aQuote : TQuote;
+begin
+  if (Receiver <> Self) or (DataObj = nil ) or (FSymbols[scDomes] = nil) then Exit;
+  aQuote := DataObj as TQuote;
+  if aQuote.Symbol = FSymbols[scDomes] then
+    DoQuote(FSymbols[scDomes], false);
+end;
+
+procedure TFrmPKIDXOrders.DoQuote(aSymbol : TSymbol; bOS : boolean);
+begin
+  if CheckProcTime then
+    FPKIdxOrders.OnQuote(aSymbol, bOS )
+  else
+    FPKIdxOrders.OnPause;
+end;
+
+
+procedure TFrmPKIDXOrders.LoadEnv(aStorage: TStorage);
+var
+  I: integer;
+begin
+  if aStorage = nil then Exit;
+
+  with aStorage do
+  begin
+
+    edtCode.Text        := FieldByName('edtCode').AsString;
+    cbBuyEx.ItemIndex   := FieldByName('cbBuyEx').AsInteger;
+    cbSellEx.ItemIndex  := FieldByName('cbSellEx').AsInteger;
+    edtOrderQty.Text    := FieldByName('edtOrderQty').AsString;
+
+    for I := 0 to PKCNT-1 do
+    begin
+      Controls[i].ckPK.Checked        := FieldByName('ckPK_'+i.ToString).AsBoolean;
+      Controls[i].ckPKIDX.Checked     := FieldByName('ckPKIDX_'+i.ToString).AsBoolean;
+      Controls[i].ckExDisparity.Checked := FieldByName('ckExDisparity_'+i.ToString).AsBoolean;
+      Controls[i].cbMethod.ItemIndex  := FieldByName('cbMethod_'+i.ToString).AsInteger;
+
+      Controls[i].edtPK.Text       := FieldByName('edtPK_'+i.ToString).AsString;
+      Controls[i].edtPKIDX.Text    := FieldByName('edtPKIDX_'+i.ToString).AsString;
+      Controls[i].edtExDisparity.Text  := FieldByName('edtExDisparity_'+i.ToString).AsString;
+      Controls[i].edtOrderQty.Text := FieldByName('edtOrderQty_'+i.ToString).AsString;
+      Controls[i].edtRepeat.Text   := FieldByName('edtRepeat_'+i.ToString).AsString;
+    end;
+
+    cbBuyExChange(nil);
+
+    if edtCode.Text <> '' then
+      Button1Click(nil);
+  end;
+
+end;
+
+function TFrmPKIDXOrders.MakeName: string;
+begin
+  Result := Format('%s_%s', [Uppercase(edtCode.Text), TExchangeKindShortDesc[FExKind[ptLong]]] );
+end;
+
+procedure TFrmPKIDXOrders.N1Click(Sender: TObject);
+begin
+  if (MessageDlg( '체결 로그 지울건가요?', mtInformation, [mbNo, mbYes], 0) = mrYes ) then
+    InitGrid(sg, true, 1);
+end;
+
+procedure TFrmPKIDXOrders.OnKipNotify(Sender: TObject; Value: string);
+var
+  aItem : TPKIdxOrderItem;
+  sts   : TArray<string>;
+  iRow  : integer;
+  aCheck: TCheckBox;
+begin
+  aItem := TPKIdxOrderItem( Sender );
+  // name 규칙 PK_XRP_UP_EN_1
+  sts   := aItem.Name.Split(['_']);
+  if Length(sts) > 4 then
+    if TryStrToInt( sts[4], iRow ) then
+    begin
+
+      if (iRow < 0) or (iRow >= PKCNT) then Exit;
+
+      if Value = ORD_STR then
+      begin
+
+
+        Controls[iRow].edtCount.Text := Format('%.0f',[ aItem.GetFillRate]);//  (aItem.Count -1).ToString;
+        if (TPanel(Controls[iRow].edtCount.Parent).Color = clRed) or (TPanel(Controls[iRow].edtCount.Parent).Color = clLime) then
+          TPanel(Controls[iRow].edtCount.Parent).Color := clYellow;
+      end else
+      begin
+
+        if Value = STOP_STR then
+          //aCheck.Enabled := true
+          Controls[iRow].btnRun.Enabled := true
+        else if Value = RJCT_STR then
+          //Tpanel(aCheck.Parent).Color := clGray
+          Tpanel(Controls[iRow].btnRun.Parent).Color := clGray
+        else if Value = BAL_STR then begin
+          if Tpanel(Controls[iRow].btnRun.Parent).Color <> clRed then
+            Tpanel(Controls[iRow].btnRun.Parent).Color := clRed;
+        end
+        else if Value = RANG_STR then
+          Tpanel(Controls[iRow].btnRun.Parent).Color := clLime
+        else begin
+          //aCheck.Checked := false;
+          Controls[iRow].btnRun.Down := true;
+          btnRun_0Click(Controls[iRow].btnRun);
+
+          if Value = DONE_STR then
+            Tpanel(Controls[iRow].btnRun.Parent).Color := clSkyblue
+          else if Value = RSK_STR then
+            Tpanel(Controls[iRow].btnRun.Parent).Color := clBlue;
+        end;
+      end;
+      if ShowBalLog.Checked then
+        StatusBar2.Panels[0].Text := aItem.ErrMsg
+      else
+        if StatusBar2.Panels[0].Text <> '' then
+          StatusBar2.Panels[0].Text := '';
+    end;
+end;
+
+procedure TFrmPKIDXOrders.OnNotifyDone(Sender: TObject);
+var
+  aItem : TPutKipItem;
+  aSymbol: TSymbol;
+begin
+  if SEnder = nil then Exit;
+  aItem := TPutKipItem(Sender);
+  if aItem.Order = nil then Exit;
+
+  InsertLine(sg, 1);
+
+  with sg do
+  begin
+
+    Cells[0, 1] := FormatDateTime('dd hh:nn:ss', now);
+    Cells[1, 1] := Format('%.2f', [aItem.KipValue]);
+    Cells[2, 1] := Format('%.2f', [aItem.PIValue]);
+    Cells[3, 1] := Format('%.2f', [aItem.Kip]);
+    Cells[4, 1] := Format('%.2f', [aItem.IdxPk]);
+
+    if aItem.Order.Symbol = FSymbols[scDomes] then
+      aSymbol := FSymbols[scInter]
+    else
+      aSymbol := FSymbols[scDomes];
+
+    if aItem.Order.Side < 0 then begin
+      Cells[5,1]  := '+ '+ aItem.Order.Symbol.PriceToStr(aItem.Order.AvgPrice);
+      if aSymbol <> nil then
+        Cells[6,1]  := aSymbol.PriceToStr(aItem.AvgPrice);
+    end
+    else begin
+      if aSymbol <> nil then
+        Cells[5,1]  := aSymbol.PriceToStr(aItem.AvgPrice);
+      Cells[6,1]  := '+ '+ aItem.Order.Symbol.PriceToStr(aItem.Order.AvgPrice);
+    end;
+
+    Cells[7, 1] := Format('%s', [doubleToStr(min(aItem.Order.FilledQty, aItem.FilledQty))]);
+    Cells[8, 1] := Format('%.2f', [aItem.Order.ExRate]);
+    Cells[9, 1] := Format('%s', [doubleToStr(aItem.Order.FilledQty - aItem.FilledQty)]);
+
+    if (FixedRows <= 0) and (RowCount >= 2)  then
+      FixedRows := 1;
+  end;
+end;
+
+
+procedure TFrmPKIDXOrders.OnNotifyDust(Sender: TObject; aOrder: TOrder);
+var
+  iRow : integer;
+begin
+  if (Sender = nil) or (aOrder = nil) then Exit;
+
+  iRow := sg.Cols[0].IndexOfObject(aOrder);
+  if iRow < 0 then  begin
+    iRow := 1;
+    InsertLine(sg, iRow);
+  end;
+
+  with sg do
+  begin
+    Cells[0, iRow] := FormatDateTime('dd hh:nn:ss', now);
+    Objects[0, iRow] := aOrder;
+    Cells[1, iRow] := 'Dst';
+
+    if aOrder.Side < 0 then begin
+      Cells[5,iRow]  := aOrder.Symbol.PriceToStr(aOrder.AvgPrice);
+    end
+    else begin
+      Cells[6,iRow]  := aOrder.Symbol.PriceToStr(aOrder.AvgPrice);
+    end;
+
+    Cells[7, iRow] := Format('%s', [doubleToStr(aOrder.FilledQty)]);
+
+//    Cells[8, 1] := Format('%.2f', [aItem.Order.ExRate]);
+//    Cells[9, 1] := Format('%s', [doubleToStr(aItem.Order.FilledQty - aItem.FilledQty)]);
+
+    if (FixedRows <= 0) and (RowCount >= 2)  then
+      FixedRows := 1;
+  end;
+end;
+
+procedure TFrmPKIDXOrders.OnPosition(aPos: TPosition);
+begin
+  if aPos = nil then Exit;
+  if FSymbols[scInter] <> aPos.Symbol then Exit;
+  FPosition := aPos;
+end;
+
+procedure TFrmPKIDXOrders.ResetValue;
+var
+  aType: TAutoOrderType;
+begin
+  FKrEstPrice[ptLong] := 0;
+  FKrEstPrice[ptShort]:= 0;
+
+  FOsEstPrice[ptLong] := 0;
+  FOsEstPrice[ptShort]:= 0;
+
+  aType := TAutoOrderType(ifThen(FEntry, integer(aoEntry), integer(aoExit)));
+
+  FPIPrice[aType].Init;
+
+  FMinQty := 0.0001;
+end;
+
+procedure TFrmPKIDXOrders.SaveEnv(aStorage: TStorage);
+var
+  I: integer;
+begin
+  if aStorage = nil then Exit;
+
+  with aStorage do
+  begin
+
+    FieldByName('edtCode').AsString   := edtCode.Text;
+    FieldByName('cbBuyEx').AsInteger  := cbBuyEx.ItemIndex;
+    FieldByName('cbSellEx').AsInteger := cbSellEx.ItemIndex;
+    FieldByName('edtOrderQty').AsString:= edtOrderQty.Text;
+
+    for I := 0 to PKCNT-1 do
+    begin
+      FieldByName('ckPK_'+i.ToString).AsBoolean         := Controls[i].ckPK.Checked;
+      FieldByName('ckPKIDX_'+i.ToString).AsBoolean      := Controls[i].ckPKIDX.Checked;
+      FieldByName('ckExDisparity_'+i.ToString).AsBoolean:= Controls[i].ckExDisparity.Checked;
+      FieldByName('cbMethod_'+i.ToString).AsInteger     := Controls[i].cbMethod.ItemIndex;
+
+      FieldByName('edtPK_'+i.ToString).AsString         := Controls[i].edtPK.Text;
+      FieldByName('edtPKIDX_'+i.ToString).AsString      := Controls[i].edtPKIDX.Text;
+      FieldByName('edtExDisparity_'+i.ToString).AsString:= Controls[i].edtExDisparity.Text;
+      FieldByName('edtOrderQty_'+i.ToString).AsString   := Controls[i].edtOrderQty.Text;
+      FieldByName('edtRepeat_'+i.ToString).AsString     := Controls[i].edtRepeat.Text;
+    end;
+  end;
+end;
+
+procedure TFrmPKIDXOrders.SetEnableUnitContorls(iTag: integer;
+  bEnable: boolean);
+  var
+    i : integer;
+begin
+  if (iTag < 0) or (iTag >= PKCNT) then Exit;
+  Controls[iTag].SetEnabled(bEnable);
+
+  if bEnable then
+    for I := 0 to PKCNT-1 do
+      if not Controls[i].btnRun.Down then
+        Exit;
+
+  edtCode.Enabled := bEnable;
+  cbBuyEx.Enabled := bEnable;
+  cbSellEx.Enabled:= bEnable;
+  Button1.Enabled := bEnable;
+end;
+
+procedure TFrmPKIDXOrders.SetSymbols;
+var
+  aSymbol : array [TSymbolCountryType] of TSymbol;
+begin
+  if edtCode.Text = '' then
+  begin
+    FSymbols[scDomes] := nil;
+    FSymbols[scInter] := nil;
+    Exit;
+  end;
+
+  aSymbol[scDomes] := App.Engine.SymbolCore.BaseSymbols.FindSymbol( edtCode.Text , FExKind[ptLong], eaSpot );
+  aSymbol[scInter] := App.Engine.SymbolCore.BaseSymbols.FindSymbol( edtCode.Text , FExKind[ptShort], eaFutUsdt );
+
+  if ( aSymbol[scDomes] = nil ) or ( aSymbol[scInter] = nil ) then  begin
+    ShowMessage('해당종목을 찾을수 없음');
+    Exit;
+  end;
+
+  if aSymbol[scDomes] <> FSymbols[scDomes] then
+  begin
+    if FSymbols[scDomes] <> nil then
+      App.Engine.QuoteBroker.Brokers[FSymbols[scDomes].Spec.ExchangeType].Cancel( Self, FSymbols[scDomes]);
+    if aSymbol[scDomes] <> nil then
+      App.Engine.QuoteBroker.Brokers[FExKind[ptLong]].Subscribe( Self, aSymbol[scDomes], DomesQuoteProc);
+
+    FSymbols[scDomes] := aSymbol[scDomes];
+  end;
+
+  if aSymbol[scInter] <> FSymbols[scInter] then
+  begin
+    if FSymbols[scInter] <> nil then
+      App.Engine.QuoteBroker.Brokers[FSymbols[scInter].Spec.ExchangeType].Cancel( Self, FSymbols[scInter]);
+    if aSymbol[scInter] <> nil then
+      App.Engine.QuoteBroker.Brokers[FExKind[ptShort] ].Subscribe( Self, aSymbol[scInter], InterQuoteProc);
+
+    FSymbols[scInter] := aSymbol[scInter];
+  end;
+  // 포지션 조회
+  App.Engine.ApiManager.ExManagers[ekBinance].RequestPosition( FSymbols[scInter]);
+  // MA 등록 --> 공통 설정으로 이동
+//  if App.Engine.SymbolCore.Tethers[FExKind[ptLong]] <> nil then
+//    FPKIdxOrders.MATerm := App.Engine.SymbolCore.Tethers[FExKind[ptLong]].Terms.MATerms.New(FCommData.MATerm);
+end;
+
+procedure TFrmPKIDXOrders.stNoticeDrawPanel(StatusBar: TStatusBar;
+  Panel: TStatusPanel; const Rect: TRect);
+  var
+    clFont, clBack: TColor;
+    sTxt  : string;
+    rRect : TRect;
+begin
+  // 0 : 정상  1 : 환이격 2:  시세  3: 환  4: 타임
+//  if StatusBar.Tag = 0 then begin
+//    StatusBar.Canvas.Brush.Color := clBtnFace;
+//    StatusBar.Canvas.Font.Color := clBlack;
+//  end
+
+  clFont:= clBlack;
+  case StatusBar.Tag of
+    0: clBack := clBtnFace;
+    5: begin clBack := clGray; clFont:= clWhite; end;
+    else clBack := clYellow;
+  end;
+
+  with StatusBar do
+  begin
+    sTxt :=  StatusBar.Panels[3].Text;
+    Canvas.Brush.Color := clBack;
+    Canvas.Font.Color  := clFont;
+    rRect := Rect;
+    Canvas.FillRect(rRect);
+    DrawText(Canvas.Handle, PChar( sTxt), Length( sTxt ), rRect, DT_VCENTER or DT_CENTER );
+  end;
+
+end;
+
+function TFrmPKIDXOrders.Stop(iTag: integer): TPKIdxOrderItem;
+var
+  sTmp, stName : string;
+begin
+  sTmp := Format('%s_%s', [MakeName, ifThenStr(FEntry , 'En', 'Ex')] );
+  stName := Format('PKIDX_%s_%d', [sTmp, iTag] );
+  Result := FPKIdxOrders.Find(stName);
+
+  if Result <> nil then
+    Result.Stop;
+
+end;
+
+procedure TFrmPKIDXOrders.Timer1Timer(Sender: TObject);
+begin
+  if ( FSymbols[scDomes] = nil ) or ( FSymbols[scInter] = nil ) then Exit;
+
+  CalcPIPrice;
+  UpdateCalcedPrice;
+  UpdateTradeAmt;
+
+  CheckDust;
+end;
+
+procedure TFrmPKIDXOrders.TradeProc(Sender, Receiver: TObject; DataID: Integer;
+  DataObj: TObject; EventID: TDistributorID);
+begin
+  if ( Receiver <> Self ) or ( DataObj = nil ) then Exit;
+
+  case Integer(EventID) of
+    ORDER_ACCEPTED,
+    ORDER_REJECTED,
+    ORDER_CANCELED,
+    ORDER_CHANGED,
+    ORDER_FILLED: FPKIdxOrders.OnOrder(DataObj as TOrder, Integer(EventID));
+
+    POSITION_UPDATE : OnPosition( DataObj as TPosition);
+  end;
+end;
+
+procedure TFrmPKIDXOrders.UpdateCalcedPrice;
+var
+  dQty, dQty2, dAvg, dIdx : double;
+begin
+  plDomes.Caption := FSymbols[scDomes].PriceToStr(FSymbols[scDomes].Last);
+  plInter.Caption := FSymbols[scInter].PriceToStr(FSymbols[scInter].Last);
+
+  dQty  := CalcDiv(FSymbols[scDomes].spec.MinNotional, FSymbols[scDomes].Last);
+  dQty2 := Max( FSymbols[scInter].Spec.QtySize,
+    CalcDiv(FSymbols[scInter].spec.MinNotional, FSymbols[scInter].Last));
+
+  FMinQty := Max(dQty, dQty2);
+
+  stNotice.Panels[0].Text :=  Format('%d | %s %s ', [ FSymbols[scInter].Spec.QtyPrecision,
+     FSymbols[scInter].QtyToStr(FMinQty),
+     App.Engine.SymbolCore.CalcMinOrderQty(FSymbols[scDomes], FSymbols[scInter], FSymbols[scDomes].Bids[0].Price, 1 ).ToString
+      ] );
+
+  dIdx := App.Engine.SymbolCore.Tethers[FExKind[ptLong]].GetCustomIndex;
+
+  if FPKIdxOrders.MATerm <> nil then begin
+    dAvg := FPKIdxOrders.MATerm.Average;
+    stNotice.Panels[1].Text := Format('%d | %.2n', [gAOConfig.Result.MATerm, dIdx - dAvg]);
+      //(dIdx - dAvg) / dAvg) * 100 ]);
+  end;
+
+  stNotice.Panels[2].Text := Format('%.2n | %.2n', [dIdx, dAvg]);
+
+  plPK1.Caption := Format('%.3f', [FPIPrice[AOType].PK_F]);
+  plPK2.Caption := Format('%.3f', [FPIPrice[AOType].PK_S]);
+  plPI1.Caption := Format('%.3f', [FPIPrice[AOType].PI_F]);
+  plPI2.Caption := Format('%.3f', [FPIPrice[AOType].PI_S]);
+
+end;
+
+procedure TFrmPKIDXOrders.UpdateTradeAmt;
+var
+  aAcnt : TAccount;
+  aPos  : TPosition;
+  dTmp  : double;
+  aAsset : TAsset;
+
+  aDomes, aInter: TPositionType;
+begin
+
+  if FEntry then begin
+    aDomes := ptLong;
+    aInter:= ptShort;
+  end else
+  begin
+    aDomes := ptShort;
+    aInter:= ptLong;
+  end;
+
+  with stDomes do
+  begin
+    Panels[1].Text  := Format('%.3f', [ FPKIdxOrders.KipReport[AOType].KipFillAvg.GetKipFill ]);
+    Panels[2].Text  := DoubleToStr(FPKIdxOrders.KipReport[AOType].AccFilledQty[aDomes] );
+    Panels[3].Text  := Format('%.0n', [ FPKIdxOrders.KipReport[AOType].TradeAmt[aDomes] ]);
+
+    dTmp  := 0;
+    aAcnt := App.Engine.TradeCore.FindAccount(FExKind[ptLong]);
+    if aAcnt <> nil then
+    begin
+      aAsset := aAcnt.Assets.Find(edtCode.Text);
+      if aAsset <> nil then
+        dTmp := aAsset.Balance;
+    end;
+    Panels[4].Text  := DoubleToStr(dTmp);
+  end;
+
+  with stInter do
+  begin
+    Panels[1].Text  := Format('%.3f', [ FPKIdxOrders.KipReport[AOType].KipFillAvg.GetIDXill ]);
+    Panels[2].Text  := DoubleToStr(FPKIdxOrders.KipReport[AOType].AccFilledQty[aInter] );
+    Panels[3].Text  := Format('%.0n', [ FPKIdxOrders.KipReport[AOType].TradeAmt[aInter] ]);
+
+    dTmp  := 0;
+    aPos  := FPKIdxOrders.Positions[scInter];
+    if aPos <> nil then
+      dTmp := aPos.Volume;
+    Panels[4].Text  := DoubleToStr( dTmp );
+  end;
+
+end;
+
+{ TPKControls }
+
+procedure TPKControls.SetEnabled(bEnable: boolean);
+begin
+  ckPK.Enabled := bEnable; ckPKIDX.Enabled := bEnable;
+  ckExDisparity.Enabled := bEnable;
+  cbMethod.Enabled := bEnable;
+  edtPK.Enabled := bEnable;
+  edtPKIDX.Enabled := bEnable;
+  edtExDisparity.Enabled := bEnable;
+  edtOrderQty.Enabled := bEnable;
+  edtRepeat.Enabled := bEnable;
+end;
+
+
+
+end.

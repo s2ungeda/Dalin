@@ -1,0 +1,239 @@
+object FrmOrderList: TFrmOrderList
+  Left = 0
+  Top = 0
+  Caption = #51452#47928#47532#49828#53944
+  ClientHeight = 436
+  ClientWidth = 1351
+  Color = clBtnFace
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -17
+  Font.Name = 'Tahoma'
+  Font.Style = []
+  OnClose = FormClose
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  PixelsPerInch = 144
+  TextHeight = 21
+  object Panel1: TPanel
+    Left = 0
+    Top = 0
+    Width = 1351
+    Height = 38
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Align = alTop
+    TabOrder = 0
+    ExplicitWidth = 1341
+    object ComboBox1: TComboBox
+      Left = 8
+      Top = 3
+      Width = 102
+      Height = 29
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Style = csDropDownList
+      ItemIndex = 0
+      TabOrder = 0
+      Text = #51204#52404
+      OnChange = ComboBox1Change
+      Items.Strings = (
+        #51204#52404
+        #48148#51060#45240#49828
+        #50629#48708#53944
+        #48727#50040)
+    end
+    object CheckBox1: TCheckBox
+      Left = 122
+      Top = 8
+      Width = 64
+      Height = 24
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #51217#49688
+      Checked = True
+      State = cbChecked
+      TabOrder = 1
+      OnClick = CheckBox1Click
+    end
+    object CheckBox2: TCheckBox
+      Tag = 1
+      Left = 207
+      Top = 8
+      Width = 60
+      Height = 24
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #52404#44208
+      Checked = True
+      State = cbChecked
+      TabOrder = 2
+      OnClick = CheckBox1Click
+    end
+    object CheckBox3: TCheckBox
+      Tag = 2
+      Left = 290
+      Top = 8
+      Width = 61
+      Height = 24
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #52712#49548
+      TabOrder = 3
+      OnClick = CheckBox1Click
+    end
+    object CheckBox4: TCheckBox
+      Tag = 3
+      Left = 365
+      Top = 8
+      Width = 61
+      Height = 24
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #44144#48512
+      TabOrder = 4
+      OnClick = CheckBox1Click
+    end
+    object edtCode: TEdit
+      Left = 526
+      Top = 3
+      Width = 87
+      Height = 29
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      TabOrder = 5
+      OnKeyDown = edtCodeKeyDown
+    end
+    object cbCode: TCheckBox
+      Left = 622
+      Top = 7
+      Width = 88
+      Height = 25
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #51333#47785#54596#53552
+      TabOrder = 6
+      OnClick = cbCodeClick
+    end
+    object btnNext: TButton
+      Left = 737
+      Top = 3
+      Width = 56
+      Height = 29
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #45796#51020
+      Enabled = False
+      TabOrder = 7
+      OnClick = btnNextClick
+    end
+    object CheckBox5: TCheckBox
+      Tag = 4
+      Left = 436
+      Top = 8
+      Width = 60
+      Height = 26
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = #45824#44592
+      TabOrder = 8
+      OnClick = CheckBox1Click
+    end
+  end
+  object sgOrder: TStringGrid
+    Left = 0
+    Top = 38
+    Width = 1351
+    Height = 367
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Align = alClient
+    DefaultColWidth = 96
+    DefaultColAlignment = taCenter
+    DefaultRowHeight = 29
+    DefaultDrawing = False
+    FixedCols = 0
+    Options = [goFixedVertLine, goFixedHorzLine, goVertLine, goHorzLine, goRangeSelect, goColSizing, goFixedRowDefAlign]
+    ScrollBars = ssVertical
+    TabOrder = 1
+    OnDblClick = sgOrderDblClick
+    OnDrawCell = sgOrderDrawCell
+    OnMouseDown = sgOrderMouseDown
+    ExplicitWidth = 1341
+    ExplicitHeight = 365
+  end
+  object Panel2: TPanel
+    Left = 0
+    Top = 405
+    Width = 1351
+    Height = 31
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 5
+    Align = alBottom
+    TabOrder = 2
+    ExplicitTop = 403
+    ExplicitWidth = 1341
+    object Label1: TLabel
+      Left = 11
+      Top = 5
+      Width = 407
+      Height = 21
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Caption = '* Bithumb '#50808#48512'('#44144#47000#49548' '#54856#54168#51060#51648' '#46608#45716' '#50545') '#51452#47928#51008' Dalin '#50640' '#48152#50689#50504#46120
+      Color = clBtnFace
+      Font.Charset = DEFAULT_CHARSET
+      Font.Color = clPurple
+      Font.Height = -17
+      Font.Name = 'Tahoma'
+      Font.Style = []
+      ParentColor = False
+      ParentFont = False
+    end
+  end
+  object PopupMenu1: TPopupMenu
+    Left = 512
+    Top = 208
+    object N1: TMenuItem
+      Caption = #52712#49548#51452#47928
+      OnClick = N1Click
+    end
+    object N2: TMenuItem
+      Caption = #51452#47928#48264#54840#48373#49324
+      OnClick = N2Click
+    end
+    object N3: TMenuItem
+      Caption = '-'
+    end
+    object N4: TMenuItem
+      Caption = #49345#53468#51312#54924
+      OnClick = N4Click
+    end
+  end
+end

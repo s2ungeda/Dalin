@@ -1,0 +1,353 @@
+unit UBinanceManager;
+
+interface
+
+uses
+  System.Classes, System.SysUtils, System.DateUtils,
+
+  UExchangeManager, USymbols, UBinanceParse , UQuoteTimers, UTypes
+
+  , UOrders
+
+  ,UApiTypes
+
+  ;
+
+type
+
+  TBinanceManager = class( TExchangeManager )
+  private
+  	FSeq  : int64;
+    FParse: TBinanceParse;
+    FDepTimer: TQuoteTimer;
+    FListenInterval : integer;
+    FDnwStateInterval : integer;
+    FListenKeyCheck : integer;
+    procedure OnTimer( Sender : TObject );
+  public
+
+    Constructor  Create( aExType : TExchangeKind );
+    Destructor  Destroy; override;
+
+    procedure UnSubscribeAll ; override;
+
+    function InitMarketWebSockets : boolean ; override;
+    function SubscribeAll : boolean; override;
+    function MakeCloseData : boolean ; override;
+
+    function RequestBalance : boolean; override;
+    function RequestPositons : boolean; override;
+    function RequestOrders: boolean; override;
+    function SendOrder( aOrder : TOrder ): boolean;
+
+    function Subscrib( aSymbol : TSymbol ) : boolean; override;
+    function UnSubscrib( aSymbol : TSymbol ) : boolean; override;
+
+    procedure OnDepthTimer(Sender: TObject);
+    procedure StopSendTimer;
+
+    // 병렬 처리용
+    function ASyncRequestTradeAmt( aSymbol : TSymbol ) : boolean; override;
+    function ASyncRequest5MinAgo( aSymbol : TSymbol ) : boolean; override;
+    function ASyncRequestAvailable( aSymbol : TSymbol ) : boolean; override;
+
+    //
+//    function RequestChangeMarginType( stCode, stType : string ) : boolean;
+//    function RequestChangeLeverage( stCode, stLeverage : string ) : boolean;
+
+    property Parse : TBinanceParse read FParse;
+    property DepTimer : TQuoteTimer read FDepTimer;
+  end;
+
+implementation
+
+uses
+  GApp , Math, GLibs
+  , UApiConsts
+  , UBinanceWebSockets, UBinanceFutures, UBinanceSpotNMargin, UBinanceFuturesCM
+  ;
+
+{ TBinanceManager }
+
+constructor TBinanceManager.Create(aExType: TExchangeKind);
+begin
+  inherited Create( aExType );
+
+  FParse:= TBinanceParse.Create(self);
+  FSeq	:= 0;
+  FListenInterval := 0;
+  FDnwStateInterval := 0;
+  FListenKeyCheck := 0;
+end;
+
+destructor TBinanceManager.Destroy;
+//var
+//  i : integer;
+begin
+//
+//  for I := 0 to High(QuoteSock) do
+//    QuoteSock[i].Free;
+
+  if FDepTimer <> nil then
+    FDepTimer.Enabled := false;
+  FParse.Free;
+  inherited;
+end;
+
+function TBinanceManager.InitMarketWebSockets: boolean;
+var
+  iCount , iMode, i, j, idx : integer;
+  aList : TStringList;
+  aSymbol : TSymbol;
+  sKey : string;
+  k : TExchangeApiType;
+begin
+
+  iCount := 3;
+  SetLength( QuoteSock, iCount );
+  SetLength( TradeSock, iCount );
+
+  for k := eaSpot to High(TExchangeApiType) do
+  begin
+    idx := integer(k);
+    QuoteSock[idx]  := TBinanceWebSocket.Create(QOUTE_SOCK, idx, k ) ;
+    QuoteSock[idx].init( App.Engine.ApiConfig.ExchangeInfo[ integer(ekBinance) ].ApiInfo[k].WSUrl);
+  end;
+
+  //for k := eaSpot to High(TExchangeApiType) do
+  for k := eaFutUsdt to High(TExchangeApiType) do
+  begin
+    idx := integer(k);
+
+//    case k of
+//      eaSpot: sKey  := (Exchanges[k] as TBinanceSpotNMargin).RequestListenKey( true );
+//      eaFutUsdt: sKey  := (Exchanges[k] as TBinanceFutures).RequestListenKey( true );
+//      eaFutCoin: sKey  := (Exchanges[k] as TBinanceFuturesCM).RequestListenKey( true );
+//    end;
+
+    sKey  := Exchanges[k].RequestListenKey( true );
+
+    TradeSock[idx]  := TBinanceWebSocket.Create(TRADE_SOCK, idx, k  ) ;
+    TradeSock[idx].init(App.Engine.ApiConfig.ExchangeInfo[ integer(ekBinance) ].ApiInfo[k].WSUrl + '/' + sKey  );
+  end;
+
+  // add websocket api
+  TBinanceFutures(Exchanges[eaFutUsdt]).WsApi.init(
+    App.Engine.ApiConfig.ExchangeInfo[ integer(ekBinance) ].ApiInfo[eaFutUsdt].WSApiUrl
+  );
+
+  Timer.OnTimer := OnTimer;
+
+  Result := true;
+
+  FDepTimer  := App.Engine.QuoteBroker.Timers.New;
+  FDepTimer.Enabled  := false;
+  FDepTimer.Interval := 500;
+  FDepTimer.OnTimer  := OnDepthTimer;
+end;
+
+
+
+function TBinanceManager.MakeCloseData: boolean;
+var
+  sTmp : string;
+begin
+  stmp := App.Engine.SymbolCore.MainSymbols[msBTC][ExchangeKind].OrgCode;
+  Result := Exchanges[eaFutUsdt].RequestCandleData('1d', sTmp )
+    and Exchanges[eaFutUsdt].RequestCandleData('30m', sTmp )    ;
+
+  stmp := App.Engine.SymbolCore.MainSymbols[msETH][ExchangeKind].OrgCode;
+  Result := Exchanges[eaFutUsdt].RequestCandleData('1d', sTmp )
+    and Exchanges[eaFutUsdt].RequestCandleData('30m', sTmp )    ;
+end;
+
+procedure TBinanceManager.OnDepthTimer(Sender: TObject);
+begin
+  if Done then
+  begin
+    FDepTimer.Enabled := false;
+    Exit;
+  end;
+
+end;
+
+procedure TBinanceManager.OnTimer(Sender: TObject);
+var
+  j : TMarketType;
+  i : TExchangeApiType;
+  sKey : string;
+begin
+  // 1초에 한번
+
+  try
+
+    if FDnwStateInterval > 10 then
+    begin
+      // weight 가 1M 에 10
+//      Exchanges[mtSpot].RequestDNWState;
+      FDnwStateInterval := 0;
+    end;
+
+    if FListenInterval > (60 * 20) then
+    begin
+      FListenInterval := 0;
+      Exchanges[eaFutUsdt].RequestListenKey(false);
+      Exchanges[eaFutCoin].RequestListenKey(false);
+    end;
+
+    // listen key 상태 점검
+    if FListenKeyCheck > 15  then
+    begin
+      FListenKeyCheck := 0;
+      for I := eaFutUsdt to High(TExchangeApiType) do
+        if Exchanges[i].NeedReCon then begin
+          sKey := Exchanges[i].RequestListenKey(true);
+          if sKey <> '' then begin
+            App.Log(llInfo, 'Binance %s Trade Reconnect with skey (%s)', [TExApiTypeDesc[i], sKey])  ;
+            TradeSock[integer(i)].DoConnectWithListenkey(sKey);
+            Exchanges[i].NeedReCon  := false;
+          end;
+        end;
+    end;
+
+  finally
+    inc( FListenInterval );
+    inc( FDnwStateInterval );
+    inc( FListenKeyCheck );
+  end;
+
+end;
+
+function TBinanceManager.RequestBalance: boolean;
+begin
+  Result := Exchanges[eaSpot].RequestBalance and
+      Exchanges[eaFutUsdt].RequestBalance and
+      Exchanges[eaFutCoin].RequestBalance;
+end;
+
+//function TBinanceManager.RequestChangeLeverage(stCode,
+//  stLeverage: string): boolean;
+//begin
+//  Result := TBinanceFutures(Exchanges[eaFutUsdt]).RequestChangeLeverage( stCode, stLeverage );
+//end;
+
+//function TBinanceManager.RequestChangeMarginType(stCode,
+//  stType: string): boolean;
+//begin
+//  Result := TBinanceFutures(Exchanges[eaFutUsdt]).RequestChangeMarginType( stCode, stType );
+//end;
+
+function TBinanceManager.RequestOrders: boolean;
+begin
+  Result := //Exchanges[eaSpot].RequestOrders and
+      Exchanges[eaFutUsdt].RequestOrders and
+      Exchanges[eaFutCoin].RequestOrders;
+end;
+
+function TBinanceManager.RequestPositons: boolean;
+begin
+
+end;
+
+function TBinanceManager.SubscribeAll: boolean;
+var
+  i, j : integer;
+begin
+
+  for I := 0 to High(QuoteSock) do begin
+    QuoteSock[i].SubscribeAll;
+    sleep(500);
+  end;
+
+//  FDepTimer.Enabled := true;
+    
+  result := true;
+end;
+
+function TBinanceManager.ASyncRequest5MinAgo(aSymbol: TSymbol): boolean;
+begin
+  if aSymbol = nil then Exit (false);
+  Result := Exchanges[aSymbol.Spec.ExApiType].ASyncRequest5MinAgo( aSymbol );
+
+end;
+
+function TBinanceManager.ASyncRequestAvailable(aSymbol: TSymbol): boolean;
+begin
+  if aSymbol = nil then Exit (false);
+  Result := Exchanges[aSymbol.Spec.ExApiType].ASyncRequestAvailable(aSymbol);
+end;
+
+function TBinanceManager.ASyncRequestTradeAmt(aSymbol: TSymbol): boolean;
+begin
+  if aSymbol = nil then Exit (false);
+  Result := Exchanges[aSymbol.Spec.ExApiType].ASyncRequestTradeAmt( aSymbol );
+end;
+
+function TBinanceManager.UnSubscrib(aSymbol: TSymbol): boolean;
+begin
+  Result := false;
+  try
+    (QuoteSock[integer(aSymbol.Spec.ExApiType)] as TBinanceWebSocket).UnSubScribe( aSymbol );
+    Result := true;
+  except
+  end;
+end;
+
+function TBinanceManager.SendOrder(aOrder: TOrder): boolean;
+begin
+  Result := false;
+  if aOrder = nil then Exit;
+
+  case aOrder.Symbol.Spec.Market of
+    mtSpot: ;
+    mtFutures:  Result := Exchanges[eaFutUsdt].RequestOrder( aOrder ) ;
+  end;
+end;
+
+procedure TBinanceManager.StopSendTimer;
+var
+  i : Integer;
+begin
+  for i := 0 to  High(QuoteSock) do
+    (QuoteSock[i] as TBinanceWebSocket).StopSendTimer;
+end;
+
+function TBinanceManager.Subscrib(aSymbol: TSymbol): boolean;
+begin
+  Result := false;
+  try
+    (QuoteSock[integer(aSymbol.Spec.ExApiType)] as TBinanceWebSocket).SubScribe( aSymbol );
+    Result := true;
+  except
+
+  end;
+end;
+
+
+procedure TBinanceManager.UnSubscribeAll;
+var
+  i, j : integer;
+begin
+
+  for I := 0 to High(QuoteSock) do
+  begin
+   (QuoteSock[i] as TBinanceWebSocket).UnSubScribeAll;
+    sleep(500);
+  end;
+
+end;
+
+//function TBinanceManager.RequestMaster: boolean;
+//var
+//  I: TMarketType;
+//begin
+//  for I := mtSpot to High(TMarketType) do
+//    if not Exchanges[i].RequestMaster then
+//      Exit (false);
+//
+//  Result := true;
+//end;
+
+
+
+end.

@@ -1,0 +1,73 @@
+unit UApiConsts;
+
+interface
+
+uses
+  UApiTypes
+  ;
+
+const
+
+  // spot 이랑 future 랑 종목코드가 같아서  구분을 위한 접미사
+  Fut_Suf = '_PF';
+
+  DEFAULT_STR = 'Sauri';
+
+  AOWarnMsg : array [0..6] of string = ('', '환 이격',
+    '시세딜레이', '환율딜레이', '주문제한시간', '환율같은값지속', '환율가격필터');
+{
+  Overseas = 0; // 해외거래소
+  Domestic = 1; // 국내거래소
+
+  Bin = 0;
+  Upb = 1;
+  Bit = 2;
+
+  ExCnt = 3;
+ }
+
+  // 각 거래소 최소주문금액 ( 바이낸스는 종목마다 다름 )
+  TMinOrdAmount : array [TExchangeKind] of integer = (5000,5000,5000);
+  // 각 거래소 조회 스레드 타임아웃
+  TExThreadTimeout: array [TExchangeKind] of integer = (30000,60000,60000);
+
+  PUT_ORD = 100;
+  LIQ_ORD = 200;
+  DST_ORD = 300;
+
+  QOUTE_SOCK = 0;
+  TRADE_SOCK = 1;
+  WSAPI_SOCK = 2;
+
+  QOUTE_REST = 0;
+  TRADE_REST = 1;
+
+  PUB_REQ = 0;
+  PRI_REQ = 1;
+  ORD_REQ = 2;
+  
+//  RE_CONN_CNT = 50;
+
+  // 주문 구분
+  ORD_NORMAL = 0;
+  ORD_SEMI_AUTO = 1;
+  ORD_AUTO = 2;
+
+  TMajorSymbolCode        : array [TMajorSymbolKind] of string = ('BTC', 'ETH', 'XRP');
+  TMajorTradeSymbolCode   : array [TMajorTradeSymbol] of string = ('BTC', 'ETH', 'XRP', 'ADA');// 'SOL');
+
+  TExchangeKindDesc       : array [ TExchangeKind ] of string = ('Binance', 'Upbit', 'Bithumb');
+  TExchangeKindShortDesc  : array [ TExchangeKind ] of string = ('BN', 'UP', 'BT');
+  // short version 위에꺼 사용하기 힘듬...
+  TExShortDesc            : array [ TExchangeKind ] of string = ('BN', 'UP', 'BT');
+  TExApiTypeDesc          : array [ TExchangeApiType ] of string = ('Spot', 'FutUsdt', 'FutCoin');
+  TMarketTypeDesc         : array [ TMarketType ] of string = ('Spot', 'Future');
+  TAccountMarketTypeDesc  : array [ TAccountMarketType ] of string = ('All', 'Spot', {'Margin',} 'Future', 'FutureCm');
+  TSettleCurTypeDesc      : array [ TSettleCurType ] of string = ('NONE','KRW', 'USDT', 'USDC', 'BTC' );
+
+  TExchangeSocketKindDesc : array [ TExchangeSocketKind ] of string = ( 'BinQtSock', 'BinTrdSock', 'UpbitSock', 'BithumbSock');
+
+implementation
+
+
+end.

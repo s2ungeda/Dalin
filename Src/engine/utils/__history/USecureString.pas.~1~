@@ -1,0 +1,119 @@
+unit USecureString;
+
+interface
+
+uses
+  SysUtils, Windows, Classes;
+
+type
+  TSecureString = class
+  private
+    FEncryptedData: TBytes;
+    procedure SecureClear(var S: string);
+  public
+    constructor Create;
+    destructor Destroy; override;
+
+    procedure Assign(const S: string);
+    function Reveal: string;
+    procedure Clear;
+
+    function IsEmpty: Boolean;
+  end;
+
+implementation
+
+type
+  DATA_BLOB = record
+    cbData: DWORD;
+    pbData: PByte;
+  end;
+  PDATA_BLOB = ^DATA_BLOB;
+
+function CryptProtectData(pDataIn: PDATA_BLOB; szDataDescr: LPCWSTR;
+  pOptionalEntropy: PDATA_BLOB; pvReserved: Pointer;
+  pPromptStruct: Pointer; dwFlags: DWORD;
+  pDataOut: PDATA_BLOB): BOOL; stdcall; external 'crypt32.dll';
+
+function CryptUnprotectData(pDataIn: PDATA_BLOB; ppszDataDescr: PLPWSTR;
+  pOptionalEntropy: PDATA_BLOB; pvReserved: Pointer;
+  pPromptStruct: Pointer; dwFlags: DWORD;
+  pDataOut: PDATA_BLOB): BOOL; stdcall; external 'crypt32.dll';
+
+{ TSecureString }
+
+constructor TSecureString.Create;
+begin
+  inherited;
+  SetLength(FEncryptedData, 0);
+end;
+
+destructor TSecureString.Destroy;
+begin
+  Clear;
+  inherited;
+end;
+
+procedure TSecureString.Assign(const S: string);
+var
+  InBlob, OutBlob: DATA_BLOB;
+  InBytes: TBytes;
+begin
+  Clear;
+
+  InBytes := TEncoding.Unicode.GetBytes(S);
+  InBlob.pbData := @InBytes[0];
+  InBlob.cbData := Length(InBytes);
+
+  if CryptProtectData(@InBlob, nil, nil, nil, nil, 0, @OutBlob) then
+  begin
+    SetLength(FEncryptedData, OutBlob.cbData);
+    Move(OutBlob.pbData^, FEncryptedData[0], OutBlob.cbData);
+    LocalFree(HLOCAL(OutBlob.pbData));
+  end
+  else
+    raise Exception.Create('SecureString 암호화 실패');
+end;
+
+function TSecureString.Reveal: string;
+var
+  InBlob, OutBlob: DATA_BLOB;
+begin
+  Result := '';
+  if Length(FEncryptedData) = 0 then Exit;
+
+  InBlob.pbData := @FEncryptedData[0];
+  InBlob.cbData := Length(FEncryptedData);
+
+  if CryptUnprotectData(@InBlob, nil, nil, nil, nil, 0, @OutBlob) then
+  begin
+    SetString(Result, PChar(OutBlob.pbData), OutBlob.cbData div SizeOf(Char));
+    LocalFree(HLOCAL(OutBlob.pbData));
+  end
+  else
+    raise Exception.Create('SecureString 복호화 실패');
+end;
+
+procedure TSecureString.SecureClear(var S: string);
+begin
+  if Length(S) > 0 then
+  begin
+    UniqueString(S); // 참조 공유 방지
+    FillChar(PChar(S)^, Length(S) * SizeOf(Char), 0);
+    S := '';
+  end;
+end;
+
+procedure TSecureString.Clear;
+begin
+  if Length(FEncryptedData) > 0 then
+    FillChar(FEncryptedData[0], Length(FEncryptedData), 0);
+  SetLength(FEncryptedData, 0);
+end;
+
+function TSecureString.IsEmpty: Boolean;
+begin
+  Result := Length(FEncryptedData) = 0;
+end;
+
+end.
