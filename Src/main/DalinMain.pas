@@ -12,7 +12,7 @@ uses
   UTypes, Vcl.ExtCtrls, Vcl.ComCtrls, Vcl.Mask, Vcl.Grids, IdBaseComponent,
   IdAntiFreezeBase, IdAntiFreeze,
 
-  IntegrityMonitorThread
+  IntegrityMonitorThread, ChatComm
   ;
 
 const
@@ -60,6 +60,7 @@ type
     FRestCheck: boolean;
     FExRateCheck: boolean;
     FDetectedMsg: string;
+    FChatCom: TChatComm;
 
     procedure CheckRest;
     function init: boolean;
@@ -78,13 +79,18 @@ type
     function GetRect(oRect: TRect): TRect;
     procedure DoSiseLog;
 
-
     procedure finMonitorThread;
+    procedure finChat;
+
     procedure AntiDebugEvent(const S: string);
+
+    procedure HandleGetSendValues(Sender: TObject; out FX: Double; out Domestic, Coin: Cardinal);
 
   public
     { Public declarations }
     procedure IntegrityMonitor;
+    procedure CreateRepoter;
+    procedure ChatStart;
     procedure Start;
     procedure ExecuteSubApp; overload;
     procedure ExecuteSubApp(idx: integer); overload;
@@ -104,7 +110,9 @@ type
 
     property RestCheck : boolean read FRestCheck;
     property ExRateCheck : boolean read FExRateCheck;
+
     property DetectedMsg: string  read FDetectedMsg write FDetectedMsg;
+    property ChatCom: TChatComm  read FChatCom write FChatCom;
 
   end;
 
@@ -463,6 +471,12 @@ begin
 end;
 
 
+procedure TFrmDalinMain.finChat;
+begin
+  if Assigned(FChatCom) then
+    FChatCom.Free;
+end;
+
 procedure TFrmDalinMain.finMonitorThread;
 begin
   if Assigned(FMonitorThread) then
@@ -472,6 +486,17 @@ begin
     FMonitorThread.Free;
     FMonitorThread  := nil;
   end;
+end;
+
+procedure TFrmDalinMain.ChatStart;
+begin
+  //
+  FChatCom.SystemName  := App.Config.ChatInfo.Name;
+  FChatCom.UDPPort     := App.Config.ChatInfo.UDPPort;
+  FChatCom.TCPPort     := App.Config.ChatInfo.TCPPort;
+  FChatCom.AutoSendSec := App.Config.ChatInfo.AutoSendSec;
+
+  FChatCom.Start;
 end;
 
 function TFrmDalinMain.CheckDpkFile: boolean;
@@ -540,6 +565,15 @@ begin
         CloseApp( App.Config.PrcsInfo[i].ClassName );
 end;
 
+procedure TFrmDalinMain.CreateRepoter;
+begin
+  FChatCom := TChatComm.Create;
+  FChatCom.LogPath := App.LogDir + '\ChatComm';
+  FChatCom.OnGetSendValues := HandleGetSendValues;
+
+  ChatStart;
+end;
+
 procedure TFrmDalinMain.FormActivate(Sender: TObject);
 begin
 //  SetWindowPos(Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NoMove or SWP_NoSize);
@@ -581,6 +615,7 @@ begin
 
   CloseSubApp;
 
+  finChat;
   finMonitorThread;
 
   Action := caFree;
@@ -1147,6 +1182,26 @@ begin
   Result := Rect( oRect.Left, oRect.Top, oRect.Right, oRect.Bottom );
 end;
 
+procedure TFrmDalinMain.HandleGetSendValues(Sender: TObject; out FX: Double;
+  out Domestic, Coin: Cardinal);
+  var d : array [TExchangeKind] of double;
+begin
+  //
+  Fx  := App.Engine.ApiManager.GetExRate;
+
+  Domestic := 0;
+  Coin     := 0;
+
+  for var e := ekUpbit to ekBithumb do
+  begin
+    Coin    := Coin + Round(App.Engine.TradeCore.Accounts[e].GetTotalEntryAmt);
+    Domestic:= Domestic + Round(App.Engine.TradeCore.Accounts[e].GetTotalBalance);
+  end;
+
+  Domestic := Coin + Domestic;
+
+end;
+
 procedure TFrmDalinMain.stsBarDrawPanel(StatusBar: TStatusBar;
   Panel: TStatusPanel; const Rect: TRect);
   var
@@ -1193,7 +1248,7 @@ begin
       stsBar.Tag := 0;
     end;
   end;
-//	copyDataStruct := Pointer(Msg.LParam);  	
+//	copyDataStruct := Pointer(Msg.LParam);
 //	Filename := PChar(copyDataStruct.lpData);
 //  caption  := FileName + ' ' + intTostr(msg.WParam);
 end;

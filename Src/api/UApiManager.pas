@@ -25,6 +25,7 @@ type
     Constructor Create;
     Destructor  Destroy; override;
 
+    function GetExRate : double;
     function GetMaster : boolean;
     function PrepareMaster : boolean;
     function InitMarketWebSocket : boolean;
@@ -200,6 +201,14 @@ end;
 function TApiManager.GetExManager: integer;
 begin
   Result := Integer(high(  TExchangeKind ));
+end;
+
+function TApiManager.GetExRate: double;
+begin
+  if FExRate <> nil then
+    Result := FExRate.GetExRate
+  else
+    Result := 0;
 end;
 
 function TApiManager.GetMaster: boolean;

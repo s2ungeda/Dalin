@@ -146,7 +146,7 @@
         <AppDPIAwarenessMode>unaware</AppDPIAwarenessMode>
         <VerInfo_Locale>1033</VerInfo_Locale>
         <DCC_ExeOutput>C:\Dalin2\Dailin\</DCC_ExeOutput>
-        <VerInfo_Keys>CompanyName=;FileDescription=$(MSBuildProjectName);FileVersion=2.6.11.0;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=$(MSBuildProjectName);ProductVersion=1.0.0.0;Comments=</VerInfo_Keys>
+        <VerInfo_Keys>CompanyName=;FileDescription=$(MSBuildProjectName);FileVersion=2.6.12.0;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=$(MSBuildProjectName);ProductVersion=1.0.0.0;Comments=</VerInfo_Keys>
         <AppExecutionLevel>requireAdministrator</AppExecutionLevel>
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
         <DCC_Define>DALIN;$(DCC_Define)</DCC_Define>
@@ -156,7 +156,7 @@
         <VerInfo_MajorVer>2</VerInfo_MajorVer>
         <VerInfo_MinorVer>6</VerInfo_MinorVer>
         <DCC_MapFile>0</DCC_MapFile>
-        <VerInfo_Release>11</VerInfo_Release>
+        <VerInfo_Release>12</VerInfo_Release>
     </PropertyGroup>
     <ItemGroup>
         <DelphiCompile Include="$(MainSource)">
@@ -376,6 +376,11 @@
             <Form>FrmWithdrawAddress</Form>
         </DCCReference>
         <DCCReference Include="Src\wins\Orders\signal\GSignalData.pas"/>
+        <DCCReference Include="Src\broadcast\ChatComm.pas"/>
+        <DCCReference Include="Src\broadcast\FChatMonitor.pas">
+            <Form>FrmChatComm</Form>
+            <FormType>dfm</FormType>
+        </DCCReference>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

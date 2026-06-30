@@ -114,6 +114,11 @@ object DataModule1: TDataModule1
         Caption = #51088#46041#51452#47928#49444#51221
         OnClick = N17Click
       end
+      object Chat1: TMenuItem
+        Tag = 2
+        Caption = 'Chat '#47784#45768#53552
+        OnClick = N17Click
+      end
     end
     object nQuote: TMenuItem
       Caption = #49884#49464

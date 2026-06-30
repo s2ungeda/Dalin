@@ -158,7 +158,9 @@ uses
   UDepositAddressForm in 'Src\wins\dnw\UDepositAddressForm.pas' {FrmDepositAddress},
   UBinanceWithdraw in 'Src\api\binance\UBinanceWithdraw.pas',
   UWithdrawAddressForm in 'Src\wins\dnw\UWithdrawAddressForm.pas' {FrmWithdrawAddress},
-  GSignalData in 'Src\wins\Orders\signal\GSignalData.pas';
+  GSignalData in 'Src\wins\Orders\signal\GSignalData.pas',
+  ChatComm in 'Src\broadcast\ChatComm.pas',
+  FChatMonitor in 'Src\broadcast\FChatMonitor.pas' {FrmChatComm};
 
 {$R *.res}
   var MutexHandle : longint;
@@ -217,8 +219,8 @@ begin
     Application.Initialize;
     Application.MainFormOnTaskbar := True;
     Application.CreateForm(TFrmDalinMain, FrmDalinMain);
-    Application.CreateForm(TDataModule1, DataModule1);
-    FrmDalinMain.Start;
+  Application.CreateForm(TDataModule1, DataModule1);
+  FrmDalinMain.Start;
 //    CheckFileIntegrity;
 
     Application.Run;

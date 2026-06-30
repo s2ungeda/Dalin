@@ -34,6 +34,7 @@ type
     FLock: TCriticalSection;
     FMarginAvailable: boolean;
     function GetOpenAmt: double;
+    function GetEntryAmt: double;
   public
     Currency  : string;
     Balance   : double;
@@ -65,13 +66,14 @@ type
     constructor Create( aColl : TCollection ); override;
     destructor  Destroy; override;
 
-    //procedure   AddFill( aFillObj : TObject );
+    procedure   AddFill(ATradePrice, ADeltaBalance: double);
     procedure   init;
-    procedure   UpdateAsset(ADeltaBalance, ADeltaLocked: Double);
+    procedure   UpdateAsset(ADeltaBalance, ADeltaLocked: Double; bTrade: boolean = false);
     procedure   SyncAsset(ADeltaBalance, ADeltaLocked, AAvgPrice: Double);
     function    Represet : string ;
 
     property OpenAmt  : double read GetOpenAmt;
+    property EntryAmt : double read GetEntryAmt;
     property MarginAvailable : boolean read FMarginAvailable write FMarginAvailable;
   end;
 
@@ -82,12 +84,12 @@ type
     FPendingOrders: TDictionary<string, POrderReservation>;
 
     FAccount: TObject;
-    function GetAsset(i: integer): TAsset;
-    function IsProcess : boolean;
-    procedure UpdateAsset(const ACurrency: string; ADeltaBalance,
-      ADeltaLocked: double);
-    procedure CheckServerStatusAndRecover(const AIdentifier: string);
+    function GetAsset(i: integer): TAsset; overload;
+    function GetAsset(const ACurrency: string): TAsset; overload;
 
+    function IsProcess : boolean;
+    procedure UpdateAsset(const ACurrency: string; ADeltaBalance, ADeltaLocked: double);
+    procedure CheckServerStatusAndRecover(const AIdentifier: string);
 
   public
     constructor Create;
@@ -98,7 +100,8 @@ type
     function New(sCurrency : string; aAcnt : TObject) : TAsset;
 
     procedure DeleteAsset( i : integer );
-    function  GetTotalCoin : double;
+    function  GetTotalCoin(bToEx: boolean = false) : double;
+    function  GetTotalEntryAmt(bToEx: boolean= false): double;
     procedure init;
     procedure DoLog;
     procedure UpdateReady;
@@ -271,6 +274,8 @@ procedure TAssetManager.ProcessTrade(const AOrderNo: string; ATradePrice, ATrade
 var
   Order: POrderReservation;
   ReservedPart, ActualKRW, RefundKRW, ReFund: Double;
+  aAsset: TAsset;
+  NewAmt: double;
 begin
   if not IsProcess then Exit;
   FLock.Enter;
@@ -288,7 +293,12 @@ begin
         // 1. KRW 잠금: 예약 분 풀고, 차액(환불분)은 Balance로
         UpdateAsset('KRW',RefundKRW, -ReservedPart);
         // 2. 코인 획득: 체결된 수량만큼 코인 Balance 증가
-        UpdateAsset(Order^.Currency, ATradeVolume, 0);
+        aAsset := GetAsset(Order^.Currency);
+        NewAmt := (aAsset.Balance * aAsset.AvgPrice) + (ATradePrice * ATradeVolume);
+        if (aAsset.Balance + ATradeVolume) > EPSILON then
+          aAsset.AvgPrice := NewAmt / (aAsset.Balance + ATradeVolume) ;
+
+        aAsset.UpdateAsset(ATradeVolume, 0);
       end
       else
       begin
@@ -298,8 +308,11 @@ begin
         // 2. 예약된 코인 수량 잔액에서 차감
         Order^.ReservedAmount := Max(0, Order^.ReservedAmount - ReservedPart);
 
-        // 1. 코인 차감: 잠겨있는 코인 수량 차감
-        UpdateAsset(Order^.Currency, 0, -ATradeVolume);
+        // 1. 코인 차감: 잠겨있는 코인 수량 차감 및 평균단가 계산..
+//        UpdateAsset(Order^.Currency, 0, -ATradeVolume);
+        aAsset := GetAsset(Order^.Currency);
+        aAsset.UpdateAsset(0, -ATradeVolume, true);
+
         // 2. KRW 획득: 매도 대금에서 수수료를 뺀 금액 Balance 증가
         ActualKRW := (ATradePrice * ATradeVolume) - APaidFee;
         UpdateAsset('KRW',ActualKRW, 0);
@@ -329,13 +342,7 @@ procedure TAssetManager.UpdateAsset(const ACurrency: string; ADeltaBalance, ADel
 var
   aAsset: TAsset;
 begin
-  if ACurrency = 'KRW' then
-    aAsset := TAccount(FAccount).Asset
-  else begin
-    aAsset  := Find(ACurrency);
-    if aAsset = nil then
-      aAsset  := New(ACurrency, FAccount);
-  end;
+  aAsset := GetAsset(ACurrency);
 
   if aAsset <> nil then
     aAsset.UpdateAsset(ADeltaBalance, ADeltaLocked);
@@ -550,7 +557,19 @@ begin
 end;
 
 
-function TAssetManager.GetTotalCoin: double;
+// bToEx : true -> USDT, USDC 평가금액은 제외 하고 계산
+function TAssetManager.GetAsset(const ACurrency: string): TAsset;
+begin
+  if ACurrency = 'KRW' then
+    Result := TAccount(FAccount).Asset
+  else begin
+    Result  := Find(ACurrency);
+    if Result = nil then
+      Result  := New(ACurrency, FAccount);
+  end;
+end;
+
+function TAssetManager.GetTotalCoin(bToEx: boolean): double;
 var
   i : integer;
 begin
@@ -558,7 +577,23 @@ begin
   for I := 0 to Count-1 do
     if not GetAsset(i).IsMain then
       if GetAsset(i).Symbol <> nil then
-        Result := Result + ( GetAsset(i).Balance * GetAsset(i).Symbol.Last );
+        if bToEx and (GetAsset(i).Currency = 'USDT') or (GetAsset(i).Currency = 'USDC')  then
+          Continue
+        else
+          Result := Result + ( GetAsset(i).Balance * GetAsset(i).Symbol.Last );
+end;
+
+function TAssetManager.GetTotalEntryAmt(bToEx: boolean): double;
+var
+  i : integer;
+begin
+  Result := 0;
+  for I := 0 to Count-1 do
+    if not GetAsset(i).IsMain then
+      if bToEx and (GetAsset(i).Currency = 'USDT') or (GetAsset(i).Currency = 'USDC')  then
+        Continue
+      else
+        Result := Result + ( GetAsset(i).Balance * GetAsset(i).AvgPrice );
 end;
 
 procedure TAssetManager.init;
@@ -655,6 +690,11 @@ end;
 //    Locked := Max( 0, Locked - aFill.Volume );
 //end;
 
+procedure TAsset.AddFill(ATradePrice, ADeltaBalance: double);
+begin
+
+end;
+
 constructor TAsset.Create(aColl: TCollection);
 begin
   inherited Create( aColl );
@@ -682,9 +722,22 @@ begin
   inherited;
 end;
 
+function TAsset.GetEntryAmt: double;
+var
+  I: Integer;
+begin
+
+  Result := 0;
+
+  if Symbol <> nil then
+    if Symbol.Spec.FutureType = ftCoin then
+      Result := Balance * CalcDiv(1,AvgPrice) * Symbol.Spec.PointValue
+    else
+      Result := Balance * AvgPrice;
+end;
+
 function TAsset.GetOpenAmt: double;
 var
-  aList: TList<TSymbol>;
   I: Integer;
 begin
 
@@ -742,22 +795,26 @@ begin
       ekBithumb: s := 'bithumb_myAsset';
     end;
 
-    App.Log(llDebug, s, '%s     B:%s, L:%s', [Currency,
-      DoubleToStr(Balance), DoubleToStr(LocKed)]);
+    App.Log(llDebug, s, '%s sync B:%s, L:%s A:%s', [Currency,
+      DoubleToStr(Balance), DoubleToStr(LocKed), doubleToStr(AvgPrice) ]);
     FLock.Release;
   end;
 end;
 
 
-procedure TAsset.UpdateAsset(ADeltaBalance, ADeltaLocked: Double);
+procedure TAsset.UpdateAsset(ADeltaBalance, ADeltaLocked: Double; bTrade: boolean);
+    var s : string;
 begin
   FLock.Enter;
   try
     Available  := Max(0, Available + ADeltaBalance);
     Locked     := Max(0, Locked + ADeltaLocked);
     Balance    := Available + Locked;
+    // 매도 체결일때 잔고 없어지면 평균단가를 0 으로..
+    if bTrade then
+      if Balance < EPSILON then
+        AvgPrice  := 0;
   finally
-    var s : string;
 
     case TAccount(Account).ExchangeKind of
       ekBinance: ;
@@ -765,8 +822,8 @@ begin
       ekBithumb: s := 'bithumb_myAsset';
     end;
 
-    App.Log(llDebug, s, '%s +++ B:%s, L:%s', [Currency,
-      DoubleToStr(Balance), DoubleToStr(LocKed)]);
+    App.Log(llDebug, s, '%s calc B:%s, L:%s A:%s', [Currency,
+      DoubleToStr(Balance), DoubleToStr(LocKed), doubleToStr(AvgPrice)]);
     FLock.Release;
   end;
 end;

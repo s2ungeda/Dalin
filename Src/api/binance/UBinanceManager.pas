@@ -116,6 +116,8 @@ begin
 
   for k := eaFutUsdt to High(TExchangeApiType) do
   begin
+    if k = eaFutCoin then Continue;
+
     idx := integer(k);
     sKey  := Exchanges[k].RequestListenKey( true );
 

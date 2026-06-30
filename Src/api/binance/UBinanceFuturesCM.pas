@@ -366,6 +366,10 @@ var
 begin
 
   REsult := '';
+
+  // 갑자기 안됨...API 변경이 된거 같음..나중에 처리.
+  Exit;
+
   if bFirst then aMethod := rmPOST
   else begin
     aMethod := rmPUT;

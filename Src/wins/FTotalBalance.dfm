@@ -48,11 +48,14 @@ object FrmTotalBalance: TFrmTotalBalance
       DefaultDrawing = False
       FixedCols = 0
       RowCount = 6
+      PopupMenu = puBithumb
       ScrollBars = ssVertical
       TabOrder = 0
       OnDrawCell = sgTbsDrawCell
       OnKeyDown = sgBbsKeyDown
       OnMouseDown = sgBbfMouseDown
+      ExplicitLeft = 1399
+      ExplicitTop = -10
     end
     object sgBbs: TStringGrid
       Left = 0
@@ -95,6 +98,7 @@ object FrmTotalBalance: TFrmTotalBalance
       DefaultDrawing = False
       FixedCols = 0
       RowCount = 6
+      PopupMenu = puUpbit
       ScrollBars = ssVertical
       TabOrder = 2
       OnDrawCell = sgTbsDrawCell
@@ -433,8 +437,8 @@ object FrmTotalBalance: TFrmTotalBalance
     end
   end
   object PopupMenu2: TPopupMenu
-    Left = 1128
-    Top = 230
+    Left = 444
+    Top = 237
     object Assets1: TMenuItem
       AutoCheck = True
       Caption = 'Assets'
@@ -454,8 +458,8 @@ object FrmTotalBalance: TFrmTotalBalance
   end
   object PopupMenu3: TPopupMenu
     Tag = 1
-    Left = 375
-    Top = 231
+    Left = 539
+    Top = 239
     object ppAsset: TMenuItem
       AutoCheck = True
       Caption = 'Assets'
@@ -478,5 +482,43 @@ object FrmTotalBalance: TFrmTotalBalance
   object dlgSave: TSaveDialog
     Left = 128
     Top = 171
+  end
+  object puUpbit: TPopupMenu
+    Left = 1248
+    Top = 251
+    object puUpbitLast: TMenuItem
+      AutoCheck = True
+      Caption = #54788#51116#44032
+      Checked = True
+      GroupIndex = 1
+      RadioItem = True
+      OnClick = puUpbitLastClick
+    end
+    object N2: TMenuItem
+      AutoCheck = True
+      Caption = #54217#44512#44032
+      GroupIndex = 1
+      RadioItem = True
+      OnClick = puUpbitLastClick
+    end
+  end
+  object puBithumb: TPopupMenu
+    Left = 1604
+    Top = 239
+    object puBithumbLast: TMenuItem
+      AutoCheck = True
+      Caption = #54788#51116#44032
+      Checked = True
+      GroupIndex = 1
+      RadioItem = True
+      OnClick = puBithumbLastClick
+    end
+    object N3: TMenuItem
+      AutoCheck = True
+      Caption = #54217#44512#44032
+      GroupIndex = 1
+      RadioItem = True
+      OnClick = puBithumbLastClick
+    end
   end
 end

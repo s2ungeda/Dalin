@@ -139,6 +139,7 @@ begin
           App.Engine.ApiManager.OrderDetailRequest(true);
 
         FrmDalinMain.IntegrityMonitor;
+        FrmDalinMain.CreateRepoter;
 
       end;
   end;

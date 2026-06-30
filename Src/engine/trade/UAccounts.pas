@@ -106,6 +106,10 @@ type
     function Find( aKind: TExchangeKind) : TAccount; overload;
     function Find( aKind: TExchangeKind; aMarket : TAccountMarketType) : TAccount; overload;
 
+    function GetTotalBalance: double;
+    function GetTotalOpenAmt: double;
+    function GetTotalEntryAmt: double;
+
     function Represent: String;
 
     procedure WidthDrawCoin(ekType: TExchangeKind; sCurrency, sQty, sUUID: string);
@@ -407,6 +411,30 @@ begin
     Result := TAccount(Items[i])
   else
     Result := nil;
+end;
+
+function TAccounts.GetTotalBalance: double;
+begin
+  Result := 0;
+  for var I := 0 to Count -1 do
+    if GetAccount(i) <> nil then
+      Result := Result + GetAccount(i).Asset.Balance;
+end;
+
+function TAccounts.GetTotalEntryAmt: double;
+begin
+  Result := 0;
+  for var I := 0 to Count -1 do
+    if GetAccount(i) <> nil then
+      Result := Result + GetAccount(i).Assets.GetTotalEntryAmt(true);
+end;
+
+function TAccounts.GetTotalOpenAmt: double;
+begin
+  Result := 0;
+  for var I := 0 to Count -1 do
+    if GetAccount(i) <> nil then
+      Result := Result + GetAccount(i).Assets.GetTotalCoin(true);
 end;
 
 function TAccounts.New(sKey, sPri: String; aKind: TExchangeKind;

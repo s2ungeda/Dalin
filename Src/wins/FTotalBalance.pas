@@ -84,6 +84,12 @@ type
     btnSaveCSV: TButton;
     Bevel1: TBevel;
     dlgSave: TSaveDialog;
+    puUpbit: TPopupMenu;
+    puBithumb: TPopupMenu;
+    puUpbitLast: TMenuItem;
+    N2: TMenuItem;
+    puBithumbLast: TMenuItem;
+    N3: TMenuItem;
     procedure FormCreate(Sender: TObject);
     procedure sgTotDrawCell(Sender: TObject; ACol, ARow: Integer; Rect: TRect;
       State: TGridDrawState);
@@ -110,6 +116,8 @@ type
     procedure MarkPrice1Click(Sender: TObject);
     procedure MultiAssetBalance1Click(Sender: TObject);
     procedure btnSaveCSVClick(Sender: TObject);
+    procedure puUpbitLastClick(Sender: TObject);
+    procedure puBithumbLastClick(Sender: TObject);
 
   private
 
@@ -784,7 +792,26 @@ procedure TFrmTotalBalance.UpdateBottomGridKr( ekKind : TExchangeKind; aGrid : T
 var
   i, iRow : integer;
   aAsset  : TAsset;
+  bLast   : boolean;
+  dPrice  : double;
 begin
+
+  case ekKind of
+    ekBinance: Exit;
+    ekUpbit: bLast := puUpbitLast.Checked;
+    ekBithumb: bLast := puBithumbLast.Checked;
+  end;
+
+  with aGrid do
+    if bLast then
+    begin
+      Cells[2, 0] := '현재가';
+      Cells[3, 0] := '평가금액';
+    end else
+    begin
+      Cells[2, 0] := '평균가';
+      Cells[3, 0] := '평가손익';
+    end;
 
   iRow := 1;
 
@@ -799,13 +826,22 @@ begin
       Cells[1, iRow] := DoubleToStr(aAsset.Balance) ;
 
       // 국내는 종목이 하나뿐이기에.
-      if aAsset.Symbol <> nil then begin
-        Cells[2, iRow] := aAsset.Symbol.PriceToStr(aAsset.Symbol.Last);
-      end
-      else begin
-        Cells[2, iRow] := '0';
+      if bLast then begin
+        if aAsset.Symbol <> nil then
+          Cells[2, iRow] := aAsset.Symbol.PriceToStr(aAsset.Symbol.Last)
+        else
+          Cells[2, iRow] := '0';
+        Cells[3, iRow] := Format('%.0n', [ aAsset.OpenAmt ]);
+      end else
+      begin
+        if aAsset.Symbol <> nil then
+          Cells[2, iRow] := aAsset.Symbol.PriceToStr(aAsset.AvgPrice)
+        else
+          Cells[2, iRow] := DoubleToStr(aAsset.AvgPrice, 2);
+        Cells[3, iRow] := Format('%.0n', [ aAsset.OpenAmt - aAsset.EntryAmt]);
       end;
-      Cells[3, iRow] := Format('%.0n', [ aAsset.OpenAmt ]);
+
+
       inc(iRow);
     end;
 end;
@@ -1153,6 +1189,35 @@ begin
   //
   UpdateBinanceFut;
   ChangeTitle2;
+end;
+
+procedure TFrmTotalBalance.puBithumbLastClick(Sender: TObject);
+var
+  I, iSum: Integer;
+begin
+  iSum := 0;
+  for I := 0 to puBithumb.Items.Count - 1 do
+    if puBithumb.Items[I].Checked then
+      inc(iSum);
+  if iSum = 0 then
+    (Sender as TMenuItem).Checked := True;
+
+  // 빗썸 현재가, 평균가
+  UpdateBottomGridKr(ekBithumb, sgBbt);
+end;
+
+procedure TFrmTotalBalance.puUpbitLastClick(Sender: TObject);
+var
+  I, iSum: Integer;
+begin
+  iSum := 0;
+  for I := 0 to puUpbit.Items.Count - 1 do
+    if puUpbit.Items[I].Checked then
+      inc(iSum);
+  if iSum = 0 then
+    (Sender as TMenuItem).Checked := True;
+  // 업비트 현재가, 평균가
+  UpdateBottomGridKr(ekUpbit, sgBup);
 end;
 
 procedure TFrmTotalBalance.MultiAssetBalance1Click(Sender: TObject);

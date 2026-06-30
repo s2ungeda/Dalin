@@ -177,7 +177,7 @@ begin
         aAsset.Locked2  := dLock;
       end;
 
-      App.Log(llDebug,'bithumb_myAsset', '%s --- B:%s, L:%s', [sCrny,
+      App.Log(llDebug,'bithumb_myAsset', '%s ---- B:%s, L:%s', [sCrny,
         DoubleToStr(dBal+dLock), DoubleToStr(dLock)  ]);
 
       Continue;

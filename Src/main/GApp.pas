@@ -7,7 +7,7 @@ uses
 
   UDalinEngine, ULogWriter , ULogThread, UConfig,  UTypes , UApiTypes
   , UExchangeData
-  , FServerMessage, FAutoOrderConfig
+  , FServerMessage, FAutoOrderConfig, FChatMonitor
   , USecureString
   , UDirectSounds
   ;
@@ -78,6 +78,7 @@ type
     procedure DebugLog( const fmt: string ); overload;
 
     procedure SetEntropy(const s: string);
+    procedure ShowChatMonitor;
 
     function GetPrecision : integer;
     function GetNumber : int64;
@@ -118,7 +119,9 @@ var
   App : TApp;
   gMessage: TFrmServerMessage;
   gAOConfig: TFrmAutoOrderConfig;
-  crts: TRTLCriticalSection;
+  gChatMonitor: TFrmChatComm;
+  crts: TRTLCriticalSection
+  ;
 
 implementation
 
@@ -174,6 +177,7 @@ begin
     QuoteState[ek]  := true;
 
   gMessage   := TFrmServerMessage.Create(nil);
+  gChatMonitor  := nil;
 
   // »ç¿îµå
   FFirstSound := -1;
@@ -202,6 +206,9 @@ begin
 
   if gAOConfig <> nil then
     gAOConfig.Free;
+
+  if gChatMonitor <> nil then
+    gChatMonitor.Free;
 
   for alv := llError to High(TLogLevel) do
     LogItems[alv].Free;
@@ -423,6 +430,15 @@ begin
 end;
 
 
+procedure TApp.ShowChatMonitor;
+begin
+  if gChatMonitor = nil then
+    gChatMonitor := TFrmChatComm.Create(nil);
+
+  if gChatMonitor <> nil then
+    gChatMonitor.ShowMonitor;
+end;
+
 function TApp.Init: boolean;
 begin
   Result := false;
@@ -449,6 +465,7 @@ begin
 
   if FLog = nil then
     result := false;
+
 end;
 
 ////  LOG

@@ -14,6 +14,14 @@ type
     Active : boolean;
   end;
 
+  TChatInfo = record
+    Name  : string;
+    BroadCastIP : string;
+    UDPPort : integer;
+    TCPPort : integer;
+    AutoSendSec : integer;
+  end;
+
   TConfig = record
     LOG_DIR   : string;
     QUOTE_DIR : string;
@@ -32,6 +40,8 @@ type
     ReConnInterval : integer;
 //    FontName : string;
 //    Fontsize : integer;
+
+    ChatInfo : TChatInfo;
 
     function LoadConfig : boolean;
   end;
@@ -69,6 +79,13 @@ begin
       RunMod     := pIniFile.ReadInteger('ENV', 'RunMode', 1) = 1;
       TradeMod   := pIniFile.ReadInteger('ENV', 'TradeMode', 1) = 1;
       ReConnInterval:= pIniFile.ReadInteger('ENV', 'ReConnInterval', 12);
+
+      sSec := 'Chat';
+      ChatInfo.Name := pIniFile.ReadString(sSec, 'Name', 'Dalin');
+      ChatInfo.BroadCastIP  := pIniFile.ReadString(sSec, 'BroadCastIP', '255.255.255.255');
+      ChatInfo.UDPPort := pIniFile.ReadInteger(sSec, 'UDPPort', 8888);
+      ChatInfo.TCPPort := pIniFile.ReadInteger(sSec, 'TCPPort', 0);
+      ChatInfo.AutoSendSec := pIniFile.ReadInteger(sSec, 'AutoSendSec', 10);
 
       ////////////////////////////////////////////////////////////////
       sSec  := 'ExRate';

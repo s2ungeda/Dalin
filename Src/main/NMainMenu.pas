@@ -46,6 +46,7 @@ type
     N19: TMenuItem;
     N2: TMenuItem;
     N8: TMenuItem;
+    Chat1: TMenuItem;
     procedure Kimp1Click(Sender: TObject);
     procedure nExchangeClick(Sender: TObject);
     procedure DataModuleCreate(Sender: TObject);
@@ -369,6 +370,7 @@ begin
   case (Sender as TComponent).Tag of
     0 : App.Engine.FormBroker.Open(ID_COMM_CONFIG, 0);
     1 : gAOConfig.ShowAOConfig;// App.Engine.FormBroker.Open(ID_AUTO_ORD_CONFIG, 0);
+    2 : App.ShowChatMonitor;
   end;
 end;
 
