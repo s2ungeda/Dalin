@@ -68,8 +68,11 @@ begin
   for I := stBnSThread to High(TSharedThreadType) do
     if FSharedThread[i] <> nil then begin
       FSharedThread[i].Terminate;
-//    FSharedThread.WaitFor;
-//    FSharedThread.Free;
+      while not FSharedThread[i].Finished do
+        CheckSynchronize(100);
+//      FSharedThread[i].WaitFor;
+      FSharedThread[i].Free;
+      FSharedThread[i] := nil;
     end;
   inherited;
 end;

@@ -94,8 +94,11 @@ begin
   EvntName[POP]:= ifThenStr(  FIsMain, 'restEvent', 'dalinEvent' )+ FName;
 
   inherited Create(true);
-  sTmp := Format('%sTermindate%s', [IfThenStr(FIsMain,'dalin','rest'), FName]);
-  hTerminate := CreateEvent(nil, True, False, PChar(sTmp));
+//  sTmp := Format('%sTermindate%s', [IfThenStr(FIsMain,'dalin','rest'), FName]);
+//  hTerminate := CreateEvent(nil, True, False, PChar(sTmp));
+// 익명으로 생성( 종료가 지연되면서, 바로 생성되는 hTerminate 를 무효화 시킬수 있음
+  hTerminate := CreateEvent(nil, True, False, nil);
+
   if hTerminate = 0 then RaiseLastOSError;
 
   OpenMap;
@@ -130,7 +133,6 @@ begin
     s := Format('FATAL: %s', [Exception(FatalException).Message])
   else
     s := 'normal terminate (Terminated=' + BoolToStr(Terminated, True) + ')';
-
   App.Log(llInfo, '%s Execute exit : %s', [FName, s]);
 
   // 내가 만든거..
@@ -185,7 +187,7 @@ begin
   llHandles[0] := hMapEvent[POP];
   llHandles[1] := hTerminate;
 
-  App.Log(llInfo, '%s Shared Thread Start', [FName]);
+  App.Log(llInfo, '%s Shared Thread Start %s', [FName, BoolToStr(Terminated, True)] );
 
   while not Terminated do
   begin

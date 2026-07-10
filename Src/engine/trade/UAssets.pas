@@ -111,7 +111,7 @@ type
     procedure CleanupStuckOrders(AMaxSeconds: Integer);
     // only recovery active order
     procedure LoadOrder(ASide: integer; const ACurrency, AOrderNo: string;
-      APrice, AVolume, ALocked, AFee: Double);
+      APrice, AVolume, ALocked: Double; e: TExchangeKind);
 
     function ReserveOrder(ASide: integer; const ACurrency, ALocalNo: string;
       APrice, AVolume: Double): boolean;
@@ -615,7 +615,7 @@ begin
 end;
 
 procedure TAssetManager.LoadOrder(ASide: integer; const ACurrency,
-  AOrderNo: string; APrice, AVolume, ALocked, AFee: Double);
+  AOrderNo: string; APrice, AVolume, ALocked: Double; e: TExchangeKind);
 var
   NewOrder: POrderReservation;
   ReservedQty: Double;
@@ -624,6 +624,8 @@ begin
 
   FLock.Enter;
   try
+    // 계좌정보는 이미 조회해왔으니 주문만 추가한다.
+
     System.New(NewOrder);
 
     NewOrder^.UUID := AOrderNo;
@@ -632,8 +634,7 @@ begin
     NewOrder^.Price := APrice;
     NewOrder^.OriginalVolume := AVolume;
     NewOrder^.RemainingVolume := AVolume;
-    NewOrder^.StandardFeeRate := AFee;
-//      App.Engine.ApiConfig.GetStandardFee(TAccount(FAccount).ExchangeKind, eaSpot) / 100;
+    NewOrder^.StandardFeeRate := App.Engine.ApiConfig.GetStandardFee(e, eaSpot) / 100;
     NewOrder^.ReservedAmount := ALocked;
     FPendingOrders.Add(AOrderNo, NewOrder);
 

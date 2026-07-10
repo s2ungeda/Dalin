@@ -398,7 +398,7 @@ begin
         if aArr <> nil then
           for j := 0 to aArr.Size-1 do
           begin
-          	if j >= aSymbol.Bids.Size then Exit;            
+          	if j >= aSymbol.Bids.Size then Exit;
             aVal  := aArr.Get(j);
             aSymbol.Bids[j].Price   := StrToFloatDef( aVal.GetValue<string>( 'price' ), 0.0 );
             aSymbol.Bids[j].Volume  := StrToFloatDef( aVal.GetValue<string>( 'quantity' ), 0.0 );
@@ -413,14 +413,14 @@ begin
 //          aSymbol.Asks[0].Volume  := StrToFloatDef( aVal.GetValue<string>( 'quantity' ), 0.0 );
 //        end;
 
-        if aArr <> nil then        
+        if aArr <> nil then
           for j := 0 to aArr.Size-1 do
           begin
-          	if j >= aSymbol.Bids.Size then Exit;            
+          	if j >= aSymbol.Bids.Size then Exit;
             aVal  := aArr.Get(j);
             aSymbol.Asks[j].Price   := StrToFloatDef( aVal.GetValue<string>( 'price' ), 0.0 );
             aSymbol.Asks[j].Volume  := StrToFloatDef( aVal.GetValue<string>( 'quantity' ), 0.0 );
-          end;        
+          end;
 
         if App.AppStatus > asLoad then  begin
           App.Engine.SymbolCore.CalcKimp( aSymbol );
@@ -856,7 +856,7 @@ begin
         if aOrder <> nil then
         begin
           aOrder.OrderNo  :=  sOrderId;
-          aOrder.Account.Assets.LoadOrder(iSide, '', sOrderId, dPrice, dVolume, dLocked, dFee);
+          aOrder.Account.Assets.LoadOrder(iSide, '', sOrderId, dPrice, dVolume, dLocked, ekBithumb);
           App.Engine.TradeBroker.Accept(aOrder, dtTime, true, '', true);
         end;
       end;
@@ -1695,7 +1695,7 @@ begin
   aExKind	:= ekBithumb;
   aSymbol	:= App.Engine.SymbolCore.FindSymbol( aExKind, aRef );
   aAcnt		:= App.Engine.TradeCore.FindAccount( aExKind );
-  if (aSymbol = nil) or ( aAcnt = nil) then Exit;  
+  if (aSymbol = nil) or ( aAcnt = nil) then Exit;
 
 	aObj := TJsonObject.ParseJSONValue( aData) as TJsonObject;
   try
@@ -1727,7 +1727,7 @@ begin
         aOrder	:= App.Engine.TradeCore.FindOrder( aExKind, aAcnt, aSymbol, sOID);
         if aOrder = nil then
         begin
-        	var iSide : integer;  
+        	var iSide : integer;
           var iTime : int64;
           var sOrderQty, sPrice, sType : string;
           var dtTime	: TDateTime;
@@ -1736,21 +1736,21 @@ begin
           sPrice		:= aVal.GetValue<string>('price');
           sType			:= aVal.GetValue<string>('type');
           iTime		  := aVal.GetValue<int64>('order_date');
-				
+
           dtTime		:= now;   // itime -> dtTime 으로 변환 해야 함..
 
           if sType = 'bid' then iSide := 1
           else iSide := -1;
-          
+
 					aOrder	:= App.Engine.TradeCore.Orders[aExKind].NewOrder( aAcnt, aSymbol,
-          	iSide, sOrderQty, pcLimit, sPrice, tmGTC );       
+          	iSide, sOrderQty, pcLimit, sPrice, tmGTC );
 
           aOrder.OrderNo	:= sOID;
 
           App.Engine.TradeBroker.Accept( aOrder, dtTime, true);
-        end;        
+        end;
       end;
-    
+
   finally
 		if aObj <> nil then aObj.free;
 
@@ -2035,7 +2035,7 @@ begin
       Symbol.SavePrevDepth;
 
       Update( dtTime );
-    
+
     end;
 
   except
@@ -2211,7 +2211,7 @@ begin
 
   except
   end;
-  
+
 end;
 
 
@@ -2219,4 +2219,5 @@ end;
 
 
 end.
+
 

@@ -128,7 +128,6 @@ begin
 
   for I := 0 to iCount-1 do begin
     QuoteSock[i]  := TBithWebSocket.Create(QOUTE_SOCK, i, eaSpot ) ;
-    //QuoteSock[i].init('pubwss.bithumb.com/pub/ws' );
     QuoteSock[i].init(App.Engine.ApiConfig.ExchangeInfo[integer(ekBithumb)].ApiInfo[eaSpot].WSUrl);
 
     TradeSock[i]  := TBithWebSocket.Create(TRADE_SOCK, i, eaSpot);
@@ -157,7 +156,6 @@ begin
   stmp := App.Engine.SymbolCore.MainSymbols[msETH][ExchangeKind].OrgCode;
   Result := Exchanges[eaSpot].RequestCandleData('24h', sTmp )
     and Exchanges[eaSpot].RequestCandleData('30m', sTmp )    ;
-
 end;
 
 procedure TBithManager.OnDepthTimer(Sender: TObject);

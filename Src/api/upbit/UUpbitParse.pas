@@ -1428,7 +1428,7 @@ begin
       if aOrder <> nil then
       begin
         aOrder.OrderNo  := sOID;
-        aOrder.Account.Assets.LoadOrder(iSide, '', sOID, dPrice, dOrderQty, dLocked, dFee);
+        aOrder.Account.Assets.LoadOrder(iSide, '', sOID, dPrice, dOrderQty, dLocked, ekUpbit);
         App.Engine.TradeBroker.Accept(aOrder, dtTime, true, '', true);
       end;
     end;
