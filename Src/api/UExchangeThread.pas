@@ -144,14 +144,16 @@ begin
 
     case wr of
       wrSignaled: Break;
-      wrTimeout: begin
-        case FExKind of
-          // 국내는 사용자가 토탈잔고에서 조회 버튼 클릭할때만..
-          ekBinance: App.Engine.ApiManager.ExManagers[FExKind].RequestBalance;
-          ekUpbit,
-          ekBithumb: App.Engine.TradeCore.Accounts[FExKind].CleanupStuckOrders(30);
+      wrTimeout:
+        try
+          case FExKind of
+            // 국내는 사용자가 토탈잔고에서 조회 버튼 클릭할때만..
+            ekBinance: App.Engine.ApiManager.ExManagers[FExKind].RequestBalance;
+            ekUpbit,
+            ekBithumb: App.Engine.TradeCore.Accounts[FExKind].CleanupStuckOrders(30);
+          end;
+        except
         end;
-      end;
     end;
 
   end;

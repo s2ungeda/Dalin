@@ -120,6 +120,10 @@ begin
       else begin
         var ss : string;
         ss := '1000'+s;
+
+        if s = 'SKHYB' then
+          ss :='SKHY';
+
         iRes := FExManagers[ekBinance].Exchanges[eaFutUsdt].Codes.IndexOf(ss);
         if iRes >= 0 then
           aList.Add(s)

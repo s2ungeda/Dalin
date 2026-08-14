@@ -128,10 +128,10 @@ begin
 
   for I := 0 to iCount-1 do begin
     QuoteSock[i]  := TBithWebSocket.Create(QOUTE_SOCK, i, eaSpot ) ;
-    QuoteSock[i].init(App.Engine.ApiConfig.ExchangeInfo[integer(ekBithumb)].ApiInfo[eaSpot].WSUrl);
+    QuoteSock[i].init(App.Engine.ApiConfig.ExchangeInfo[integer(ekBithumb)].ApiInfo[eaSpot].WSUrl+'/v1');
 
     TradeSock[i]  := TBithWebSocket.Create(TRADE_SOCK, i, eaSpot);
-    TradeSock[i].init(App.Engine.ApiConfig.ExchangeInfo[integer(ekBithumb)].ApiInfo[eaSpot].WSUrl+'/private');
+    TradeSock[i].init(App.Engine.ApiConfig.ExchangeInfo[integer(ekBithumb)].ApiInfo[eaSpot].WSUrl+'/v2/private');
   end;
 
   Result := true;

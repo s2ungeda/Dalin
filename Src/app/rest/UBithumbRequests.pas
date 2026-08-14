@@ -359,7 +359,7 @@ begin
       if not AsyncRESTs.RequestAsync(aReq) then
       begin
         App.Log(llError, '%s Failed RequestOrdDetail %s ', [TExchangeKindDesc[ExKind], sRef] );
-        PushData(TR_NEW_ORD, '{"status":"999","message":"Failed RequestOrdDetail Request"}', sRef );
+        PushData(TR_ORD_DETAIL, '{"status":"999","message":"Failed RequestOrdDetail Request"}', sRef );
         Exit;
       end;
 

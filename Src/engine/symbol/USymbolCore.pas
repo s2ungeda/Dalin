@@ -864,10 +864,14 @@ begin
     mtFutures:
       begin
         //
-        sUnder  := aCode;
-        stSuf   := Copy(aCode, 1, 4 );
-        if stSuf = '1000' then
-          sUnder := Copy(aCode, 5, Length(aCode));
+        if aCode = 'SKHYUSDT' then
+          sUnder := 'SKHYB'
+        else begin
+          sUnder  := aCode;
+          stSuf   := Copy(aCode, 1, 4 );
+          if stSuf = '1000' then
+            sUnder := Copy(aCode, 5, Length(aCode));
+        end;
 
         aUnder := FSpots[aExKind].Find( sUnder );
         if aUnder = nil then

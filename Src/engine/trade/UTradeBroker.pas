@@ -100,7 +100,7 @@ begin
     end;
   end else
   begin
-    if aOrder.Symbol.Spec.Market = mtSpot then
+    if (not bLoad) and (aOrder.Symbol.Spec.Market = mtSpot) then
       aOrder.Account.Assets.ProcessCancel(aOrder.LocalNo);
     aOrder.Reject(sRjtCode, dtTime);
     FDistributor.Distribute(Self, TRD_DATA, aOrder, ORDER_REJECTED);

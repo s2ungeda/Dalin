@@ -3,6 +3,7 @@ unit UOrders;
 interface
 uses
 	System.Classes, System.SysUtils, System.SyncObjs,
+  System.Generics.Collections, System.Generics.Defaults,
   UAccounts, Usymbols,  UFills,
   UApiTypes, UTypes, UDecimalHelper,
   Windows
@@ -193,16 +194,16 @@ type
     property OnStateChanged: TOrderEvent read FOnStateChanged write FOnStateChanged;
   end;
   
-  TOrderList = class(TList)
+  TOrderList = class(TList<TOrder>)
   private
-    function GetOrder(i: Integer): TOrder;
+    function GetOrder(i: Integer): TOrder; inline;
   public
     function FindOrder(sOrderNo: string): TOrder; overload;
     function FindLocalOrder(sLocalNo: string): TOrder;
     function FindOrder( aOrder : TOrder): TOrder; overload;
     function FindOrderCount(aSymbol: TSymbol; dPrice: double): integer;
     procedure SortByAcptTime;
-    
+
     property Orders[i:Integer]: TOrder read GetOrder; default;
   end;
 
@@ -323,6 +324,9 @@ type
   public
     property Results[i:Integer]: TOrderResult read GetResult; default;
   end;
+
+  var
+    GAcptTimeComparer: IComparer<TOrder>;
   
 implementation
 uses
@@ -400,35 +404,22 @@ TOrderList }
 function TOrderList.FindOrder(sOrderNo: string): TOrder;
 var
   i: Integer;
-  aOrder: TOrder;
 begin
   Result := nil;
   for i := 0 to Count - 1 do
-  begin
-    aOrder := TOrder(Items[i]);
-    if aOrder.OrderNo = sOrderNo then
-    begin
-      Result := aOrder;
-      Break;
-    end;
-  end;
+    if Items[i].OrderNo = sOrderNo then
+      Exit(Items[i]);
+
 end;
 
 function TOrderList.FindLocalOrder(sLocalNo: string): TOrder;
 var
   i: Integer;
-  aOrder: TOrder;
 begin
   Result := nil;
   for i := 0 to Count - 1 do
-  begin
-    aOrder := TOrder(Items[i]);
-    if aOrder.LocalNo = sLocalNo then
-    begin
-      Result := aOrder;
-      Break;
-    end;
-  end;
+    if Items[i].LocalNo = sLocalNo then
+      Exit(Items[i]);
 end;
 
 function TOrderList.FindOrderCount(aSymbol: TSymbol; dPrice: double): integer;
@@ -439,7 +430,7 @@ begin
   Result := 0;
   for i := 0 to Count - 1 do
   begin
-    aOrder := TOrder(Items[i]);
+    aOrder := Items[i];
     if (aOrder.Symbol = aSymbol) and ( CmpVal(aOrder.Price, dPrice) = 0) then
     begin
       inc(Result);
@@ -448,12 +439,9 @@ begin
 end;
 
 function TOrderList.FindOrder(aOrder: TOrder): TOrder;
-var
-  iRes : integer;
 begin
-  iRes := IndexOf( aOrder );
-  if iRes >= 0 then
-    Result := TOrder(Items[iRes])
+  if IndexOf(aOrder) >= 0 then
+    Result := aOrder
   else
     Result := nil;
 end;
@@ -461,27 +449,15 @@ end;
 function TOrderList.GetOrder(i: Integer): TOrder;
 begin
   if (i >= 0) and (i <= Count-1) then
-    Result := TOrder(Items[i])
+    Result := Items[i]
   else
     Result := nil;
 end;
 
-function CompareAcptTime(Data1, Data2: Pointer): Integer;
-var
-  Order1: TOrder absolute Data1;
-  Order2: TOrder absolute Data2;
-begin
-  if Order1.AcptTime > Order2.AcptTime then
-    Result := 1
-  else if Order1.AcptTime < Order2.AcptTime then
-    Result := -1
-  else
-    Result := 0;
-end;
 
 procedure TOrderList.SortByAcptTime;
 begin
-  Sort(CompareAcptTime);
+  Sort(GAcptTimeComparer);
 end;
 
 procedure TOrder.Accept(dtTime: TDateTime);
@@ -1432,5 +1408,14 @@ begin
 end;
 
 
+
+initialization
+  GAcptTimeComparer := TComparer<TOrder>.Construct(
+    function(const L, R: TOrder): Integer
+    begin
+      Result := CompareValue(L.AcptTime, R.AcptTime);   // System.Math
+    end);
+finalization
+  GAcptTimeComparer := nil;
 
 end.

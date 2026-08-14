@@ -1227,6 +1227,9 @@ begin
 
     sCode   := aObj.GetValue('symbol').Value;
 
+    if sCode = 'SKHYUSDT' then
+      sCode := 'SKHYUSDT';
+
     sTmp    := sCode + Fut_Suf;  // add perpectual future Suffix;
     aSymbol := App.Engine.SymbolCore.FindSymbol(ekBinance, sTmp);
     if aSymbol = nil then

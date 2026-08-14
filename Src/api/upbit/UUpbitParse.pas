@@ -1376,7 +1376,7 @@ var
   aObj : TJsonObject;
   aVal : TJsonValue;
   i : Integer;
-  sOID,sTmp, sCode : string;
+  sOID,sTmp, sCode, sLocalNo : string;
   aAcnt: TAccount;
   sArr : TArray<string>;
   iSide: integer;
@@ -1390,6 +1390,9 @@ begin
     App.Log(llError, '%s ParseActiveOrder data is empty', [ TExchangeKindDesc[FParent.ExchangeKind] ] ) ;
     Exit;
   end;
+
+  App.Log(llDebug, ' %s ParseOrders : %s', [
+          TExchangeKindDesc[FParent.ExchangeKind],  aData ] );
 
   aArr  := TJsonObject.ParseJSONValue(aData) as TJsonArray;
 
@@ -1422,11 +1425,14 @@ begin
       dLocked   := aVal.GetValue<double>('locked', 0);
       dFee      := aVal.GetValue<double>('remaining_fee', 0);
 
+      sLocalNo  := aVal.GetValue<string>('identifier', '');
+
       aOrder    := App.Engine.TradeCore.Orders[FParent.ExchangeKind].NewOrder(
         aAcnt, aSymbol, iSide, dOrderQty, pcLimit, dPrice, tmGTC);
 
       if aOrder <> nil then
       begin
+        aOrder.LocalNo  := sLocalNo;
         aOrder.OrderNo  := sOID;
         aOrder.Account.Assets.LoadOrder(iSide, '', sOID, dPrice, dOrderQty, dLocked, ekUpbit);
         App.Engine.TradeBroker.Accept(aOrder, dtTime, true, '', true);

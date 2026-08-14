@@ -3,14 +3,16 @@ unit USecureString;
 interface
 
 uses
-  SysUtils, Windows, Classes
+  SysUtils, Windows, Classes, SyncObjs
   ;
 type
 
   TSecureString = class
   private
+    FLock: TCriticalSection;
     FEncryptedData: TBytes;
     procedure SecureClear(var S: string);
+    procedure InternalClear;
   public
     constructor Create;
     destructor Destroy; override;
@@ -167,13 +169,14 @@ end;
 constructor TSecureString.Create;
 begin
   inherited;
+  FLock := TCriticalSection.Create;
   SetLength(FEncryptedData, 0);
-
 end;
 
 destructor TSecureString.Destroy;
 begin
-  Clear;
+  InternalClear;
+  FLock.Free;
   inherited;
 end;
 
@@ -182,22 +185,34 @@ var
   InBlob, OutBlob: DATA_BLOB;
   InBytes: TBytes;
 begin
-  Clear;
+  FLock.Enter;
+  try
+    InternalClear;
 
 //  FEncryptedData := EncryptData(S);
 
-  InBytes := TEncoding.Unicode.GetBytes(S);
-  InBlob.pbData := @InBytes[0];
-  InBlob.cbData := Length(InBytes);
+    if S = '' then Exit; // 빈 문자열이면 @InBytes[0] 접근 없이 종료
 
-  if CryptProtectData(@InBlob, nil, nil, nil, nil, 0, @OutBlob) then
-  begin
-    SetLength(FEncryptedData, OutBlob.cbData);
-    Move(OutBlob.pbData^, FEncryptedData[0], OutBlob.cbData);
-    LocalFree(HLOCAL(OutBlob.pbData));
-  end
-  else
-    raise Exception.Create('SecureString 암호화 실패');
+    InBytes := TEncoding.Unicode.GetBytes(S);
+    try
+      InBlob.pbData := @InBytes[0];
+      InBlob.cbData := Length(InBytes);
+
+      if CryptProtectData(@InBlob, nil, nil, nil, nil, 0, @OutBlob) then
+      begin
+        SetLength(FEncryptedData, OutBlob.cbData);
+        Move(OutBlob.pbData^, FEncryptedData[0], OutBlob.cbData);
+        LocalFree(HLOCAL(OutBlob.pbData));
+      end
+      else
+        raise Exception.Create('SecureString 암호화 실패');
+    finally
+      // 메모리에 남은 평문 복사본 소거
+      FillChar(InBytes[0], Length(InBytes), 0);
+    end;
+  finally
+    FLock.Leave;
+  end;
 end;
 
 function TSecureString.Reveal: string;
@@ -205,18 +220,25 @@ var
   InBlob, OutBlob: DATA_BLOB;
 begin
   Result := '';
-  if Length(FEncryptedData) = 0 then Exit;
+  FLock.Enter;
+  try
+    if Length(FEncryptedData) = 0 then Exit;
 
-  InBlob.pbData := @FEncryptedData[0];
-  InBlob.cbData := Length(FEncryptedData);
+    InBlob.pbData := @FEncryptedData[0];
+    InBlob.cbData := Length(FEncryptedData);
 
-  if CryptUnprotectData(@InBlob, nil, nil, nil, nil, 0, @OutBlob) then
-  begin
-    SetString(Result, PChar(OutBlob.pbData), OutBlob.cbData div SizeOf(Char));
-    LocalFree(HLOCAL(OutBlob.pbData));
-  end
-  else
-    raise Exception.Create('SecureString 복호화 실패');
+    if CryptUnprotectData(@InBlob, nil, nil, nil, nil, 0, @OutBlob) then
+    begin
+      SetString(Result, PChar(OutBlob.pbData), OutBlob.cbData div SizeOf(Char));
+      // API가 할당한 평문 버퍼 소거 후 해제
+      FillChar(OutBlob.pbData^, OutBlob.cbData, 0);
+      LocalFree(HLOCAL(OutBlob.pbData));
+    end
+    else
+      raise Exception.Create('SecureString 복호화 실패');
+  finally
+    FLock.Leave;
+  end;
 end;
 
 procedure TSecureString.SecureClear(var S: string);
@@ -231,19 +253,41 @@ end;
 
 procedure TSecureString.Assign(const Sec, Es: TBytes);
 begin
-  FEncryptedData  := Sec;
+  FLock.Enter;
+  try
+    InternalClear;
+    FEncryptedData := Copy(Sec); // 깊은 복사 - 호출자 배열과 참조 공유 방지
+  finally
+    FLock.Leave;
+  end;
 end;
 
-procedure TSecureString.Clear;
+// 락 없이 버퍼만 소거 (락을 잡은 상태에서 호출)
+procedure TSecureString.InternalClear;
 begin
   if Length(FEncryptedData) > 0 then
     FillChar(FEncryptedData[0], Length(FEncryptedData), 0);
   SetLength(FEncryptedData, 0);
 end;
 
+procedure TSecureString.Clear;
+begin
+  FLock.Enter;
+  try
+    InternalClear;
+  finally
+    FLock.Leave;
+  end;
+end;
+
 function TSecureString.IsEmpty: Boolean;
 begin
-  Result := Length(FEncryptedData) = 0;
+  FLock.Enter;
+  try
+    Result := Length(FEncryptedData) = 0;
+  finally
+    FLock.Leave;
+  end;
 end;
 
 end.

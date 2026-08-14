@@ -180,8 +180,6 @@ begin
       App.Log(llDebug,'bithumb_myAsset', '%s ---- B:%s, L:%s', [sCrny,
         DoubleToStr(dBal+dLock), DoubleToStr(dLock)  ]);
 
-      Continue;
-
 //      aAsset := aAcnt.Assets.Find(aVal.GetValue<string>('currency'));
 //      if aAsset = nil then
 //      begin
@@ -203,7 +201,7 @@ end;
 
 procedure TBithParse.ParseSpotMyOrder(aJson: TJsonObject);
 var
-  sOID, sState, sFillNo: string;
+  sOID, sState, sFillNo, sLocalNo: string;
   aOrder: TOrder;
   aFill  : TFill;
   dtTime : TDateTime;
@@ -215,56 +213,59 @@ begin
 
   aOrder := nil;
   try
-    sOID  := aJson.GetValue('uuid').Value;
+    sOID  := aJson.GetValue('order_id').Value;
     aOrder  := App.Engine.TradeCore.FindOrder(FParent.ExchangeKind, sOID, DIV_ORD_NO);
     if aOrder = nil then
-    begin
-      var sLocalNo := aJson.GetValue('client_order_id').Value;
-      aOrder  := App.Engine.TradeCore.FindOrder(FParent.ExchangeKind, sLocalNo);
-      if aOrder <> nil then begin
-        aOrder.OrderNo  := sOID;
-        App.Log(llInfo, '주문역전 : %s', [aOrder.Represent]);
+      if aJson.TryGetValue<string>('client_order_id', sLocalNo) then
+      begin
+        aOrder  := App.Engine.TradeCore.FindOrder(FParent.ExchangeKind, sLocalNo);
+        if aOrder <> nil then begin
+          aOrder.OrderNo  := sOID;
+          App.Log(llInfo, '주문역전 : %s', [aOrder.Represent]);
+        end;
       end;
-    end;
 
     sState  := aJson.GetValue('state').Value;
-
     aRslt   := nil;
-    if aOrder = nil then
-    begin
-      if (sState = 'trade') or (sState = 'done') then
-      begin
-        aRslt := App.Engine.TradeCore.OrderResult[ekBithumb].New(aOrder, rtFill);
-        aRslt.OrderNo := sOID;
-        aRslt.Volume  := aJson.GetValue<double>('volume');
-        aRslt.Price   := aJson.GetValue<double>('price');
-        aRslt.FillNo  := aJson.GetValue('trade_uuid').Value;
-        aRslt.Time    := UnixTimeToDateTime(aJson.GetValue<string>('trade_timestamp'));
-        aRslt.TC      := aJson.GetValue<integer>('trades_count', 0);
-        aRslt.RVolume := aJson.GetValue<double>('remaining_volume');
-        aRslt.Fee     := aJson.GetValue<double>('paid_fee');
-        FForwardOrderResults.Add(aRslt);
-      end else
-      if ssTate = 'wait' then
-      begin
-        aRslt := App.Engine.TradeCore.OrderResult[ekBithumb].New(aOrder, rtWait);
-        aRslt.OrderNo := sOID;
-        aRslt.Time    := UnixTimeToDateTime(aJson.GetValue<string>('order_timestamp'));
-        FForwardOrderResults.Add(aRslt);
-      end else
-      if sState = 'cancel' then
-      begin
-        aRslt := App.Engine.TradeCore.OrderResult[ekBithumb].New(aOrder, rtCancel);
-        aRslt.OrderNo := sOID;
-        aRslt.TC      := aJson.GetValue<integer>('trades_count', 0);
-        aRslt.RVolume := aJson.GetValue<double>('remaining_volume');
-        FForwardOrderResults.Add(aRslt);
-      end;
 
-      if aRslt <> nil then
-        App.Log(llINfo, 'Bithumb MyOrder %s %s 역전 : %d', [aRslt.TypeToStr, aRslt.OrderNo, FForwardOrderResults.Count ]);
-      Exit;
-    end;
+    // 이전에 'client_order_id' 가 주문데이터에 없어서 nil 처러를 했었는데 이제 필요없음
+    // aOrder 가 nil 이면 외부주문이라 판단 , 처리 안한다.
+    if aOrder = nil then Exit;
+
+//    begin
+//      if (sState = 'trade') or (sState = 'done') then
+//      begin
+//        aRslt := App.Engine.TradeCore.OrderResult[ekBithumb].New(aOrder, rtFill);
+//        aRslt.OrderNo := sOID;
+//        aRslt.Volume  := aJson.GetValue<double>('volume');
+//        aRslt.Price   := aJson.GetValue<double>('price');
+//        aRslt.FillNo  := aJson.GetValue('trade_uuid').Value;
+//        aRslt.Time    := UnixTimeToDateTime(aJson.GetValue<string>('trade_timestamp'));
+//        aRslt.TC      := aJson.GetValue<integer>('trades_count', 0);
+//        aRslt.RVolume := aJson.GetValue<double>('remaining_volume');
+//        aRslt.Fee     := aJson.GetValue<double>('paid_fee');
+//        FForwardOrderResults.Add(aRslt);
+//      end else
+//      if ssTate = 'wait' then
+//      begin
+//        aRslt := App.Engine.TradeCore.OrderResult[ekBithumb].New(aOrder, rtWait);
+//        aRslt.OrderNo := sOID;
+//        aRslt.Time    := UnixTimeToDateTime(aJson.GetValue<string>('order_timestamp'));
+//        FForwardOrderResults.Add(aRslt);
+//      end else
+//      if sState = 'cancel' then
+//      begin
+//        aRslt := App.Engine.TradeCore.OrderResult[ekBithumb].New(aOrder, rtCancel);
+//        aRslt.OrderNo := sOID;
+//        aRslt.TC      := aJson.GetValue<integer>('trades_count', 0);
+//        aRslt.RVolume := aJson.GetValue<double>('remaining_volume');
+//        FForwardOrderResults.Add(aRslt);
+//      end;
+//
+//      if aRslt <> nil then
+//        App.Log(llINfo, 'Bithumb MyOrder %s %s 역전 : %d', [aRslt.TypeToStr, aRslt.OrderNo, FForwardOrderResults.Count ]);
+//      Exit;
+//    end;
 
     if sState = 'wait' then
     begin
@@ -273,6 +274,12 @@ begin
     end else
     if sState = 'cancel' then
     begin
+      // 취소가 오면 무조건 조회를 날린다.
+      // 취소 수량도, 누적체결 수량도 안 줌...체결 데이터 역전 판단이 안됨..썩을빗썸.
+      App.Log(llInfo, 'bithumb 취소--> 조회날림 (%s) ', [aOrder.Represent] );
+      App.Engine.ApiManager.ExManagers[ekBithumb].RequestOrdeDetail(aOrder);
+
+      {
       tc  := aJson.GetValue<integer>('trades_count', 0);
 
       var v, rv, ev : double;
@@ -289,13 +296,43 @@ begin
         aRslt.Volume  := rv;
         FForwardOrderResults.Add(aRslt);
       end;
+      }
 
     end else
-    if (sState = 'trade') or (sState = 'done') then
+    if (sState = 'trade')  then
     begin
-      sFillNo := aJson.GetValue('trade_uuid').Value;
+      sFillNo := aJson.GetValue('trade_id').Value;
       aFill   := aOrder.Fills.Find(sFillNo);
+      var  dVolume, dPrice, dRv : double;
 
+      if aFill = nil then
+      begin
+        dVolume:= aJson.GetValue<double>('trade_quantity');
+        dPrice := aJson.GetValue<double>('trade_price');
+        dtTime := UnixTimeToDateTime(aJson.GetValue<string>('trade_timestamp'));
+        aFill	 := App.Engine.TradeCore.Fills[ekUpbit].New(sFillNo, dtTime, now,
+              sOID, aOrder, dVolume, dPrice);
+        aFill.Fee := aJson.GetValue<double>('paid_fee',0);
+
+        App.Log(llInfo, 'Bithumb Spot Fill(%s) - ws : %s, %s, %s, %s, %s, %.8f, %f, %s ', [
+          sState, aOrder.Symbol.Code, aOrder.SideToStr, '',
+          sOID,  aOrder.Symbol.PriceToStr(dPrice), dVolume, aFill.Fee, sFillNo
+        ]);
+
+        dRv   := aJson.GetValue<double>('remaining_quantity');
+
+        App.Engine.TradeBroker.Fill( aOrder, aFill, dRv <= EPSILON);
+      end;
+    end else
+    if sState = 'done' then
+    begin
+      // 체결 다음에 오는 완료 데이터.
+      if aOrder.State <> osFilled then
+        aOrder.Fill;
+
+    end;
+
+     {
       var  dVolume, dPrice, dRv : double;
 
       dRv := aJson.GetValue<double>('remaining_volume');
@@ -346,6 +383,7 @@ begin
           end;
       end;
     end;
+    }
   except
     on e: Exception do
     begin
@@ -795,7 +833,7 @@ var
   aAcnt	: TAccount;
   aOrder : TOrder;
   aSymbol: TSymbol;
-  sCode, sOrderId : string;
+  sCode, sOrderId, sLocalNo : string;
   I, iSide : Integer;
   dPrice, dVolume, dLocked, dFee : double;
   dtTime : TDateTime;
@@ -850,12 +888,16 @@ begin
         dLocked := aVal.GetValue<double>('locked', 0);
         dFee    := aVal.GetValue<double>('remaining_fee', 0);
 
+        sLocalNo:= aVal.GetValue<string>('client_order_id', '');
+
         aOrder	:= App.Engine.TradeCore.Orders[ekBithumb].NewOrder( aAcnt
         	, aSymbol, iSide, dVolume, pcLimit, dPrice, tmGTC );
 
         if aOrder <> nil then
         begin
-          aOrder.OrderNo  :=  sOrderId;
+          // 중요.. 주문생성시 로커번호를 만듬으로, 엉뚱한 로컬번호로 조회를 날릴수도 있음.
+          aOrder.LocalNo  := sLocalNo;
+          aOrder.OrderNo  := sOrderId;
           aOrder.Account.Assets.LoadOrder(iSide, '', sOrderId, dPrice, dVolume, dLocked, ekBithumb);
           App.Engine.TradeBroker.Accept(aOrder, dtTime, true, '', true);
         end;
@@ -1631,7 +1673,7 @@ begin
         Exit;
       end;
     end else
-      App.Log(llError, '%s %s order info : %s',
+      App.Log(llInfo, '%s %s order info : %s',
          [ TExchangeKindDesc[FParent.ExchangeKind],  TMarketTypeDesc[mtSpot], aOrder.Represent ] ) ;
 {
 done : 전체 체결 완료

@@ -173,6 +173,10 @@ begin
         var bNew : boolean;
 
         sBase := aObj.GetValue('baseAsset').Value;
+
+        if sBase = 'SKHYB' then
+          sBase := 'SKHYB';
+
         if ( GetCodeIndex( sBase ) >= 0 ) then
         begin
           // BTCUSDT Çü½Ä.
