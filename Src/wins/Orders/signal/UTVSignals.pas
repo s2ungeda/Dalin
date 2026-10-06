@@ -1920,25 +1920,27 @@ begin
 
   if e = ekBinance then begin
     dMin  := GetSymbol(e).CalcTicksPrice(GetSymbol(e).Bids[0].Price, 1);
-    dConst    := gAOConfig.Result.PriceRangePer[scInter] / 100;
+    dConst:= gAOConfig.Result.PriceRangePer[scInter] / 100;
   end else
   begin
-    // 국내 거래소중 매수호가 +1 이 가장 큰값을 Min 로 선택
-    dConst    := gAOConfig.Result.PriceRangePer[scDomes] / 100;
-    var bu, bt : boolean;
-    var du := GetSymbol(ekUpbit).CalcTicksPrice(GetSymbol(ekUpbit).Bids[0].Price, 1);
-    if (du <= EPSILON) then bu := false else bu := true;
-    var dt := GetSymbol(ekBithumb).CalcTicksPrice(GetSymbol(ekBithumb).Bids[0].Price, 1);
-    if (dt <= EPSILON) then bt := false else bt := true;
+    dConst:= gAOConfig.Result.PriceRangePer[scDomes] / 100;
+    dMin  := GetSymbol(e).CalcTicksPrice(GetSymbol(e).Bids[0].Price, 1);
 
-    if (not bt) and (not bu) then Exit;
-    if bt and bu then
-      dMin  := Max(du, dt)
-    else if bt then
-      dMin  := dt
-    else if bu then
-      dMin  := du
-    else Exit;
+  // 국내 거래소중 매수호가 +1 이 가장 큰값을 Min 로 선택
+//    var bu, bt : boolean;
+//    var du := GetSymbol(ekUpbit).CalcTicksPrice(GetSymbol(ekUpbit).Bids[0].Price, 1);
+//    if (du <= EPSILON) then bu := false else bu := true;
+//    var dt := GetSymbol(ekBithumb).CalcTicksPrice(GetSymbol(ekBithumb).Bids[0].Price, 1);
+//    if (dt <= EPSILON) then bt := false else bt := true;
+//
+//    if (not bt) and (not bu) then Exit;
+//    if bt and bu then
+//      dMin  := Max(du, dt)
+//    else if bt then
+//      dMin  := dt
+//    else if bu then
+//      dMin  := du
+//    else Exit;
   end;
 
   dMax  := dMin * (1 + dConst);
@@ -1976,8 +1978,6 @@ begin
 
       if ordRng.OrdPrice <= EPSILON then Exit;
     end;
-
-//  ordRng.OrdPrice:= GetSymbol(e).Asks[4].Price;
 
   Result := true;
 end;
@@ -2055,22 +2055,25 @@ begin
     dConst    := gAOConfig.Result.PriceRangePer[scInter] / 100;
   end else
   begin
-    // 국내 거래소중 매도호가 -1 이 가장 큰값을 Max 로 선택
+    // 해당거래소의 매도호가로만 계산.
+    dMax  := GetSymbol(ordEx).CalcTicksPrice(GetSymbol(ordEx).Asks[0].Price, -1);
     dConst    := gAOConfig.Result.PriceRangePer[scDomes] / 100;
-    var bu, bt : boolean;
-    var du := GetSymbol(ekUpbit).CalcTicksPrice(GetSymbol(ekUpbit).Asks[0].Price, -1);
-    if (du <= EPSILON) then bu := false else bu := true;
-    var dt := GetSymbol(ekBithumb).CalcTicksPrice(GetSymbol(ekBithumb).Asks[0].Price, -1);
-    if (dt <= EPSILON) then bt := false else bt := true;
 
-    if (not bt) and (not bu) then Exit;
-    if bt and bu then
-      dMax  := Min(du, dt)
-    else if bt then
-      dMax  := dt
-    else if bu then
-      dMax  := du
-    else Exit;
+    // 국내 거래소중 매도호가 -1 이 가장 큰값을 Max 로 선택
+//    var bu, bt : boolean;
+//    var du := GetSymbol(ekUpbit).CalcTicksPrice(GetSymbol(ekUpbit).Asks[0].Price, -1);
+//    if (du <= EPSILON) then bu := false else bu := true;
+//    var dt := GetSymbol(ekBithumb).CalcTicksPrice(GetSymbol(ekBithumb).Asks[0].Price, -1);
+//    if (dt <= EPSILON) then bt := false else bt := true;
+//
+//    if (not bt) and (not bu) then Exit;
+//    if bt and bu then
+//      dMax  := Min(du, dt)
+//    else if bt then
+//      dMax  := dt
+//    else if bu then
+//      dMax  := du
+//    else Exit;
   end;
 
   dMin  := dMax * (1 - dConst);

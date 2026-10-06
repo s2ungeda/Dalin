@@ -934,21 +934,14 @@ end;
 //end;
 
 
-
-
 procedure TBithSpot.RequestOrderDetail(aOrder: TOrder);
-var
-	sData : string;
-  i : integer;
 begin
 
   if aOrder = nil then Exit;
 
-	sData := Format('%s|%s', [ aOrder.Symbol.Code, aOrder.OrderNo ] );
-
 	App.Engine.SharedManager.RequestData( ekBithumb, aOrder.Symbol.Spec.ExApiType,
-      rtOrdDetail,  sData , aOrder.LocalNo
-      )  ;
+      rtOrdDetail,  aOrder.OrderNo , aOrder.LocalNo
+      );
 end;
 
 
