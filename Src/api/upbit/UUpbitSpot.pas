@@ -31,7 +31,6 @@ type
     function RequestSpotTicker : boolean;
 
     procedure OnHTTPProtocolError(Sender: TCustomRESTRequest);
-    procedure MakeRest;
 
 //    procedure parseAssetsstatus;
 //    procedure parseOrderBook;
@@ -57,8 +56,6 @@ type
     function RequestWithdrawAddress: boolean; override;
 
 //    procedure RequestAvailableAmt( aSymbol : TSymbol );
-    procedure CyclicNotify( Sender : TObject ); override;
-    procedure RestNotify( Sender : TObject ); override;
 
     function RequestDNWState : boolean; override;
     function GetSig( idx : Integer ): string; overload;
@@ -96,7 +93,7 @@ uses
   , UTypes
   , UEncrypts
   , UUpbitParse, URestItems 
-  , UCyclicItems, URestRequests
+  , URestRequests
   , JOSE.Core.JWT
   , JOSE.Core.JWA
   , JOSE.Core.Builder
@@ -165,8 +162,6 @@ begin
   Result :=  RequestSpotTicker
       and  RequestDNWState       ;      
 
-	if Result then
-		MakeRest;
 end;
 
 
@@ -747,108 +742,6 @@ begin
   end;
 end;
 
-
-procedure TUpbitSpot.MakeRest;
-var
-  aItem : TCyclicItem;
-
-begin
-
-  aItem := CyclicItems.New('orderbook');
-  aItem.Interval  := 1000;
-  aItem.Index     := 0;
-  aItem.Resource	:= '/v1/orderbook';
-  aITem.Method		:= rmGET;
-
-  aItem := CyclicItems.New('ticker');
-  aItem.Interval  := 1000;
-  aItem.Index     := 1;
-  aItem.Resource	:= '/v1/ticker';
-  aITem.Method		:= rmGET;
-
-  aItem := CyclicItems.New('status');
-  aItem.Interval  := 3000;
-  aItem.Index     := 2;
-  aItem.Resource	:= '/v1/status/wallet';
-  aITem.Method		:= rmGET;
-	// request item 을 메모리에 미리 만들어둠..생성/해제 줄이기 위해.
-	MakeRestItems( 3 );
-  MakeCyclicThread;
-
-end;
-
-procedure TUpbitSpot.CyclicNotify(Sender: TObject);
-var
-//	aItem : TCyclicItem;
-  aReq  : TRequest;
-  sNm, sRsrc  : string;
-  iCnt : integer;
-begin
-
-//  if IsAsyncWaiting then Exit;
-
-  if Sender = nil then Exit;
-  aReq := Sender as TRequest;
-
-  try
-//  	aReq	:= GetReqItems;
-//    if (aReq <> nil) and ( aReq.State <> 1 ) then
-//    begin
-//			aReq.Req.Params.Clear;
-//
-//      case aItem.index of
-//      	1 : sRsrc	:=  '/v1/orderbook';
-//        2 : sRsrc	:=  '/v1/ticker';
-//        3 : sRsrc	:=  '/v1/status/wallet';
-//      end;
-
-      if aReq.Seq = 2 then
-      begin
-        var sToken : string;
-        sToken := GetSig(0);
-        aReq.Req.AddParameter('Authorization', sToken, TRESTRequestParameterKind.pkHTTPHEADER, [poDoNotEncode] );
-      end else
-      	aReq.Req.AddParameter('markets', FMarketParam, pkGETorPOST);
-
-//      aReq.SetParam(rmGET, sRsrc, aITem.Name);
-
-//      iCnt := 0;
-//      while IsAsyncWaiting do begin
-//        sleep(10);
-//        App.DebugLog('waiting (%02d) : %s - %', [iCnt, aReq.Name] );
-//        inc(iCnt);
-//      end;
-
-			if aReq.RequestAsync then begin
-        RestExet := aReq.ReqThread;
-      	aReq.State := 1;
-      end;
-//      if RestThread <> nil then
-//        RestThread.PushQueue( aReq );
-//    end else
-//    if (aReq <> nil) and ( aReq.State = 1 ) then
-//    begin
-//      App.DebugLog('%s, %s State = 1 !!! ', [TExShortDesc[GetExKind] , aItem.Name] );
-//    end;
-
-
-  except
-//  	on e : exception do
-//	  	App.Log(llError, '%s %s CyclicNotify Error : %s', [ TExShortDesc[GetExKind]
-//      , aItem.Name, e.Message ]  );
-  end;
-end;
-
-procedure TUpbitSpot.RestNotify(Sender: TObject);
-var
-   aReq : TRequest;
-   sTmp : string;
-   gap, avg  : integer;
-
-begin
-  if Sender = nil then Exit;
-  inherited  RestNotify( Sender );
-end;
 
 
 procedure TUpbitSpot.RequestOrderDetail(aOrder: TOrder);

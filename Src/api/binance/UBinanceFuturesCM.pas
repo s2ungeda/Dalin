@@ -27,7 +27,6 @@ type
     // async proc
     procedure AsyncFutAllTicker;
     procedure AsyncFutAllOrderBook;
-    procedure MakeRest;
 
 
   public
@@ -41,8 +40,6 @@ type
 
 
     procedure ParseRequestData( iCode : integer; sName : string; sData : string ); override;
-    procedure CyclicNotify( Sender : TObject ); override;
-    procedure RestNotify( Sender : TObject ); override;
 
     procedure RequestData( iMod : integer );
 
@@ -73,7 +70,7 @@ uses
   GApp, GLibs, UApiConsts
   , UTypes
   , UBinanceParse
-  , UCyclicItems, URestRequests
+  , URestRequests
   , UEncrypts
   , REST.Types
   , System.JSON
@@ -431,8 +428,6 @@ begin
   Result := RequestFutCMMaster
          and RequestFutCMTicker;
          
-	if Result then
-		MakeRest;
 end;
 
 
@@ -523,47 +518,6 @@ end;
 
 
 
-procedure TBinanceFuturesCM.MakeRest;
-var
-  aItem : TCyclicItem;  
-begin
-  aItem := CyclicItems.New('orderbook');
-  aItem.Interval  := 1000;
-  aItem.Index     := 0;
-  aItem.Resource	:= '/dapi/v1/ticker/bookTicker';
-  aITem.Method		:= rmGET;
-
-  aItem := CyclicItems.New('listenkey');
-  aItem.Interval  := 60000 * 20;    // 20분..
-  aItem.Index     := 1;
-
-	MakeRestItems( 0 );
-  MakeCyclicThread;
-end;
-
-procedure TBinanceFuturesCM.CyclicNotify(Sender: TObject);
-var
-  aReq  : TRequest;
-begin
-  if Sender = nil then Exit;
-  aReq := Sender as TRequest;
-
-  if aReq.Seq = 1 then begin
-    // 주문낼때 다시 허용
-    //RequestListenKey( false );
-  end
-  else begin
-    if aReq.RequestAsync then
-    	aReq.State := 1;
-  end;
-end;
-
-procedure TBinanceFuturesCM.RestNotify(Sender: TObject);
-begin
-  if Sender = nil then Exit;
-  inherited  RestNotify( Sender )
-end;
-
 procedure TBinanceFuturesCM.ParseRequestData(iCode: integer; sName,
   sData: string);
 begin
@@ -632,6 +586,7 @@ function TBinanceFuturesCM.SenderOrder(aOrder: TOrder): boolean;
 var
 	sData : string;
 begin
+  Result := false;
 //  Result := RequestOrder( aOrder );
 //  Exit;
 	// '|' 를 구분자 사용
@@ -649,7 +604,7 @@ begin
       ifThenStr(aOrder.TimeInForce = tmGTX, 'GTX', 'GTC')
     ]);
 
-    App.Engine.SharedManager.RequestData( ekBinance, aOrder.Symbol.Spec.ExApiType,
+    Result := App.Engine.SharedManager.RequestData( ekBinance, aOrder.Symbol.Spec.ExApiType,
       rtNewOrder,  sData , aOrder.LocalNo
       )
   end else
@@ -660,7 +615,7 @@ begin
       aOrder.Symbol.OrgCode
     ]);
 
-    App.Engine.SharedManager.RequestData( ekBinance, aOrder.Symbol.Spec.ExApiType,
+    Result := App.Engine.SharedManager.RequestData( ekBinance, aOrder.Symbol.Spec.ExApiType,
       rtCnlOrder,  sData , aOrder.OrderNo
       )
   end;

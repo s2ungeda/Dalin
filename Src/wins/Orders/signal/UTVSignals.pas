@@ -2733,7 +2733,7 @@ begin
   for var a := aoEntry  to High(TAutoOrderType) do
   begin
     for I := 0 to FLiqOrders[a].Count-1 do
-      FLiqOrders[a].Free;
+      FLiqOrders[a][i].Free;
     FLiqOrders[a].Clear;
   end;
 end;

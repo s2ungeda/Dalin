@@ -7,7 +7,7 @@ uses
   
   REST.Types, REST.Client ,
 
-  URestRequests, UCyclicThreads , UCyclicItems,
+  URestRequests,
 
   UOrders,  USymbols,
 
@@ -31,11 +31,7 @@ type
     FMarketIdx: integer;
     FMasterData: string;
     FCodes: TStrings;
-    FCyclicThreads: TCyclicThread;
-    FCyclicItems: TCyclicItems;
-    FReqItems: TList;
 //    FRestThread: TRestThread;
-    FReqIndex	: integer;
     FAccCnt: int64;
     FAccVal: int64;
     FMaxVal: int64;
@@ -115,8 +111,6 @@ type
 
     procedure ParseRequestData( iCode : integer; sName : string; sData : string ); overload; virtual; abstract;
     procedure ParseRequestData( aReqType : TRequestType; sData : string ); overload; virtual; abstract;
-    // cyclicthread notify
- 		procedure CyclicNotify( Sender : TObject ); virtual; abstract;
 
     // only binance;
     function RequestListenKey(bFirst: boolean): string; virtual;
@@ -124,16 +118,11 @@ type
     procedure Connect; virtual; abstract;
     procedure Disconnect; virtual; abstract;
 //--------------------------------------------------------------
-		// rest response notify
-    procedure RestNotify( Sender : TObject ); virtual; 
     procedure OnHTTPProtocolError(Sender: TCustomRESTRequest); virtual;
     function PrepareMaster : boolean;
 //    function GetReqItems	 : TRequest;
 //--------------------------------------------------------------
 		procedure MakeRestThread( aInfo : TDivInfo );
-    procedure MakeCyclicThread;
-    procedure ProcCyclicWork;
-    procedure MakeRestItems( iCount : integer);
 		function  RestType( iType : integer ) : integer;
 
     property Parent : TObject read FParent;
@@ -149,9 +138,6 @@ type
     //
     property RestExet      : TRESTExecutionThread read FRestExet write FRestExet;
 //    property RestThread    : TRestThread read FRestThread;
-    property CyclicThreads : TCyclicThread read  FCyclicThreads; 
-    property CyclicItems	 : TCyclicItems read FCyclicItems;
-    property ReqItems			 : TList read FReqItems;    
 
     property Info : TExchangeInfo read FInfo;
     property LastTime : TDateTime read FLastTime write FLastTime;
@@ -215,13 +201,7 @@ begin
 
   FRestReq.OnHTTPProtocolError :=  OnHTTPProtocolError;
 
-  // Req 를 100 개 미리 만들어둠..
-  FReqItems:= TList.Create;
-
-  FCyclicItems:= TCyclicItems.Create;
-  FCyclicThreads:= nil;
   //FRestThread		:= nil;
-  FReqIndex			:= 0;
 
   FAccCnt:= 0;
   FAccVal:= 0;
@@ -233,23 +213,11 @@ begin
 end;
 
 destructor TExchange.Destroy;
-var
-  i : integer;
 begin
 
-	if FCyclicThreads <> nil then
-  begin
-  	FCyclicThreads.Terminate;
-    FCyclicThreads.Free;
-  end;
-
-  for I := FreqItems.Count-1 downto 0 do
-  	TRequest(FReqItems.Items[i]).Free;
-  FReqItems.Free;
 //  if FRestThread <> nil then
 //    FRestThread.Terminate;
 //
-  FCyclicItems.Free;
   
 //  if Rest <> nil then
 //    for i := 0 to High(Rest) do   
@@ -309,41 +277,6 @@ begin
     Result := false;
 end;
 
-procedure TExchange.MakeRestItems( iCount : integer );
-var
-  aReq : TRequest;
-  aItem: TCyclicItem;
-  I: Integer;
-  sUrl : string;
-
-begin
- 
-  FReqItems.Clear;
-  sUrl :=  App.Engine.ApiConfig.GetBaseUrl( GetExKind, FExApiType);
-  
-//  for I := 0 to iCount-1 do
-	for I := 0 to CyclicItems.Count-1 do    
-  begin
-  	aItem	:= CyclicItems.Cyclic[i];
-    aReq := TRequest.Create;
-    aReq.init( sUrl, GetExKind = ekBithumb);
-    aReq.SetParam( aItem.index, aItem.Interval );
-    aReq.SetParam( aItem.Method, aItem.Resource, aItem.Name );
-    aReq.Req.ReadTimeout := 15000;
-    aReq.OnNotify := RestNotify;
-    FReqItems.Add( aReq );
-  end;
-end;
-
-procedure TExchange.MakeCyclicThread;
-var
-	aName : string;
-begin
-//	FCyclicThreads := TCyclicThread.Create(CyclicItems, CyclicNotify);
-	aName := Format('%s_%s', [ TExShortDesc[ GetExKind], TExApiTypeDesc[FExApiType] ]);
-	FCyclicThreads := TCyclicThread.Create(FReqItems, CyclicNotify, aName);
-end;
-
 procedure TExchange.MakeRestThread(aInfo: TDivInfo);
 begin
 //	Rest[aInfo.Index]	:= TRestThread.Create( aInfo, ParseRequestData );
@@ -380,76 +313,6 @@ begin
   Result := FCodes.Count > 0 ;
 end;
 
-
-procedure TExchange.ProcCyclicWork;
-var
-	i , iSnd : integer;
-//  aItem : TCyclicItem;
-  aItem : TRequest;
-  bSend : boolean;
-  gap, nTick : DWORD;
-  
-begin
-//  for I := 0 to FCyclicItems.Count-1 do
-//  begin          
-//    aItem := FCyclicItems.Cyclic[i];
-//    if aItem = nil then continue;
-//
-//    bSend := false;
-//    nTick := GetTickCount;
-//
-//    if aITem.LastTime <= 0 then
-//    begin
-//      gap := aItem.Count * INTERVAL;
-//      if gap >= aItem.Interval then
-//        bSend := true;
-//      inc( aItem.Count );
-//    end else
-//    begin
-//      gap   := nTick - aItem.LastTime ;
-//      if gap >= aItem.Interval then
-//        bSend := true;
-//    end;
-//
-//    if bSend then begin
-//      aItem.PrevTime  := aItem.LastTime;
-//      aItem.LastTime  := nTick;
-//     	cyclicNotify( aItem );
-//    end;
-//  end;
-
-	iSnd := 0;
-  for I := 0 to FReqItems.Count-1 do
-  begin          
-    aItem := TRequest(FReqItems.Items[i]);
-    if aItem = nil then continue;
-
-    bSend := false;
-    nTick := GetTickCount;
-
-    if aITem.LastTime <= 0 then
-    begin
-      gap := aItem.Count * INTERVAL;
-      if gap >= aItem.Interval then
-        bSend := true;
-      inc( aItem.Count );
-    end else
-    begin
-      gap   := nTick - aItem.LastTime ;
-      if gap >= aItem.Interval then
-        bSend := true;
-    end;
-
-    if (bSend) and ( aItem.State <> 1 ) then begin
-      aItem.PrevTime  := aItem.LastTime;
-      aItem.LastTime  := nTick;
-     	cyclicNotify( aItem );
-      inc( iSnd );
-    end;
-
-    if iSnd > 0 then break;          
-  end;  
-end;
 
 function TExchange.Request(AMethod : TRESTRequestMethod;  AResource : string;  ABody : string;
       var OutJson, OutRes : string ): boolean;
@@ -544,56 +407,6 @@ end;
 
 function TExchange.RequestListenKey(bFirst: boolean): string;
 begin
-
-end;
-
-// 인덱스를 리턴해준다..
-procedure TExchange.RestNotify(Sender: TObject);
-var
-   aReq : TRequest;
-   sTmp : string;
-   avg  : integer;
-   gap  : integer;
-begin
-  if Sender = nil then Exit;
-  if App.AppStatus = asClose then
-  begin
-    Exit;
-  end;
-
-  try
-  	aReq := Sender as TRequest;
-	  ParseRequestData( aReq.StatusCode, aReq.Name, aReq.Content );
-
-//    gap := (aReq.EnTime - aReq.StTime);
-//    AccCnt:= AccCnt+1;
-//    AccVal:= AccVal + gap;
-//
-//    avg := AccVal div AccCnt;
-//
-//    if avg > 500 then
-//    begin
-//      App.Log(llInfo, 'bt_latency', 'avg : %05d : %d, %s %d  (%d, %d) ', [ avg,
-//         aReq.StatusCode, aReq.Name, {RestThread.QCount,}AccCnt, MaxVal, MinVal ]  );
-//    end;
-//
-//    if MaxVal < gap then begin
-//      App.Log(llInfo, 'bt_latency', 'max : %05d : %d, %s %d (%d)', [ gap,
-//         aReq.StatusCode, aReq.Name,{ RestThread.QCount,} AccCnt, avg ]  );
-//      MaxVal := gap;
-//    end;
-//
-//    if MinVal > gap then begin
-//      App.Log(llInfo, 'bt_latency', 'min : %05d : %d, %s  %d (%d)', [ gap,
-//         aReq.StatusCode, aReq.Name, {RestThread.QCount,} AccCnt, avg ]  );
-//      MinVal := gap;
-//    end;
-
-
-  finally
-		aReq.State := 2;
-  end;
-
 
 end;
 

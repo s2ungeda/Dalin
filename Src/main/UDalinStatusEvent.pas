@@ -131,9 +131,6 @@ begin
         FrmDalinMain.ExecuteSubApp;
         //  실시간 데이터 구독
         App.Engine.ApiManager.SubscribeAll;
-        //  시세 조회 쓰레드 시작
-        if not App.Config.TradeMod then
-          App.Engine.ApiManager.StartRequest;
         //  주문 조회 타이머 시작..
         if App.Config.TradeMod then
           App.Engine.ApiManager.OrderDetailRequest(true);

@@ -38,7 +38,6 @@ type
     function RequestOrders: boolean;
     function RequestWithdrawAddress: boolean;
 
-    procedure StartRequest;
     procedure OrderDetailRequest(bStart : boolean);
 
     procedure MakeCloseData;
@@ -321,18 +320,6 @@ begin
 
 end;
 
-
-procedure TApiManager.StartRequest;
-var
-  i :  TExchangeKind;
-begin
-  FExManagers[ekUpbit].StartRequest;
-  FExManagers[ekBithumb].StartRequest;
-  FExManagers[ekBinance].StartRequest;
-  exit;
-  for I := ekBinance to High(TExchangeKind) do
-  	FExManagers[i].StartRequest;
-end;
 
 function TApiManager.Sub(aQuote: TQuote): boolean;
 begin

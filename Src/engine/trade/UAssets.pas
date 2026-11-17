@@ -27,6 +27,9 @@ type
     StandardFeeRate: Double;
 
     ReservedAt: TDateTime; // 주문 예약 시각 (Timestamp)
+    CheckedAt: TDateTime;  // 미확인 주문 서버조회 시각
+    CheckCount: integer;
+    NotFoundAt: TDateTime; // 서버조회 첫 not-found 수신 시각
   end;
 
   TAsset = class( TCollectionItem )
@@ -109,6 +112,7 @@ type
 
     procedure AcceptOrder(const ALocalNo, AOrderNo: string);
     procedure CleanupStuckOrders(AMaxSeconds: Integer);
+    function  IsConfirmedNotFound(const ALocalNo: string; AMinGapSec: Integer = 30): boolean;
     // only recovery active order
     procedure LoadOrder(ASide: integer; const ACurrency, AOrderNo: string;
       APrice, AVolume, ALocked: Double; e: TExchangeKind);
@@ -222,6 +226,9 @@ begin
     NewOrder^.StandardFeeRate := dStdFee/100;
     NewOrder^.ReservedAmount := ReservedQty;
     NewOrder^.ReservedAt := now;
+    NewOrder^.CheckedAt := 0;
+    NewOrder^.CheckCount := 0;
+    NewOrder^.NotFoundAt := 0;
 
     FPendingOrders.Add(ALocalNo, NewOrder);
 
@@ -428,70 +435,86 @@ begin
   Sorted := True;
 end;
 
+const
+  MAX_STUCK_CHECK = 5;
+
 procedure TAssetManager.CleanupStuckOrders(AMaxSeconds: Integer);
 var
   Order: POrderReservation;
-  Key: string;
+  Key, sGiveUp: string;
   StuckIds: TList<string>;
 begin
+  sGiveUp := '';
   StuckIds := TList<string>.Create;
   try
-    // [Step 1] 짧은 Lock: UUID가 없는 주문만 선별
+    // [Step 1] 짧은 Lock: UUID 없이 AMaxSeconds 를 넘긴 주문만, AMaxSeconds 간격으로 선별
     FLock.Enter;
     try
       for Key in FPendingOrders.Keys do
       begin
         Order := FPendingOrders[Key];
-        // 1. UUID가 없고, 2. 설정한 시간을 초과한 주문만 스냅샷에 추가
-        if (Order^.UUID = '') and
-           (SecondsBetween(Now, Order^.ReservedAt) > AMaxSeconds) then
-        begin
-          StuckIds.Add(Key);
-        end;
+        if (Order^.UUID <> '') or
+           (Order^.CheckCount > MAX_STUCK_CHECK) or
+           (SecondsBetween(Now, Order^.ReservedAt) <= AMaxSeconds) or
+           (SecondsBetween(Now, Order^.CheckedAt) <= AMaxSeconds) then
+          Continue;
+
+        Order^.CheckedAt := Now;
+        Inc(Order^.CheckCount);
+
+        if Order^.CheckCount <= MAX_STUCK_CHECK then
+          StuckIds.Add(Key)
+        else
+          sGiveUp := sGiveUp + ' ' + Key;
       end;
     finally
       FLock.Leave;
     end;
-    //App.Engine.ApiManager.ExManagers[(FAccount as TAccount).ExchangeKind].re
-    // [Step 2] Lock 밖에서 서버 API 호출 (비동기 처리)
+
+    // [Step 2] Lock 밖에서 서버 조회 요청 (응답은 거래소별 ParseSpotOrderDetail 에서 처리)
     for Key in StuckIds do
-    begin
-      // 2026년 3월 빗썸/업비트 Identifier 통합 조회 로직 실행
       CheckServerStatusAndRecover(Key);
-    end;
+
+    // 워커 스레드라 Warning 로그(메시지창 PostMessage)는 메인 스레드에서 남긴다
+    if sGiveUp <> '' then
+      TThread.Queue(nil, procedure
+        begin
+          App.Log(llWarning, '미확인 주문 %d회 조회에도 응답 없음, 예약금 잠금 유지(수동 확인 필요) :%s',
+            [MAX_STUCK_CHECK, sGiveUp]);
+        end);
   finally
     StuckIds.Free;
   end;
 end;
 
-procedure TAssetManager.CheckServerStatusAndRecover(const AIdentifier: string);
+// Rest 가 신규주문과 조회를 동시에 내보내면 주문 생성 전에 not-found 가 올 수 있으므로,
+// 첫 not-found 는 기록만 하고 AMinGapSec 이상 지난 뒤의 not-found 에서만 true
+function TAssetManager.IsConfirmedNotFound(const ALocalNo: string; AMinGapSec: Integer): boolean;
 var
-  ServerUUID: string;
+  Order: POrderReservation;
 begin
-  {
-    1. 해당 거래소 어댑터를 통해 Identifier로 주문 상세 정보를 조회합니다.
-       (3월 업데이트 후 빗썸 어댑터에 이 기능이 구현될 예정입니다.)
-  }
-  //ServerUUID := ExchangeAdapter.FetchUUIDByIdentifier(AIdentifier);
+  Result := false;
+  if not IsProcess then Exit;
 
-  if ServerUUID <> '' then
-  begin
-    // 케이스 A: 서버에 주문이 살아있음 -> UUID 매핑 및 정상 궤도 진입
-//    ConfirmOrder(AIdentifier, ServerUUID);
-    // 필요 시 추가로 주문 상세 상태(체결 여부)를 확인하여 ProcessTrade 호출
-  end
-  else
-  begin
-    {
-      케이스 B: 서버에 주문이 없음
-      네트워크 오류로 주문이 안 나갔거나, 이미 취소된 경우입니다.
-      로컬에서 묶인 자산을 안전하게 롤백합니다.
-    }
+  FLock.Enter;
+  try
+    if not FPendingOrders.TryGetValue(ALocalNo, Order) then Exit;
 
-    App.DebugLog('CheckServerStatusAndRecover %s', [ AIdentifier] );
-
-    ProcessCancel(AIdentifier);
+    if Order^.NotFoundAt = 0 then
+      Order^.NotFoundAt := Now
+    else
+      Result := SecondsBetween(Now, Order^.NotFoundAt) >= AMinGapSec;
+  finally
+    FLock.Leave;
   end;
+end;
+
+procedure TAssetManager.CheckServerStatusAndRecover(const AIdentifier: string);
+begin
+  App.Log(llInfo, 'CheckServerStatusAndRecover %s', [AIdentifier]);
+  // 업비트 Rest 는 응답 ref 로 첫 인자(OrderNo 자리)를 돌려주므로 둘 다 LocalNo 를 넣는다
+  App.Engine.SharedManager.RequestData(TAccount(FAccount).ExchangeKind, eaSpot,
+    rtOrdDetail, AIdentifier, AIdentifier);
 end;
 
 procedure TAssetManager.DeleteAsset(i: integer);

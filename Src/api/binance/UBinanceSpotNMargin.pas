@@ -27,16 +27,13 @@ type
     function RequestMarginTier : boolean;
     procedure ReceiveDNWState;
     function RequestDNWStateSync : boolean;
-    procedure MakeRest;
 
 
   public
     Constructor Create( aObj : TObject; eaType : TExchangeApiType );
     Destructor  Destroy; override;
 
-    procedure CyclicNotify(Sender: TObject);    override;
     procedure ParseRequestData(iCode: integer; sName, sData: string);    override;
-    procedure RestNotify(Sender: TObject);  override;
 
     function ParsePrepareMaster : integer; override;
     function RequestMaster : boolean ; override;
@@ -67,7 +64,7 @@ uses
   GApp, GLibs  , UApiConsts
   , UTypes
   , UBinanceParse
-  , UCyclicItems, URestRequests
+  , URestRequests
   , UFQN
   , UEncrypts, UDecimalHelper
   ;
@@ -130,8 +127,6 @@ begin
          and RequestSpotTicker
          and RequestDNWStateSync
          ;
-	if Result then
-		MakeRest;
 end;
 
 
@@ -481,8 +476,8 @@ begin
   data := Format('timestamp=%s', [sTime]);
   sig  := CalculateHMACSHA256( data, App.Engine.ApiConfig.GetSceretKey( GetExKind , eaSpot ) );
 
-  App.Log( llDebug, '', '%s : %s',  [ App.Engine.ApiConfig.GetSceretKey( GetExKind , eaSpot )
-                                    , App.Engine.ApiConfig.GetApiKey( GetExKind , eaSpot )] );
+  //App.Log( llDebug, '', '%s : %s',  [ App.Engine.ApiConfig.GetSceretKey( GetExKind , eaSpot )
+  //                                  , App.Engine.ApiConfig.GetApiKey( GetExKind , eaSpot )] );
 
   SetParam('timestamp', sTime );
   SetParam('signature', sig );
@@ -537,60 +532,6 @@ begin
 
 end;
 
-
-procedure TBinanceSpotNMargin.MakeRest;
-var
-  aItem : TCyclicItem;  
-begin
-  aItem := CyclicItems.New('status');
-  aItem.Interval  := 3000;
-  aItem.Index     := 0;
-  aItem.Resource	:= REQ_END_POINT;//'/sapi/v1/asset/assetDetail';
-  aITem.Method		:= rmGET;
-
-  aItem := CyclicItems.New('listenkey');
-  aItem.Interval  := 60000 * 20;
-  aItem.Index     := 1;
-
-	MakeRestItems( 0 );
-  MakeCyclicThread;
-end;
-
-procedure TBinanceSpotNMargin.CyclicNotify(Sender: TObject);
-var
-  aReq  : TRequest;
-  sTime, data, sig : string;
-begin
-  if Sender = nil then Exit;       
-  aReq := Sender as TRequest;
-
-  if aReq.Seq = 0 then
-  begin
-    if not App.Config.RunMod then Exit;
-
-    sTime:= GetTimestamp;
-    data := Format('timestamp=%s', [sTime]);
-    sig  := CalculateHMACSHA256( data, App.Engine.ApiConfig.GetSceretKey( GetExKind , eaSpot ) );
-
-    aReq.Req.AddParameter('timestamp', sTime, pkGETorPOST);
-    aReq.Req.AddParameter('signature', sig, pkGETorPOST);
-    aReq.Req.AddParameter('X-MBX-APIKEY', App.Engine.ApiConfig.GetApiKey( GetExKind , eaSpot ), pkHTTPHEADER);
-  end else
-  begin
-    // 주문낼때 다시 허용
-    //RequestListenKey(false);
-    Exit;
-  end;
-
-  if aReq.RequestAsync then
-  	aReq.State := 1;
-end;
-
-procedure TBinanceSpotNMargin.RestNotify(Sender: TObject);
-begin
-  if Sender = nil then Exit;
-  inherited  RestNotify( Sender )         
-end;
 
 
 

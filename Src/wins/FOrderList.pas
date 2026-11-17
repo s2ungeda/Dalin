@@ -402,6 +402,7 @@ var
   aOrder: TOrder;
   aFill: TFill;
   aRowData: TDisplayRow;
+  DC: HDC;
 
   procedure DrawCheck(DC: HDC; BBRect: TRect; iOpt: integer);
   begin
@@ -465,14 +466,20 @@ begin
         aBack := $00F2BEB9;
     end;
 
-    Canvas.Font.Color   := aFont;
-    Canvas.Brush.Color  := aBack;
+    // Font.Color / Brush.Color 에 대입하면 VCL 이 폰트를 DC 에서 뗐다가 다시 선택하고, 브러시는 색이 바뀔 때마다
+    // 새로 만들었다 지운다. 그래서 글자색/배경색을 DC 에 직접 지정한다.
+    // Canvas.Handle 은 여기서 한 번만 읽는다 (색을 지정한 뒤 다시 읽으면 VCL 이 Font.Color / Brush.Color 로
+    // 되돌릴 수 있다). 이 프로시저 안에서 Canvas.Font / Canvas.Brush 는 건드리지 않는다.
+    DC := Canvas.Handle;
+    SetTextColor(DC, ColorToRGB(aFont));
+    SetBkColor(DC, ColorToRGB(aBack));
+    SetBkMode(DC, OPAQUE);
     aRect.Top := Rect.Top + 2;
     if (ARow > 0) and (dFormat = DT_RIGHT) then
       aRect.Right := aRect.Right - 2;
     dFormat := dFormat or DT_VCENTER;
-    Canvas.FillRect(Rect);
-    DrawText(Canvas.Handle, PChar(stTxt), Length(stTxt), aRect, dFormat);
+    ExtTextOut(DC, 0, 0, ETO_OPAQUE, @Rect, nil, 0, nil);   // 배경 채우기: 브러시 없이 배경색으로 Rect 를 채운다
+    DrawText(DC, PChar(stTxt), Length(stTxt), aRect, dFormat);
 
     // 확장 아이콘 그리기
     if (ARow > 0) and (ACol = COL_EXPAND) and (aRowData.RowType = rtOrder) then
@@ -484,9 +491,9 @@ begin
       if (aOrder <> nil) and (aOrder.Fills.Count > 0) then
       begin
         if aRowData.IsExpanded then
-          DrawCheck(Canvas.Handle, aRect, EXP_ON)
+          DrawCheck(DC, aRect, EXP_ON)
         else
-          DrawCheck(Canvas.Handle, aRect, EXP_OFF);
+          DrawCheck(DC, aRect, EXP_OFF);
       end;
     end;
   end;

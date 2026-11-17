@@ -971,10 +971,9 @@ begin
     aAcnt, aSymbol, iSide, FKipData.OrderQty, pcLimit, dPrice, tmVal
   );
 
-  aOrder.ReduceOnly := FKipData.ReduceOnly;
-
   if (aOrder<> nil) then
   begin
+    aOrder.ReduceOnly := FKipData.ReduceOnly;
 
     KipItem[aType].SetOrder(aOrder);
     aOrder.StgType   := stPutKipOrder;

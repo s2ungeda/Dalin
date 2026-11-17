@@ -359,7 +359,7 @@ end;
 
 function TWebsocket.GetSockBuffer: integer;
 begin
-  TsgcWebSocketClient_Hack(FWebSocket).TCPClient.Socket.Binding.GetSockOpt(Id_SOL_SOCKET, Id_SO_SNDBUF, Result);
+  TsgcWebSocketClient_Hack(FWebSocket).TCPClient.Socket.Binding.GetSockOpt(Id_SOL_SOCKET, Id_SO_RCVBUF, Result);
 end;
 
 function TWebsocket.GetSockState: string;
@@ -419,7 +419,7 @@ end;
 procedure TWebsocket.SetSockBuffer(iBufferSize: integer);
 begin
   TsgcWebSocketClient_Hack(FWebSocket).TCPClient.Socket.Binding.SetSockOpt(
-    Id_SOL_SOCKET, Id_SO_SNDBUF, iBufferSize);
+    Id_SOL_SOCKET, Id_SO_RCVBUF, iBufferSize);
 end;
 
 end.

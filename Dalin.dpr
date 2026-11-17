@@ -71,8 +71,6 @@ uses
   UTradeCore in 'Src\engine\trade\UTradeCore.pas',
   URestThread in 'Src\api\URestThread.pas',
   URestItems in 'Src\api\URestItems.pas',
-  UCyclicThreads in 'Src\api\UCyclicThreads.pas',
-  UCyclicItems in 'Src\api\UCyclicItems.pas',
   FOrderList in 'Src\wins\FOrderList.pas' {FrmOrderList},
   UTradeBroker in 'Src\engine\trade\UTradeBroker.pas',
   USharedManager in 'Src\api\USharedManager.pas',

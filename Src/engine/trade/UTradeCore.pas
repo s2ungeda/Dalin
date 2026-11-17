@@ -145,7 +145,7 @@ begin
 
   if dTradeAmt > App.Engine.ApiConfig.OrderLimit.OrderLimit[aExKind].OneTimeLimit - DOUBLE_EPSILON then
   begin
-    App.Log( llWarning, '[%s,%s] 반자동 주문 1회최대기본주문액 제한 --> %.0f > %.0f ', [ ExKindToStr(aExKind), aSymbol.Code,
+    App.Log( llWarning, '[%s,%s] 반자동 주문 1회최대기본주문액 제한 --> %.0f > %d ', [ ExKindToStr(aExKind), aSymbol.Code,
       dTradeAmt, App.Engine.ApiConfig.OrderLimit.OrderLimit[aExKind].OneTimeLimit ] );
     Exit (false);
   end;

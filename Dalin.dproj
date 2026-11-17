@@ -238,8 +238,6 @@
         <DCCReference Include="Src\engine\trade\UTradeCore.pas"/>
         <DCCReference Include="Src\api\URestThread.pas"/>
         <DCCReference Include="Src\api\URestItems.pas"/>
-        <DCCReference Include="Src\api\UCyclicThreads.pas"/>
-        <DCCReference Include="Src\api\UCyclicItems.pas"/>
         <DCCReference Include="Src\wins\FOrderList.pas">
             <Form>FrmOrderList</Form>
         </DCCReference>

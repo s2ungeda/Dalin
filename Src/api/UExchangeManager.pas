@@ -20,14 +20,11 @@ type
     FCodes: TStrings;
     FTimer: TQuoteTimer;
     FDone: boolean;
-    FRcvCnt: int64;
-    FSndCnt: int64;
     FExchangeThread: TExchangeThreadArray;
 //    FWithdraw: TApiWithdraw;
     FExchanges: TExApiArray;
 
     function CreateMarket( aMarket : TExchangeApiType ) :  TExchange;
-    function GetSndRcvCnt: string;
   public
     // only coim-M  public data (marketDepth)
     QuoteSockPub : TWebSocket;
@@ -48,7 +45,6 @@ type
     function ConnectAll : boolean;
     function DissConnectAll : boolean;
     procedure init ;
-    procedure StartRequest;
 
 {$REGION 'to shared memory define' }
     function SendOrder( aOrder : TOrder ): boolean;
@@ -90,8 +86,6 @@ type
     // from shared memory
     procedure ReceivedData( aExApiType : TExchangeApiType; aReqType : TRequestType; aData, aRef  : string );
 
-    function GetSndRcvCount : string;
-
     property ExchangeKind: TExchangeKind read FExchangeKind;
     property ExchangeThread :  TExchangeThreadArray read FExchangeThread;
 //    property WithDraw : TApiWithdraw read FWithdraw;
@@ -102,10 +96,6 @@ type
     property Timer       : TQuoteTimer read FTimer write FTimer;
     property Done        : boolean read FDone write FDone;
 
-    // ·Î±×¿ë  snd, rcv count
-    property SndCnt : int64 read FSndCnt ;
-    property RcvCnt : int64 read FRcvCnt ;
-    property SndRcvCnt : string read GetSndRcvCnt;
 
     property Exchanges : TExApiArray read FExchanges write FExchanges;
 
@@ -293,31 +283,6 @@ begin
 end;
 
 
-function TExchangeManager.GetSndRcvCnt: string;
-begin
-  Result := GetSndRcvCount;
-//  Result := Format('%d, %d (%d)', [ FSndCnt, FRcvCnt, FSndCnt-FRcvCnt] );
-end;
-
-function TExchangeManager.GetSndRcvCount : string;
-var
-  aExApiType : TExchangeApiType;
-  i : integer;
-  a : TRequest;
-begin
-  aExApiType := eaSpot;
-  if FExchangeKind = ekBinance then
-    aExApiType := eaFutUsdt;
-
-  for i:=0 to Exchanges[aExApiType].ReqItems.Count-1 do
-  begin
-    a := TRequest( Exchanges[aExApiType].ReqItems.Items[i] );
-    FSndCnt := FSndCnt + a.SndCnt;
-    FRcvCnt := FRcvCnt + a.RcvCnt;
-    Result := REsult + Format(' %s:%d,%d(%d)', [a.Name[1], a.SndCnt, a.RcvCnt, a.SndCnt - a.RcvCnt]);
-  end;
-end;
-
 procedure TExchangeManager.init;
 begin
   FTimer  := App.Engine.QuoteBroker.Timers.New;
@@ -454,15 +419,6 @@ begin
 end;
 
 {$ENDREGION}
-
-procedure TExchangeManager.StartRequest;
-var
-  I: TExchangeApiType;
-begin
-  for I := eaSpot to High(TExchangeApiType) do
-    if ( Exchanges[i] <> nil ) and ( Exchanges[i].CyclicThreads <> nil )  then 
-    	Exchanges[i].CyclicThreads.Resume;
-end;
 
 
 

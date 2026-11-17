@@ -27,7 +27,6 @@ type
     procedure parseAssetsstatus;
     procedure parseOrderBook;
     procedure parseTicker;
-    procedure MakeRest;
     procedure SetToken(var jwt: TJWT; const sQuery: string); overload;
 
   public
@@ -39,8 +38,6 @@ type
     procedure SetToken(aReq: TRESTRequest; const sQuery: string); overload;
     procedure RequestData;
 
-    procedure CyclicNotify( Sender : TObject ); override; 
-    procedure RestNotify( Sender : TObject ); override;    
 
     procedure RequestOrderBook( c : char ) ; overload;
     function RequestDNWState : boolean; override;
@@ -80,7 +77,7 @@ implementation
 uses
   GApp , GLibs, UApiConsts ,  UEncrypts
   , UTypes
-  , UBithParse, URestItems ,UCyclicItems, URestRequests, UBithManager
+  , UBithParse, URestItems ,URestRequests, UBithManager
   , USymbolUtils
   , Math
   , Web.HTTPApp, idcodermime, IdGlobal
@@ -157,8 +154,6 @@ begin
     and RequestDNWState
     ;
 
-	if Result then
-		MakeRest;
 end;
 
 function TBithSpot.RequestTicker: boolean;
@@ -812,62 +807,6 @@ begin
     App.Log( llError,  '%s Async Request Error : %s ( status : %d, %s)' , [ TExchangeKindDesc[GetExKind]
     ,  Sender.Response.Content ,  Sender.Response.StatusCode, Sender.Response.StatusText ]  );
   end;
-end;
-
-procedure TBithSpot.MakeRest;
-var
-  aItem : TCyclicItem;
-  info : TDivInfo;
-begin
-
-  aItem := CyclicItems.New('orderbook');
-  aItem.Interval  := 1000;
-  aItem.Index     := 1;
-  aItem.Resource	:= '/public/orderbook/ALL_KRW';
-  aITem.Method		:= rmGET;
-
-  aItem := CyclicItems.New('ticker');
-  aItem.Interval  := 1000;
-  aItem.Index     := 2;
-  aItem.Resource	:= '/public/ticker/ALL_KRW';
-  aITem.Method		:= rmGET;
-
-  aItem := CyclicItems.New('status');
-  aItem.Interval  := 3000;
-  aItem.Index     := 3;
-  aItem.Resource	:= '/public/assetsstatus/multichain/ALL';
-  aITem.Method		:= rmGET;
-
-  MakeRestItems( 3 );
-	// cyclic thread .. 府目滚府 场唱搁  resume..
-	MakeCyclicThread;
-end;
-
-procedure TBithSpot.CyclicNotify(Sender: TObject);
-var
-	aItem : TCyclicItem;
-  aReq  : TRequest;
-  sNm, sRsrc  : string;
-begin
-
-  if Sender = nil then Exit;
-  aReq := Sender as TRequest;
-
-  if aReq.RequestAsync then
-  	aReq.State := 1;
-
-end;
-
-procedure TBithSpot.RestNotify(Sender: TObject);
-var
-   aReq : TRequest;
-   sTmp : string;
-   avg  : integer;
-   gap  : integer;
-begin
-  if Sender = nil then Exit;
-  inherited  RestNotify( Sender );
-
 end;
 
 

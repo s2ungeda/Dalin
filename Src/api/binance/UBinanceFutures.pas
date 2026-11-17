@@ -26,7 +26,6 @@ type
     // async proc
     procedure AsyncFutAllTicker;
     procedure AsyncFutAllOrderBook;
-    procedure MakeRest;
 
 
   public
@@ -39,8 +38,6 @@ type
     function RequestOrder( aOrder : TOrder ) : boolean;
 
     procedure ParseRequestData( iCode : integer; sName : string; sData : string ); override;
-    procedure CyclicNotify( Sender : TObject ); override;
-    procedure RestNotify( Sender : TObject ); override;
 
     procedure RequestData( iMod : integer );
 
@@ -76,7 +73,7 @@ uses
   GApp, GLibs, UApiConsts
   , UTypes
   , UBinanceParse
-  , UCyclicItems, URestRequests
+  , URestRequests
   , UEncrypts
   , REST.Types
   , System.JSON
@@ -414,8 +411,6 @@ begin
   Result := RequestFuttMaster
          and RequestFutTicker;
          
-	if Result then
-		MakeRest;
 end;
 
 
@@ -528,47 +523,6 @@ begin
 end;
 
 
-
-procedure TBinanceFutures.MakeRest;
-var
-  aItem : TCyclicItem;  
-begin
-  aItem := CyclicItems.New('orderbook');
-  aItem.Interval  := 1000;
-  aItem.Index     := 0;
-  aItem.Resource	:= '/fapi/v1/ticker/bookTicker';
-  aITem.Method		:= rmGET;
-
-  aItem := CyclicItems.New('listenkey');
-  aItem.Interval  := 60000 * 20;    // 20분..
-  aItem.Index     := 1;
-
-	MakeRestItems( 0 );
-  MakeCyclicThread;
-end;
-
-procedure TBinanceFutures.CyclicNotify(Sender: TObject);
-var
-  aReq  : TRequest;
-begin
-  if Sender = nil then Exit;
-  aReq := Sender as TRequest;
-
-  if aReq.Seq = 1 then begin
-    // 주문낼때 다시 허용
-    //RequestListenKey( false );
-  end
-  else begin
-    if aReq.RequestAsync then
-    	aReq.State := 1;
-  end;
-end;
-
-procedure TBinanceFutures.RestNotify(Sender: TObject);
-begin
-  if Sender = nil then Exit;
-  inherited  RestNotify( Sender )
-end;
 
 procedure TBinanceFutures.ParseRequestData(iCode: integer; sName,
   sData: string);

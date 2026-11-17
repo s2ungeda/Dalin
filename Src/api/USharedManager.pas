@@ -96,6 +96,14 @@ begin
   Result := false;
   if not App.Config.TradeMod then Exit;
 
+  // Rest 가 꺼진 동안 큐에 쌓인 신규주문은 Rest 재기동 시 지난 가격으로 나가므로 즉시 실패 처리
+  if (aReqType = rtNewOrder) and
+     (FindWindow(PChar(App.Config.PrcsInfo[1].ClassName), nil) = 0) then
+  begin
+    App.Log(llInfo, '', 'Rest 미실행 - 신규주문 실패 처리 : %s', [aRef]);
+    Exit;
+  end;
+
   try
     case aExKind of
       ekBinance:  c1  := EX_BN;
@@ -129,8 +137,13 @@ begin
       rtDnwState  : c3 := TR_DNW_STATE;
     end;
 
-    if Assigned(FSharedThread[idx]) then
-      FSharedThread[idx].PushData( c1, c2, c3, aData, aRef )  ;
+    if not Assigned(FSharedThread[idx]) then Exit;
+
+    if not FSharedThread[idx].PushData( c1, c2, c3, aData, aRef ) then
+    begin
+      App.Log(llError, '', '공유큐 적재 실패(큐 가득 참) : %s, %s', [ c1 + c2 + c3 + aRef, aData ]);
+      Exit;
+    end;
 
     inc ( FSndCount );
 

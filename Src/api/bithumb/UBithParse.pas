@@ -1658,9 +1658,20 @@ begin
     begin
       App.Log(llError, '%s ParseSpotOrderDetail Error %s, %s',[
         TExchangeKindDesc[FParent.ExchangeKind] , aErr.GetValue<string>('message'), aRef ] );
+
+      // 서버에 주문이 없을 때만 미접수 주문을 거부 처리(예약금 해제). 그 외 에러는 다음 조회에서 재시도
+      sTmp := aErr.GetValue<string>('name', '');
+      if (sTmp = 'order_not_found') or (sTmp = '404') then
+      begin
+        aOrder := App.Engine.TradeCore.FindOrder(ekBithumb, aRef);
+        if (aOrder <> nil) and (aOrder.State in [osReady, osSent, osSrvAcpt])
+          and aOrder.Account.Assets.IsConfirmedNotFound(aOrder.LocalNo) then
+          App.Engine.TradeBroker.Accept(aOrder, now, false, sTmp);
+      end;
       Exit;
     end;
 
+    if aObj.GetValue('uuid') = nil then Exit;
     sID := aObj.GetValue('uuid').Value;
     aOrder	:= App.Engine.TradeCore.FindOrder(ekBithumb, sID, DIV_ORD_NO );
     if aOrder = nil then
@@ -1680,6 +1691,13 @@ done : 전체 체결 완료
 cancel: 주문 취소
 }
     sTmp	:= aObj.GetValue('state').Value;
+
+    // done/cancel 처리는 UUID 키로 예약금을 찾으므로 미접수 주문은 먼저 접수시킨다
+    if (sTmp <> 'wait') and (not aOrder.IsAccept) then
+    begin
+      aOrder.OrderNo  := sID;
+      App.Engine.TradeBroker.Accept(aOrder, GetStrToTime(aObj.GetValue('created_at').Value), true, '0000' ) ;
+    end;
 
     if sTmp = 'wait' then
     begin
