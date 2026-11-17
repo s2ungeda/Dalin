@@ -422,6 +422,7 @@ begin
     aAsset.AskRate    := aJson.GetValue<double>('A',1);
     aAsset.BidRate    := aJson.GetValue<double>('B',1);
   except
+    on E: Exception do App.LogExcept('TBinanceParse.ParseFutAssetIndex', E);
   end;
 
 end;
@@ -722,6 +723,7 @@ begin
 
       end;
     except
+      on E: Exception do App.LogExcept('TBinanceParse.ParseCandleData', E, aData);
     end;
   finally
     if aArr <> nil then aArr.Free;
@@ -913,6 +915,7 @@ begin
     end;
 
   except
+    on E: Exception do App.LogExcept('TBinanceParse.ParseFutAccountInfochange', E);
   end;
 end;
 
@@ -2005,6 +2008,7 @@ begin
       Update( now );
     end;
   except
+    on E: Exception do App.LogExcept('TBinanceParse.ParseSpotBookTicker', E);
   end;
 
 end;
@@ -2077,6 +2081,7 @@ begin
 
     end;
   except
+    on E: Exception do App.LogExcept('TBinanceParse.ParseSpotDepthUpdate', E, aData);
   end;
 end;
 
@@ -2129,6 +2134,7 @@ begin
       Symbol.DayAmount:= StrToFloat( aJson.GetValue('q').Value ) * App.Engine.ApiManager.ExRate.Value / 100000000;
     end;
   except
+    on E: Exception do App.LogExcept('TBinanceParse.ParseSpotMiniTickers', E);
   end;
 end;
 
@@ -2288,6 +2294,7 @@ begin
       if aVal <> nil then aVal.Free;
     end;
   except
+    on E: Exception do App.LogExcept('TBinanceParse.ParseSocketData', E, aData);
 
   end;
 
@@ -2903,6 +2910,7 @@ begin
       if aArr <> nil then aArr.Free;
     end;
   except
+    on E: Exception do App.LogExcept('TBinanceParse.ParseFutCmPositions', E, aData);
   end;
 
 end;
@@ -3150,6 +3158,7 @@ begin
       if aArr <> nil then aArr.Free;
     end;
   except
+    on E: Exception do App.LogExcept('TBinanceParse.ParseFutPositions', E, aData);
   end;
 
 end;
@@ -3239,6 +3248,7 @@ begin
       if aArr <> nil then aArr.Free;
     end;
   except
+    on E: Exception do App.LogExcept('TBinanceParse.ParseFutOrderList', E, aData);
   end;
 
 end;

@@ -266,6 +266,7 @@ begin
         bRead := true;
       end;
     except
+      on E: Exception do App.Log(llError, 'TApiConfigManager.LoadFees exception : %s', [E.Message]);
 //      Result := false;
     end;
 

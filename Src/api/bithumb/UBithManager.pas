@@ -256,6 +256,7 @@ begin
     (QuoteSock[QOUTE_SOCK] as TBithWebSocket).SubScribe( aSymbol);
     Result := true;
   except
+    on E: Exception do App.LogExcept('TBithManager.Subscrib', E);
 
   end;
 

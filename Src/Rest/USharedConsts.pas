@@ -6,6 +6,14 @@ const
   DATA_SIZE = 1024 * 200;
   Q_SIZE = 200;
 
+  // 요청 생성 시각(GetTickCount64)을 넣는 자리 : data 버퍼의 마지막 8바이트.
+  // 레코드 크기를 바꾸지 않으므로 Dalin / Rest 버전이 서로 달라도 공유메모리 구조가 어긋나지 않는다.
+  TICK_OFFSET = DATA_SIZE - SizeOf(UInt64);
+
+  // 신규주문 요청 유효시간(ms). 큐에서 이보다 오래 대기한 신규주문은 Rest 가 거래소로 보내지 않고 거부 응답한다.
+  // Dalin 의 묶인 주문 확인 주기(30초)보다 짧아야 주문조회가 주문 전송보다 먼저 나가는 일이 없다.
+  NEW_ORD_TTL_MS = 10 * 1000;
+
   // REST 입장에서..
   REST_PUSH = 1;
   REST_POP  = 0;

@@ -276,6 +276,7 @@ begin
       try
         OnData(stText);
       except
+        on E: Exception do App.LogExcept('TWebsocket.wsBinary', E, stText);
       end;
     end);
 end;

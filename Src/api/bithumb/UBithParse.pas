@@ -954,6 +954,7 @@ begin
       end;
 
     except
+      on E: Exception do App.LogExcept('TBithParse.ParseCandleData(symbol)', E, aData);
     end;
   finally
     if aVal <> nil then aVal.Free;
@@ -1053,6 +1054,7 @@ begin
       end;
 
     except
+      on E: Exception do App.LogExcept('TBithParse.ParseCandleData(major)', E, aData);
     end;
   finally
     if aObj <> nil then aObj.Free;
@@ -1378,6 +1380,7 @@ begin
 //      App.Engine.TradeBroker.PositionEvent( aPos, POSITION_TRAD_AMT);
 
     except
+      on E: Exception do App.LogExcept('TBithParse.ParseSpotTradeAmt', E, aData);
     end;
 
     dTotAmt := App.Engine.TradeCore.Positions[ekBithumb].GetTotalTradeAmt( aAcnt );
@@ -2099,6 +2102,7 @@ begin
     end;
 
   except
+    on E: Exception do App.LogExcept('TBithParse.ParseSpotOrderBook', E);
   end;
 end;
 
@@ -2270,6 +2274,7 @@ begin
 
 
   except
+    on E: Exception do App.LogExcept('TBithParse.ParseSpotTrade', E);
   end;
 
 end;

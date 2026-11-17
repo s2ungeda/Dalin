@@ -23,6 +23,10 @@ type
     FField2: string;
     FField1: string;
     FField3: string;
+    FErrorMsg: string;
+    FOnError: TNotifyEvent;
+    FAsyncGen: integer;
+    FAsyncDone: boolean;
 
     function GetContent: string;
     function GetStatusCode: integer;
@@ -61,6 +65,7 @@ type
 
     
     procedure ASyncProc;
+    procedure ASyncError(AObject: TObject);
     property Req : TRESTRequest read FReq;
     property Rsp : TRESTResponse read FRsp;
     property Client  : TRESTClient  read FClient;
@@ -76,6 +81,9 @@ type
     property Field3  : string read FField3 write FField3;
 
     property OnNotify : TNotifyEvent read FOnNotify write FOnNotify;
+    // 비동기 요청이 HTTP 응답 없이 실패(연결 실패, 타임아웃 등)하면 OnNotify 대신 호출된다
+    property OnError  : TNotifyEvent read FOnError write FOnError;
+    property ErrorMsg : string read FErrorMsg;
 
     // 0 : no used  1 : request   2 : response   3 : timeout;
     property State  : integer read FState write FState;
@@ -94,11 +102,28 @@ implementation
 procedure TRequest.ASyncProc;
 begin
   inc(FRcvCnt);
+  FAsyncDone := true;
   if Assigned(FOnNotify) then
   begin
     EnTime  := GetTickCount64;
     FOnNotify( Self );
   end;
+end;
+
+procedure TRequest.ASyncError(AObject: TObject);
+begin
+  FAsyncDone := true;
+  EnTime     := GetTickCount64;
+
+  if AObject is Exception then
+    FErrorMsg := Exception(AObject).Message
+  else if AObject <> nil then
+    FErrorMsg := AObject.ClassName;
+  if FErrorMsg = '' then
+    FErrorMsg := 'unknown error';
+
+  if Assigned(FOnError) then
+    FOnError( Self );
 end;
 
 function TRequest.CheckDelayTime(iDelay: integer): boolean;
@@ -256,8 +281,23 @@ begin
 end;
 
 function TRequest.RequestAsync: boolean;
+var
+  iGen : integer;
 begin
-  FReqThread := FReq.ExecuteAsync(ASyncProc);
+  inc(FAsyncGen);
+  iGen       := FAsyncGen;
+  FAsyncDone := false;
+  FErrorMsg  := '';
+
+  // 요청이 예외로 끝나면(연결 실패, 타임아웃 등) 완료 핸들러가 불리지 않으므로 오류 핸들러를 따로 넘긴다.
+  // 완료 핸들러 안에서 난 예외도 오류 핸들러로 오고, 그 사이 이 객체가 다른 요청에 재사용될 수도 있어서
+  // 이번 요청이 아직 끝나지 않은 경우에만 실패로 처리한다.
+  FReqThread := FReq.ExecuteAsync(ASyncProc, True, True,
+    procedure (AObject: TObject)
+    begin
+      if (iGen = FAsyncGen) and (not FAsyncDone) then
+        ASyncError(AObject);
+    end);
   StTime := GetTickCount64;
   Result := FReqThread <> nil;
 //  FThreadID := FReqThread.ThreadID;

@@ -298,6 +298,7 @@ begin
 //     , rmGET, '/public/orderbook/ALL_KRW') then
 //       App.Log( llError, 'Failed %s RequestOrderBook ', [ TExchangeKindDesc[GetExKind]] );
   except
+    on E: Exception do App.LogExcept('TBithSpot.RequestOrderBook', E, sJson);
   //  LeaveCriticalSection(CriticalSection);
   end;
 end;
@@ -335,6 +336,7 @@ begin
     end;
     bRes := true;
   except
+    on E: Exception do App.LogExcept('TBithSpot.RequestCandleData(major)', E, sJson);
   end;
 
   Result := bRes;
@@ -372,6 +374,7 @@ begin
     end;
     bRes := true;
   except
+    on E: Exception do App.LogExcept('TBithSpot.RequestCandleData(symbol)', E, sJson);
   end;
 
   Result := bRes;
@@ -544,6 +547,7 @@ begin
       result := true;
 
     except
+      on E: Exception do App.LogExcept('TBithSpot.RequestDNWState', E, sJson);
     end;
   finally
     LToken.Free;
@@ -603,6 +607,7 @@ begin
     end;
 
 	except
+	  on E: Exception do App.LogExcept('TBithSpot.RequestBalance(1)', E, sJson);
   end;
 
   Result := true;
@@ -639,6 +644,7 @@ begin
       end;
 
     except
+      on E: Exception do App.LogExcept('TBithSpot.RequestBalance(2)', E, sJson);
     end;
   finally
     LToken.Free;
@@ -764,6 +770,7 @@ begin
       end;
 
     except
+      on E: Exception do App.LogExcept('TBithSpot.RequestOrders', E, sJson);
     end;
   finally
     LToken.Free;
@@ -858,6 +865,7 @@ begin
       end;
 
     except
+      on E: Exception do App.LogExcept('TBithSpot.RequestActiveOrders', E, sJson);
     end;
   finally
     LToken.Free;
@@ -1012,6 +1020,7 @@ begin
 
     Result := outJson;
 	except
+	  on E: Exception do App.LogExcept('TBithSpot.SyncRequestOrderDetail', E, outJson);
   end;
 end;
 

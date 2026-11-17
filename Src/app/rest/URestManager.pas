@@ -185,6 +185,7 @@ procedure TRestManager.OnSharedDataNotify(aData: TDataItem);
 var
   idx : TSharedThreadType;
   StartTick : int64;
+  nTick, nAge : Int64;
 begin
   //if (aData.exKind <> EX_UP ) and ( aData.trDiv <> TR_REQ_ORD )  then
   App.DebugLog('Recv : %s, %s, %s, %s, %s', [ aData.exKind, aData.exApiType, aData.trDiv, AnsiString( aData.data ), aData.ref ] );
@@ -201,6 +202,25 @@ begin
         end;
       EX_UP : idx := stUpSThread;
       EX_BI : idx := stBtSThread;
+    end;
+
+    // 큐에서 유효시간 넘게 대기한 신규주문은 거래소로 보내지 않고 거부 응답한다
+    // (Rest 가 멈췄다 살아나거나 처리가 밀렸을 때 지난 가격의 주문이 나가는 것을 막는다)
+    if aData.trDiv = TR_NEW_ORD then
+    begin
+      nTick := Int64(GetItemTick(aData));
+      if nTick > 0 then
+      begin
+        nAge := Int64(GetTickCount64) - nTick;
+        if nAge > NEW_ORD_TTL_MS then
+        begin
+          App.Log(llError, '', '신규주문 유효시간 초과 - 미전송 : %s%s %s, %d ms 대기 (%s)',
+            [aData.exKind, aData.exApiType, aData.ref, nAge, AnsiString(aData.data)]);
+          FRestReq[idx].RejectNewOrder('request_expired',
+            Format('order request expired in queue (%d ms)', [nAge]), aData.ref);
+          Exit;
+        end;
+      end;
     end;
 
     case aData.trDiv of

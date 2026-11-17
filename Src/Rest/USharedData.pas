@@ -37,6 +37,10 @@ type
 
   function STTypeToStr(stType : TSharedThreadType) : string;
 
+  // 요청 생성 시각(GetTickCount64). 0 이면 시각 정보 없음 (구버전 Dalin 이 보낸 요청)
+  procedure SetItemTick(var aItem : TDataItem; aTick : UInt64);
+  function  GetItemTick(const aItem : TDataItem) : UInt64;
+
 implementation
 
 { TSharedData }
@@ -48,6 +52,16 @@ const
 function STTypeToStr(stType : TSharedThreadType) : string;
 begin
   Result := TSharedThreadTypeDesc[stType];
+end;
+
+procedure SetItemTick(var aItem : TDataItem; aTick : UInt64);
+begin
+  PUInt64(@aItem.data[TICK_OFFSET])^ := aTick;
+end;
+
+function GetItemTick(const aItem : TDataItem) : UInt64;
+begin
+  Result := PUInt64(@aItem.data[TICK_OFFSET])^;
 end;
 
 function TSharedData.Count: integer;

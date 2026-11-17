@@ -255,6 +255,7 @@ begin
     bRes := true;
 
   except
+    on E: Exception do App.LogExcept('TUpbitSpot.RequestStuckOrderList', E, sJson);
   end;    
 end;
 
@@ -563,6 +564,7 @@ begin
     bRes := true;
 
   except
+    on E: Exception do App.LogExcept('TUpbitSpot.RequestAccounts', E, sJson);
   end;
 
   Result := bRes;
@@ -593,6 +595,7 @@ begin
     bRes := true;
 
   except
+    on E: Exception do App.LogExcept('TUpbitSpot.RequestOrders', E, sJson);
   end;
 
   Result := bRes;
@@ -627,6 +630,7 @@ begin
 
     bRes := true;
   except
+    on E: Exception do App.LogExcept('TUpbitSpot.RequestCandleData(major)', E, sJson);
   end;
 
   result := bRes;
@@ -665,6 +669,7 @@ begin
     end;
     bRes := true;
   except
+    on E: Exception do App.LogExcept('TUpbitSpot.RequestCandleData(symbol)', E, sJson);
   end;
 
   Result := bRes;

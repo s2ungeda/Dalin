@@ -77,6 +77,9 @@ type
     procedure DebugLog( const fmt: string; const Args: array of const ); overload;
     procedure DebugLog( const fmt: string ); overload;
 
+    // 삼키던 예외를 로그로 남긴다. 같은 위치(aWhere)는 일정 시간에 한 번만 찍는다 (시세 경로의 로그 폭주 방지)
+    procedure LogExcept(const aWhere : string; E : Exception; const aData : string = '');
+
     procedure SetEntropy(const s: string);
     procedure ShowChatMonitor;
 
@@ -131,10 +134,25 @@ uses
   UConsts
   , System.StrUtils
   , system.IniFiles
+  , System.Classes, System.SyncObjs, System.Generics.Collections
   ;
 
 { TApp }
 
+
+const
+  // 같은 위치의 예외 로그 최소 간격
+  EXCEPT_LOG_GAP_MS = 5000;
+
+type
+  TExceptLogStat = record
+    LastTick : Int64;
+    Skipped  : integer;
+  end;
+
+var
+  gExceptLock : TCriticalSection = nil;
+  gExceptLogs : TDictionary<string, TExceptLogStat> = nil;
 
 procedure PlaySound(idx: integer );
 begin
@@ -592,6 +610,48 @@ begin
     FLog.Log(llDebug, '', Format( '%s', [fmt] ) );
 end;
 
+procedure TApp.LogExcept(const aWhere: string; E: Exception; const aData: string);
+var
+  aStat : TExceptLogStat;
+  nTick : Int64;
+  sMsg  : string;
+begin
+  if gExceptLock = nil then Exit;
+
+  nTick := GetTickCount64;
+  gExceptLock.Enter;
+  try
+    if gExceptLogs.TryGetValue(aWhere, aStat) and (nTick - aStat.LastTick < EXCEPT_LOG_GAP_MS) then
+    begin
+      inc(aStat.Skipped);
+      gExceptLogs.AddOrSetValue(aWhere, aStat);
+      Exit;
+    end;
+
+    sMsg := Format('%s exception : %s (%s)', [aWhere, E.Message, E.ClassName]);
+    if aStat.Skipped > 0 then
+      sMsg := sMsg + Format(' - %d more skipped', [aStat.Skipped]);
+    if aData <> '' then
+      sMsg := sMsg + ' : ' + Copy(aData, 1, 500);
+
+    aStat.LastTick := nTick;
+    aStat.Skipped  := 0;
+    gExceptLogs.AddOrSetValue(aWhere, aStat);
+  finally
+    gExceptLock.Leave;
+  end;
+
+  // 에러 로그는 화면의 로그 목록에도 올라가므로 메인 스레드에서만 남긴다
+  if GetCurrentThreadId = MainThreadID then
+    Log(llError, '', sMsg)
+  else
+    TThread.Queue(nil,
+      procedure
+      begin
+        if App <> nil then App.Log(llError, '', sMsg);
+      end);
+end;
+
 function TApp.GetNumber : int64;
 begin
   EnterCriticalSection(crts);
@@ -611,8 +671,12 @@ end;
 
 initialization
   InitializeCriticalSection(crts);
+  gExceptLock := TCriticalSection.Create;
+  gExceptLogs := TDictionary<string, TExceptLogStat>.Create;
 
 finalization
   DeleteCriticalSection(crts);
+  FreeAndNil(gExceptLogs);
+  FreeAndNil(gExceptLock);
 
 end.

@@ -153,6 +153,7 @@ begin
             ekBithumb: App.Engine.TradeCore.Accounts[FExKind].CleanupStuckOrders(30);
           end;
         except
+          on E: Exception do App.LogExcept('TExchangeThread.Execute ' + ExKindToStr(FExKind), E);
         end;
     end;
 

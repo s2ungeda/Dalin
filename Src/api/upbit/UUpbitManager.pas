@@ -186,6 +186,7 @@ begin
     (QuoteSock[QOUTE_SOCK] as TUpbitWebSocket).SubScribe( aSymbol);
     Result := true;
   except
+    on E: Exception do App.LogExcept('TUpbitManager.Subscrib', E);
 
   end;
 end;

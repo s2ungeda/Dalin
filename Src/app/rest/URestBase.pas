@@ -92,6 +92,11 @@ type
     //  async result
     procedure OnResult(ReqType : char; OutJosn, Ref : string); virtual; abstract;
 
+    // 거래소로 보내지 않고 신규주문을 거부할 때, Dalin 파서가 주문거부로 처리하는 형식으로 응답한다
+    procedure RejectNewOrder(const sName, sMsg, sRef : string);
+    // 비동기 요청이 HTTP 응답 없이 실패했을 때의 처리 (TAsyncRequestMngr 가 호출)
+    procedure OnRequestFailed(ReqType : char; const sRef : string); virtual;
+
     property RestReq : TRequest read FRestReq; //TRESTRequest read FRestReq;
     property Parent  : TObject read FParent ;
     property ExApiType : TExchangeApiType read FExApiType;
@@ -243,6 +248,32 @@ begin
     Result := false;
   end else
     Result := true;
+end;
+
+procedure TRestBase.RejectNewOrder(const sName, sMsg, sRef: string);
+begin
+  if FExchangeKind = ekBinance then
+    // 바이낸스 파서 : code 가 있고 clientOrderId 가 없으면 거부로 처리한다
+    PushData(TR_NEW_ORD, Format('{"code":-9999,"msg":"%s"}', [sMsg]), sRef)
+  else
+    // 업비트/빗썸 파서 : error 객체가 있으면 거부로 처리한다
+    PushData(TR_NEW_ORD, Format('{"error":{"name":"%s","message":"%s"}}', [sName, sMsg]), sRef);
+end;
+
+procedure TRestBase.OnRequestFailed(ReqType: char; const sRef: string);
+begin
+  case ReqType of
+    TR_NEW_ORD :
+      // 주문이 거래소에 도달했는지 알 수 없으므로 거부로 단정하지 않고 주문조회로 확인한다.
+      // 조회 결과(있음/없음)는 Dalin 의 묶인 주문 확인과 같은 경로로 처리된다.
+      // (바이낸스는 동기 요청만 쓰고 RequestOrdDetail 이 없으므로 제외)
+      if (sRef <> '') and (FExchangeKind <> ekBinance) then
+        RequestOrdDetail(sRef, sRef);
+    TR_CNL_ORD :
+      // 취소 실패로 알린다. 실제로는 취소됐더라도 거래소의 주문 이벤트로 반영된다.
+      PushData(TR_CNL_ORD,
+        '{"error":{"name":"send_error","message":"cancel request failed without response"}}', sRef);
+  end;
 end;
 
 function TRestBase.Request(aExKind: TExchangeKind;

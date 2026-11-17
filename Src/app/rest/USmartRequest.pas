@@ -22,6 +22,7 @@ type
     FCriticalSection: TCriticalSection;
 
     procedure OnResult(Sender: TObject);
+    procedure OnError(Sender: TObject);
     function New: TRequest;
 
   public
@@ -104,6 +105,7 @@ begin
   Result.Client.BaseURL := TRestBase(FOwner).BaseUrl;
 //  Result.Req.SynchronizedEvents := false;
   Result.OnNotify  := OnResult;
+  Result.OnError   := OnError;
 end;
 
 function TAsyncRequestMngr.GetItem: TRequest;
@@ -245,6 +247,37 @@ begin
     end;
   finally
 //    FCriticalSection.Leave;
+  end;
+end;
+
+// 요청이 HTTP 응답 없이 실패(연결 실패, 타임아웃 등)했을 때. 응답이 온 경우는 OnResult 가 처리한다.
+procedure TAsyncRequestMngr.OnError(Sender: TObject);
+var
+  aReq : TRequest;
+  cDiv : char;
+  sName, sRef, sErr : string;
+begin
+  aReq  := Sender as TRequest;
+
+  sName := aReq.Name;
+  sRef  := aReq.Field1;
+  sErr  := aReq.ErrorMsg;
+  cDiv  := #0;
+  if sName <> '' then
+    cDiv := sName[1];
+
+  // 요청 객체를 대기 목록으로 되돌린다 (전에는 작업 목록에 남은 채 버려졌다)
+  aReq.Req.Params.Clear;
+  aReq.Req.Body.ClearBody;
+  aReq.Field1 := '';
+  FWorks.Remove(aReq);
+  FReady.Add(aReq);
+
+  with FOwner as TRestBase do
+  begin
+    App.Log( llError, '', 'Failed %s %s request(%s) no response : %s, %s (R:%d, W:%d)',
+      [ TExchangeKindDesc[ExKind], TExApiTypeDesc[ExApiType], sName, sRef, sErr, FReady.Count, FWorks.Count] );
+    OnRequestFailed(cDiv, sRef);
   end;
 end;
 

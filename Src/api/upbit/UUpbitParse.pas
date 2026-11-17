@@ -306,6 +306,7 @@ begin
         App.Log(llInfo, '취소주문실패 : %s, %s', [ aOrder.Represent, aData] );
       end;
     except
+      on E: Exception do App.LogExcept('TUpbitParse.ParseSpotCnlOrder', E, aData);
     end;
 
   finally
@@ -611,6 +612,7 @@ begin
         end;
 
     except
+      on E: Exception do App.LogExcept('TUpbitParse.ParseSpotOrderDetail(ref)', E, aData);
     end;
 
   finally
@@ -680,6 +682,7 @@ begin
           end;
         end;
     except
+      on E: Exception do App.LogExcept('TUpbitParse.ParseSpotOrderList', E, aData);
     end;
 
   finally
@@ -714,6 +717,7 @@ begin
           ParseSpotOrderDetail(aAcnt, aObj);
         end;
     except
+      on E: Exception do App.LogExcept('TUpbitParse.ParseSpotOrderListDonNCancel', E, aData);
     end;
 
   finally
@@ -783,6 +787,7 @@ begin
         App.Engine.TradeBroker.AccountEvent(aAcnt, ACCOUNT_AMT);
 
     except
+      on E: Exception do App.LogExcept('TUpbitParse.ParseSpotTradeAmt', E, aData);
     end;
 
   finally
@@ -957,6 +962,7 @@ begin
         end;
 
     except
+      on E: Exception do App.LogExcept('TUpbitParse.ParseSpotOrderDetail(obj)', E);
     end;
 
 end;
@@ -1380,6 +1386,7 @@ begin
       end;
 
     except
+      on E: Exception do App.LogExcept('TUpbitParse.ParseCandleData(symbol)', E, aData);
     end;
   finally
     if aVal <> nil then aVal.Free;
@@ -1569,6 +1576,7 @@ begin
       end;
 
     except
+      on E: Exception do App.LogExcept('TUpbitParse.ParseCandleData(major)', E, aData);
     end;
 
   finally

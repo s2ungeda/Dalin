@@ -271,6 +271,9 @@ begin
   //    PDword(PMapData)^ := StrToInt(Edit1.Text);
   //    SetEvent(hMapEvent[PUSH]);
   //    App.DebugLog('Push %s queue(%d) : %d, %d', [FName, vData.Count, vData.Front, vdata.Rear ]    );
+      // Dalin -> Rest 요청에는 생성 시각을 남긴다 (Rest 가 큐에서 오래 대기한 신규주문을 걸러낸다)
+      if FIsMain then
+        SetItemTick(vData.SharedData[vData.Rear], GetTickCount64);
       Result := true;
     except on e : Exception do
       begin

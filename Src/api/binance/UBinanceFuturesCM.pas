@@ -186,6 +186,7 @@ begin
     end;
     bRes := true;
   except
+    on E: Exception do App.LogExcept('TBinanceFuturesCM.RequestCandleData', E, sJson);
   end;
 
   Result := bRes;
@@ -223,6 +224,7 @@ begin
       Exit(false);
     end;
   except
+    on E: Exception do App.LogExcept('TBinanceFuturesCM.RequestChangeLeverage', E, sJson);
   end;
 
 end;

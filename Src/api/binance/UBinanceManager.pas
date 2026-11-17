@@ -279,6 +279,7 @@ begin
 
     Result := true;
   except
+    on E: Exception do App.LogExcept('TBinanceManager.UnSubscrib', E);
   end;
 end;
 
@@ -311,6 +312,7 @@ begin
     (QuoteSock[integer(aSymbol.Spec.ExApiType)] as TBinanceWebSocket).SubScribe(aSymbol);
     Result := true;
   except
+    on E: Exception do App.LogExcept('TBinanceManager.Subscrib', E);
 
   end;
 end;
